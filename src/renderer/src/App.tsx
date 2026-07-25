@@ -29,12 +29,22 @@ function App(): React.JSX.Element {
   // R4: 스크린샷 하네스가 firstRun과 무관하게 온보딩 화면을 강제로 띄울 때만 true.
   const [forceOnboarding, setForceOnboarding] = useState(false)
 
-  useEffect(() => {
+  // R2: getStatus()를 마운트 시 1회만 부르면 Settings 저장 후에도 헤더(machineId·
+  // role·manifestDir)와 이를 참조하는 다른 화면(Capture 비활성 사유 등)이 stale로
+  // 남는다(실사용에서 발견된 버그 — role을 follower로 바꿔 저장해도 헤더가 계속
+  // 이전 값을 보여줌). fetchStatus를 재사용 가능한 함수로 빼 SettingsView 저장
+  // 콜백에서도 부른다 -- main의 ctx는 이미 refreshEngineContext()로 갱신되므로
+  // 여기서 다시 조회하기만 하면 renderer 쪽 stale이 해소된다.
+  function fetchStatus(): void {
     window.api.engine
       .getStatus()
       .then(setStatus, (err: unknown) =>
         setStatusError(err instanceof Error ? err.message : String(err))
       )
+  }
+
+  useEffect(() => {
+    fetchStatus()
   }, [])
 
   // P4: 상태바의 git 전송 상태(동기화됨/뒤처짐/로컬 전용/오류) — 부작용 없는
@@ -167,7 +177,7 @@ function App(): React.JSX.Element {
         ) : tab === 'doctor' ? (
           <DoctorView />
         ) : (
-          <SettingsView />
+          <SettingsView onSaved={fetchStatus} />
         )}
       </main>
     </div>

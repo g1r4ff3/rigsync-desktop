@@ -12,12 +12,20 @@ import type { RigsyncConfigDto } from '../../../shared/ipc'
  * driftCheckIntervalHours)를 여기서 편집한다. 저장은 `engine:updateConfig`
  * (내부적으로 온보딩과 같은 `writeConfigFile` 재사용) — 저장 즉시 main의 ctx
  * 캐시가 무효화되고 스케줄러 간격까지 재해석된다(주석 참조).
+ *
+ * R2: main의 ctx는 저장 즉시 재해석되지만 renderer(App.tsx 헤더 등)는 그
+ * 변화를 모른다 — `onSaved`로 App에 "지금 다시 조회하라"고 알린다.
  */
 
 const inputClass =
   'w-full rounded border border-border bg-transparent px-2 py-1.5 font-mono text-xs text-foreground outline-none'
 
-function SettingsView(): React.JSX.Element {
+interface SettingsViewProps {
+  /** 저장 성공 직후 호출 — App이 헤더 등에 쓰는 EngineStatus를 다시 조회하게 한다(R2). */
+  readonly onSaved?: () => void
+}
+
+function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
   const [loaded, setLoaded] = useState<RigsyncConfigDto | null>(null)
   const [machineId, setMachineId] = useState('')
   const [role, setRole] = useState<'reference' | 'follower'>('reference')
@@ -57,6 +65,7 @@ function SettingsView(): React.JSX.Element {
       })
       setLoaded(updated)
       setSaved(true)
+      onSaved?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
