@@ -1,0 +1,46 @@
+# rigsync-desktop
+
+Claude Desktop급 머신 설정 동기화 앱. Electron + React + TypeScript 단일 언어.
+계획·아키텍처·phase는 `FORWARD.md`가 진실 계층 — 작업 착수 전 읽는다.
+구 구현 `~/repos/rigsync`(Python)는 읽기 전용 참고 — 코드 복사 금지, 행동 명세(tests/)만 채굴.
+
+## 안전 불변식 (non-negotiable — 어떤 리팩터에서도 불변)
+
+1. 시스템 변조는 dry-run이 기본. 실제 실행은 명시적 확인 게이트를 통과해야 한다.
+2. 파일을 덮어쓰기 전 반드시 `~/.rigsync-backup/<timestamp>/`에 백업.
+3. 시크릿 denylist(id_*, *.pem, *token* 등) — capture가 어떤 경로로도 담지 않는다.
+4. capture는 additive-only. 항목 제거는 ignore 설정에 의한 것만.
+5. 삭제는 자동화하지 않는다 — 후보를 보고만 한다.
+6. 권한 상승 전, 실행될 스크립트 전문을 사용자에게 노출한다.
+7. follower role에서 capture(저작)는 차단된다 (reference/follower 단방향 배포).
+
+## 아키텍처 규칙
+
+- `src/engine/`은 **UI를 모른다** — Electron·React import 금지, Node API만.
+  엔진은 나중에 CLI·데몬이 그대로 재사용할 수 있어야 한다.
+- renderer는 렌더만 — 시스템 접근은 전부 `src/shared/`의 타입드 IPC 계약을 거친다
+  (`contextBridge`, `nodeIntegration: false`).
+- 실행 경로는 이벤트 emit (완료 후 일괄 반환 금지) — UI 실시간 진행의 전제.
+- 새 기능의 소속은 DESIGN 3분류(배포 대상/머신 고유/설치 체크리스트)로 판단. 애매하면 사용자에게.
+
+## Design constraints (non-negotiable)
+
+rigsync는 랜딩페이지가 아니라 **계기판**이다. 사용자는 렌더 잡 돌려놓고 힐끗 보고
+지나간다. 3초 안에 "이 머신이 기준과 다른가"가 읽혀야 한다.
+참조 미학: Linear의 밀도 + btop의 정보 표현. 3-OS 동일 렌더링 — OS 네이티브룩 추종 안 함.
+
+- Font: UI 전역 system-ui, 경로/명령/패키지명은 monospace
+- Palette: 5색 고정 (bg / surface / text / accent / danger)
+- Radius: 단일값 하나. 다른 값 금지
+- Density: 머신 상태가 스크롤 없이 한 화면에
+- 상태는 색+형태로 인코딩 (색만으로 구분 금지)
+- 컴포넌트는 shadcn/ui에서 가져온다 — 비슷한 걸 손으로 깎지 않는다 (shadcn MCP 사용)
+- 금지: 그라데이션, 글래스모피즘, 보라색, 가운데 정렬 히어로, 200px 넘는 빈 여백, 이모지 아이콘
+
+## 개발 규율
+
+- 테스트: Vitest. capability 구현 시 구 repo `tests/test_*.py`의 대응 케이스를 옮겨
+  행동 동치를 확인한다 (예: dotfiles ← test_dotfiles.py 12케이스).
+- UI 변경은 스크린샷 루프로 검증 (텍스트 리뷰만으로 정렬 깨짐 못 잡는다).
+- 커밋은 작업 단위로, 사용자 확인 후. `git add -A` 금지 — 명시 경로만.
+- 이 파일과 FORWARD.md의 불변식·계약 수정은 사용자 승인 필수.
