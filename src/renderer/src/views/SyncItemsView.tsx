@@ -4,14 +4,32 @@ import { Switch } from '@/components/ui/switch'
 import type { SyncItemGroupDto } from '../../../shared/ipc'
 
 /**
- * "동기화 항목" 화면(P2a 결정 ⑤) — managed(manifest)/unmanaged(설치는 됐지만
- * 미기록) 항목을 provider·capability별로 나열하고, 스위치로 ignore를 토글한다.
- * apt 하나만도 족히 100개가 넘어갈 수 있어(구 GTK GUI의 실제 약점) 검색 필터 +
- * `@tanstack/react-virtual` 가상 스크롤이 필수다.
+ * "동기화 항목" 화면(P2a 결정 ⑤, R3부터 탭 이름은 "Candidates") — managed
+ * (manifest)/unmanaged(설치는 됐지만 미기록) 항목을 provider·capability별로
+ * 나열하고, 스위치로 ignore를 토글한다. apt 하나만도 족히 100개가 넘어갈 수
+ * 있어(구 GTK GUI의 실제 약점) 검색 필터 + `@tanstack/react-virtual` 가상
+ * 스크롤이 필수다.
+ *
+ * R5: 그룹 헤더에 전체 토글을 추가한다 — 그룹의 "동기화 대상" 여부를 한 번에
+ * 맞춘다(체크 = 전부 동기화 대상/= 아무것도 ignore 안 됨, 해제 = 전부
+ * ignore). 항상 **그룹 전체**(현재 검색 필터로 가려진 항목 포함)를 대상으로
+ * 하고, 반드시 배치 IPC(`toggleIgnoreBulk`) 하나로 처리한다 — 항목별 루프로
+ * 얹으면 자동 commit+push가 항목 수만큼 쌓이는 커밋 폭탄이 된다(main/ipc.ts
+ * 주석 참조).
  */
 
+type GroupToggleState = 'all-synced' | 'all-ignored' | 'mixed'
+
 type Row =
-  | { readonly kind: 'header'; readonly key: string; readonly title: string }
+  | {
+      readonly kind: 'header'
+      readonly key: string
+      readonly title: string
+      readonly capability: SyncItemGroupDto['capability']
+      readonly groupState: GroupToggleState
+      /** 그룹 전체 항목의 key 목록(검색 필터와 무관 — 그룹 토글은 항상 전체 대상). */
+      readonly allItemKeys: readonly string[]
+    }
   | {
       readonly kind: 'item'
       readonly key: string
@@ -22,11 +40,51 @@ type Row =
       readonly ignored: boolean
     }
 
+function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
+  if (items.length === 0) return 'all-synced'
+  const ignoredCount = items.filter((i) => i.ignored).length
+  if (ignoredCount === 0) return 'all-synced'
+  if (ignoredCount === items.length) return 'all-ignored'
+  return 'mixed'
+}
+
+/** 네이티브 checkbox는 `indeterminate`를 prop이 아니라 DOM 속성으로만 지원한다. */
+function GroupCheckbox({
+  state,
+  disabled,
+  onClick
+}: {
+  readonly state: GroupToggleState
+  readonly disabled: boolean
+  readonly onClick: () => void
+}): React.JSX.Element {
+  return (
+    <input
+      type="checkbox"
+      checked={state === 'all-synced'}
+      disabled={disabled}
+      ref={(el) => {
+        if (el) el.indeterminate = state === 'mixed'
+      }}
+      onChange={onClick}
+      title={
+        state === 'all-synced'
+          ? '전체 동기화 대상 — 클릭하면 그룹 전체를 ignore'
+          : state === 'all-ignored'
+            ? '전체 ignore됨 — 클릭하면 그룹 전체를 동기화 대상으로'
+            : '일부만 ignore됨(혼합) — 클릭하면 그룹 전체를 동기화 대상으로'
+      }
+      aria-label="그룹 전체 토글"
+    />
+  )
+}
+
 function SyncItemsView(): React.JSX.Element {
   const [groups, setGroups] = useState<SyncItemGroupDto[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
+  const [pendingGroups, setPendingGroups] = useState<Record<string, boolean>>({})
 
   async function refresh(): Promise<void> {
     setGroups(await window.api.engine.listSyncItems())
@@ -46,7 +104,11 @@ function SyncItemsView(): React.JSX.Element {
       out.push({
         kind: 'header',
         key: `h:${group.capability}`,
-        title: `${group.title} (${items.length})`
+        title: `${group.title} (${items.length})`,
+        capability: group.capability,
+        // 그룹 토글은 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
+        groupState: computeGroupState(group.items),
+        allItemKeys: group.items.map((i) => i.key)
       })
       for (const item of items) {
         out.push({
@@ -88,6 +150,30 @@ function SyncItemsView(): React.JSX.Element {
     }
   }
 
+  async function toggleGroup(
+    capability: SyncItemGroupDto['capability'],
+    state: GroupToggleState,
+    allItemKeys: readonly string[]
+  ): Promise<void> {
+    // 클릭 시 항상 "전부 동기화 대상"을 향해 움직인다: 이미 전부 동기화
+    // 대상이면 전부 ignore로, 그 외(전부 ignore 또는 혼합)면 전부 동기화
+    // 대상으로 — 표준 "전체 선택" 체크박스 관례.
+    const nextIgnored = state === 'all-synced'
+    setPendingGroups((prev) => ({ ...prev, [capability]: true }))
+    try {
+      const next = await window.api.engine.toggleIgnoreBulk({
+        capability,
+        keys: allItemKeys,
+        ignored: nextIgnored
+      })
+      setGroups(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingGroups((prev) => ({ ...prev, [capability]: false }))
+    }
+  }
+
   return (
     <div className="flex h-full flex-col gap-3">
       <input
@@ -123,12 +209,19 @@ function SyncItemsView(): React.JSX.Element {
                   }}
                   className={
                     row.kind === 'header'
-                      ? 'flex items-center bg-secondary px-2 font-mono text-xs font-semibold text-secondary-foreground'
+                      ? 'flex items-center gap-2 bg-secondary px-2 font-mono text-xs font-semibold text-secondary-foreground'
                       : 'flex items-center justify-between border-t border-border px-2 font-mono text-xs'
                   }
                 >
                   {row.kind === 'header' ? (
-                    row.title
+                    <>
+                      <GroupCheckbox
+                        state={row.groupState}
+                        disabled={!!pendingGroups[row.capability]}
+                        onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
+                      />
+                      {row.title}
+                    </>
                   ) : (
                     <>
                       <span className={row.managed ? 'text-foreground' : 'text-neutral-500'}>

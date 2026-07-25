@@ -37,14 +37,18 @@ export const IPC_CHANNELS = {
   // 트레이 알림 클릭 시 main -> renderer로 "Diff 탭으로 전환" push.
   engineGetLastDriftCheck: 'engine:getLastDriftCheck',
   engineFocusDiffTab: 'engine:focusDiffTab',
-  // P4: 온보딩 위저드 + 구 manifest 마이그레이션 + git 전송 + autostart.
-  enginePreviewLegacyMigration: 'engine:previewLegacyMigration',
+  // P4: 온보딩 위저드 + git 전송 + autostart.
   engineCompleteOnboarding: 'engine:completeOnboarding',
   engineGetSyncStatus: 'engine:getSyncStatus',
   engineSyncNow: 'engine:syncNow',
   engineSetAutostart: 'engine:setAutostart',
+  // R1: 첫 실행 이후 설정 화면 — writeConfigFile을 재사용해 저장.
+  engineGetConfig: 'engine:getConfig',
+  engineUpdateConfig: 'engine:updateConfig',
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
+  // R5: Candidates 그룹 전체 토글 — ignore.toml 1회 읽기/쓰기 + 자동 커밋도 1회.
+  engineToggleIgnoreBulk: 'engine:toggleIgnoreBulk',
   engineApply: 'engine:apply',
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
@@ -80,45 +84,23 @@ export interface EngineStatus {
 }
 
 // ---------------------------------------------------------------------------
-// engine:previewLegacyMigration / engine:completeOnboarding (P4 온보딩 위저드)
+// engine:completeOnboarding (P4 온보딩 위저드)
 // ---------------------------------------------------------------------------
 
-export type LegacyMigrationActionDto = 'migrated' | 'reported-only' | 'skipped'
-
-export interface LegacyMigrationItemDto {
-  readonly capability: string
-  readonly action: LegacyMigrationActionDto
-  readonly detail: string
-}
-
-export interface LegacyMigrationSummaryDto {
-  readonly dryRun: boolean
-  readonly legacyRepoPath: string
-  readonly items: readonly LegacyMigrationItemDto[]
-  readonly warnings: readonly string[]
-}
-
-export interface PreviewLegacyMigrationRequest {
-  readonly legacyRepoPath: string
-}
-
-export type ManifestSourceMode = 'new' | 'existing' | 'migrate'
+/** R2: 구 rigsync 마이그레이션 옵션은 제거됐다(사용자 결정 — fresh capture로 충분). */
+export type ManifestSourceMode = 'new' | 'existing'
 
 export interface CompleteOnboardingRequest {
   readonly machineId: string
   readonly role: EngineRole
   readonly manifestDir: string
   readonly manifestSource: ManifestSourceMode
-  /** manifestSource === 'migrate'일 때만. */
-  readonly legacyRepoPath?: string
   readonly profile?: string
   readonly autostartEnabled: boolean
 }
 
 export interface CompleteOnboardingResponse {
   readonly status: EngineStatus
-  /** manifestSource === 'migrate'였을 때만 채워진다. */
-  readonly migration?: LegacyMigrationSummaryDto
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +120,21 @@ export type SyncStatusDto =
 export interface SetAutostartRequest {
   readonly enabled: boolean
 }
+
+// ---------------------------------------------------------------------------
+// engine:getConfig / engine:updateConfig (R1 — 첫 실행 이후 설정 화면)
+// ---------------------------------------------------------------------------
+
+export interface RigsyncConfigDto {
+  readonly machineId: string
+  readonly role: EngineRole
+  readonly manifestDir: string
+  readonly profile?: string
+  readonly autostartEnabled: boolean
+  readonly driftCheckIntervalHours: number
+}
+
+export type UpdateConfigRequest = RigsyncConfigDto
 
 // ---------------------------------------------------------------------------
 // engine:diffDotfiles
@@ -487,6 +484,17 @@ export interface SyncItemGroupDto {
 export interface ToggleIgnoreRequest {
   readonly capability: SyncItemCapability
   readonly key: string
+  readonly ignored: boolean
+}
+
+/**
+ * R5: Candidates 그룹 전체 토글 — ignore.toml을 항목 수만큼 여러 번 읽고
+ * 쓰지 않고 **1회 읽기 -> 일괄 수정 -> 1회 쓰기**로 처리한다(그래야 자동
+ * commit+push도 항목당이 아니라 1커밋으로 끝난다 — main/ipc.ts 주석 참조).
+ */
+export interface ToggleIgnoreBulkRequest {
+  readonly capability: SyncItemCapability
+  readonly keys: readonly string[]
   readonly ignored: boolean
 }
 

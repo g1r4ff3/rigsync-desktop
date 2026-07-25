@@ -3,9 +3,10 @@ import type { EngineStatus, SyncStatusDto } from '../../shared/ipc'
 import DiffView from './views/DiffView'
 import DoctorView from './views/DoctorView'
 import OnboardingView from './views/OnboardingView'
+import SettingsView from './views/SettingsView'
 import SyncItemsView from './views/SyncItemsView'
 
-type Tab = 'diff' | 'items' | 'doctor'
+type Tab = 'diff' | 'items' | 'doctor' | 'settings'
 
 function syncStatusLabel(status: SyncStatusDto | null): { text: string; className: string } {
   if (!status) return { text: '', className: 'text-neutral-600' }
@@ -91,9 +92,10 @@ function App(): React.JSX.Element {
       <nav className="mb-4 flex gap-1 border-b border-border">
         {(
           [
-            { id: 'diff', label: 'Diff' },
-            { id: 'items', label: '항목' },
-            { id: 'doctor', label: 'Doctor' }
+            { id: 'diff', label: 'Differences' },
+            { id: 'items', label: 'Candidates' },
+            { id: 'doctor', label: 'Doctor' },
+            { id: 'settings', label: 'Settings' }
           ] as const
         ).map((t) => (
           <button
@@ -116,8 +118,10 @@ function App(): React.JSX.Element {
           <DiffView status={status} />
         ) : tab === 'items' ? (
           <SyncItemsView />
-        ) : (
+        ) : tab === 'doctor' ? (
           <DoctorView />
+        ) : (
+          <SettingsView />
         )}
       </main>
     </div>

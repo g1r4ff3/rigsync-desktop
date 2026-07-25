@@ -3,13 +3,15 @@ import { Button } from '@/components/ui/button'
 import type {
   CompleteOnboardingRequest,
   EngineStatus,
-  LegacyMigrationSummaryDto,
   ManifestSourceMode
 } from '../../../shared/ipc'
 
 /**
  * 온보딩 위저드(P4) — 첫 실행(firstRun) 시 메인 화면 대신 이걸 보여준다.
  * 기능 최소 UI 지시(디자인 패스는 이후 별도 트랙) — 순수 HTML 폼 요소만 쓴다.
+ *
+ * R2: 구 rigsync 마이그레이션 옵션은 제거됐다(사용자 결정 — fresh capture로
+ * 충분). manifest 저장소는 "새로 만들기"/"기존 경로 지정" 2택.
  */
 
 interface OnboardingViewProps {
@@ -25,27 +27,11 @@ function OnboardingView({ status, onComplete }: OnboardingViewProps): React.JSX.
   const [role, setRole] = useState<'reference' | 'follower'>('reference')
   const [manifestSource, setManifestSource] = useState<ManifestSourceMode>('new')
   const [manifestDir, setManifestDir] = useState(status.manifestDir)
-  const [legacyRepoPath, setLegacyRepoPath] = useState('~/repos/rigsync')
   const [profile, setProfile] = useState('')
   const [autostartEnabled, setAutostartEnabled] = useState(true)
 
-  const [preview, setPreview] = useState<LegacyMigrationSummaryDto | null>(null)
-  const [previewing, setPreviewing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  async function handlePreview(): Promise<void> {
-    setPreviewing(true)
-    setError(null)
-    try {
-      const summary = await window.api.engine.previewLegacyMigration({ legacyRepoPath })
-      setPreview(summary)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPreviewing(false)
-    }
-  }
 
   async function handleSubmit(): Promise<void> {
     setSubmitting(true)
@@ -56,7 +42,6 @@ function OnboardingView({ status, onComplete }: OnboardingViewProps): React.JSX.
         role,
         manifestDir: manifestDir.trim(),
         manifestSource,
-        ...(manifestSource === 'migrate' ? { legacyRepoPath: legacyRepoPath.trim() } : {}),
         ...(profile.trim() ? { profile: profile.trim() } : {}),
         autostartEnabled
       }
@@ -125,70 +110,14 @@ function OnboardingView({ status, onComplete }: OnboardingViewProps): React.JSX.
             />
             기존 경로 지정
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              checked={manifestSource === 'migrate'}
-              onChange={() => setManifestSource('migrate')}
-            />
-            구 rigsync에서 마이그레이션
-          </label>
         </div>
 
-        {manifestSource !== 'migrate' ? (
-          <input
-            className={inputClass}
-            value={manifestDir}
-            onChange={(e) => setManifestDir(e.target.value)}
-            placeholder="~/.local/share/rigsync-desktop/manifest"
-          />
-        ) : (
-          <div className="space-y-2">
-            <input
-              className={inputClass}
-              value={legacyRepoPath}
-              onChange={(e) => setLegacyRepoPath(e.target.value)}
-              placeholder="~/repos/rigsync"
-            />
-            <input
-              className={inputClass}
-              value={manifestDir}
-              onChange={(e) => setManifestDir(e.target.value)}
-              placeholder="새 manifest가 만들어질 경로"
-            />
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={previewing || !legacyRepoPath.trim()}
-              onClick={handlePreview}
-            >
-              {previewing ? '변환 요약 계산 중…' : '변환 요약 미리보기'}
-            </Button>
-            {preview && (
-              <ul className="space-y-1 rounded border border-border p-2 font-mono text-xs">
-                {preview.warnings.map((w) => (
-                  <li key={w} className="text-red-400">
-                    ⚠ {w}
-                  </li>
-                ))}
-                {preview.items.map((item) => (
-                  <li
-                    key={item.capability}
-                    className={
-                      item.action === 'migrated'
-                        ? 'text-green-400'
-                        : item.action === 'reported-only'
-                          ? 'text-amber-400'
-                          : 'text-neutral-500'
-                    }
-                  >
-                    [{item.action}] {item.capability}: {item.detail}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+        <input
+          className={inputClass}
+          value={manifestDir}
+          onChange={(e) => setManifestDir(e.target.value)}
+          placeholder="~/.local/share/rigsync-desktop/manifest"
+        />
       </section>
 
       <section className="space-y-1">

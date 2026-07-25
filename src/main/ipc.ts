@@ -41,12 +41,16 @@ import { planSettings } from '../engine/capabilities/settings/plan'
 import { captureTools } from '../engine/capabilities/tools/capture'
 import { diffTools } from '../engine/capabilities/tools/diff'
 import { planTools } from '../engine/capabilities/tools/plan'
-import { resolveContext, writeConfigFile, type RigsyncContext } from '../engine/context'
+import {
+  DEFAULT_DRIFT_CHECK_INTERVAL_HOURS,
+  resolveContext,
+  writeConfigFile,
+  type RigsyncContext
+} from '../engine/context'
 import { setAutostart } from '../engine/autostart'
 import { orderCombinedPlan } from './planOrder'
 import { autoSyncAfterWrite, getLastSyncStatus, triggerSync } from './gitSync'
 import { completeOnboarding, expandTilde } from './onboarding'
-import { migrateLegacyManifest } from '../engine/migration/legacy'
 import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
@@ -69,7 +73,11 @@ import {
   linuxAppimageSystemCheck
 } from '../engine/providers/linux'
 import { detectReclassifications } from '../engine/reclassification'
-import { listSyncItemGroups, toggleSyncItemIgnore } from '../engine/syncItems'
+import {
+  listSyncItemGroups,
+  toggleSyncItemIgnore,
+  toggleSyncItemIgnoreBulk
+} from '../engine/syncItems'
 import {
   IPC_CHANNELS,
   type ApplyRequest,
@@ -93,11 +101,10 @@ import {
   type PackagesDiffReport,
   type PlanEvent,
   type PlanSummaryDto,
-  type PreviewLegacyMigrationRequest,
-  type LegacyMigrationSummaryDto,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
+  type RigsyncConfigDto,
   type ScheduledCaptureReportDto,
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
@@ -107,9 +114,11 @@ import {
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
   type SyncStatusDto,
+  type ToggleIgnoreBulkRequest,
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
-  type ToolsDiffReportDto
+  type ToolsDiffReportDto,
+  type UpdateConfigRequest
 } from '../shared/ipc'
 
 // packages/appimage capability의 provider 묶음 -- v1은 Linux 고정 (FORWARD.md
@@ -371,17 +380,9 @@ export function registerEngineIpc(
   )
 
   ipcMain.handle(
-    IPC_CHANNELS.enginePreviewLegacyMigration,
-    async (_event, request: PreviewLegacyMigrationRequest): Promise<LegacyMigrationSummaryDto> => {
-      const legacyRepoPath = expandTilde(request.legacyRepoPath, getContext().homeDir)
-      return migrateLegacyManifest(getContext(), legacyRepoPath, { dryRun: true })
-    }
-  )
-
-  ipcMain.handle(
     IPC_CHANNELS.engineCompleteOnboarding,
     async (_event, request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> => {
-      const { migration } = await completeOnboarding(request, {
+      await completeOnboarding(request, {
         homeDir: getContext().homeDir,
         execPath: getExecPath()
       })
@@ -395,8 +396,7 @@ export function registerEngineIpc(
           manifestDir: ctx.manifestDir,
           firstRun,
           autostartEnabled: ctx.autostartEnabled
-        },
-        migration
+        }
       }
     }
   )
@@ -434,6 +434,51 @@ export function registerEngineIpc(
     }
   )
 
+  ipcMain.handle(IPC_CHANNELS.engineGetConfig, async (): Promise<RigsyncConfigDto> => {
+    const ctx = getContext()
+    return {
+      machineId: ctx.machineId,
+      role: ctx.role,
+      manifestDir: ctx.manifestDir,
+      ...(ctx.profile ? { profile: ctx.profile } : {}),
+      autostartEnabled: ctx.autostartEnabled,
+      driftCheckIntervalHours:
+        ctx.settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineUpdateConfig,
+    async (_event, request: UpdateConfigRequest): Promise<RigsyncConfigDto> => {
+      const homeDir = getContext().homeDir
+      const manifestDir = expandTilde(request.manifestDir, homeDir)
+      writeConfigFile(homeDir, {
+        machineId: request.machineId,
+        role: request.role,
+        manifestDir,
+        autostartEnabled: request.autostartEnabled,
+        driftCheckIntervalHours: request.driftCheckIntervalHours,
+        ...(request.profile ? { profile: request.profile } : {})
+      })
+      setAutostart(homeDir, request.autostartEnabled, getExecPath())
+      // R1: main이 캐시한 ctx를 즉시 무효화 + 스케줄러(간격)·트레이(다음 체크
+      // 표시)까지 재해석되게 index.ts의 onConfigChanged를 그대로 재사용한다
+      // (온보딩 완료 경로와 동일한 갱신 통로).
+      refreshEngineContext()
+      onConfigChanged()
+      const ctx = getContext()
+      return {
+        machineId: ctx.machineId,
+        role: ctx.role,
+        manifestDir: ctx.manifestDir,
+        ...(ctx.profile ? { profile: ctx.profile } : {}),
+        autostartEnabled: ctx.autostartEnabled,
+        driftCheckIntervalHours:
+          ctx.settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
+      }
+    }
+  )
+
   ipcMain.handle(IPC_CHANNELS.engineDetectDuplicates, async (): Promise<DuplicateWarningDto[]> => {
     return detectDuplicates(getContext(), providers, gearLeverProvider)
   })
@@ -462,6 +507,18 @@ export function registerEngineIpc(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
+      autoSyncAfterWrite(getContext(), gitTransportProvider)
+      return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineToggleIgnoreBulk,
+    async (_event, request: ToggleIgnoreBulkRequest): Promise<SyncItemGroupDto[]> => {
+      // R5: 그룹 전체 토글 -- ignore.toml 1회 읽기/쓰기(toggleSyncItemIgnoreBulk
+      // 내부)에 이어 자동 commit+push도 정확히 1번만 트리거한다(항목별 루프로
+      // 얹으면 커밋 폭탄이 되므로 절대 반복 호출하지 않는다).
+      toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
       autoSyncAfterWrite(getContext(), gitTransportProvider)
       return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
     }

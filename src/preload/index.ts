@@ -19,14 +19,13 @@ import {
   type DuplicateWarningDto,
   type EngineStatus,
   type IgnoreDoctorCheckRequest,
-  type LegacyMigrationSummaryDto,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
-  type PreviewLegacyMigrationRequest,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
+  type RigsyncConfigDto,
   type ScheduledCaptureReportDto,
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
@@ -36,9 +35,11 @@ import {
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
   type SyncStatusDto,
+  type ToggleIgnoreBulkRequest,
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
-  type ToolsDiffReportDto
+  type ToolsDiffReportDto,
+  type UpdateConfigRequest
 } from '../shared/ipc'
 
 // renderer가 시스템에 접근하는 유일한 경로 — 전부 src/shared/ipc.ts의 타입드
@@ -87,16 +88,16 @@ const engineApi = {
     ipcRenderer.on(IPC_CHANNELS.engineFocusDiffTab, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.engineFocusDiffTab, listener)
   },
-  previewLegacyMigration: (
-    request: PreviewLegacyMigrationRequest
-  ): Promise<LegacyMigrationSummaryDto> =>
-    ipcRenderer.invoke(IPC_CHANNELS.enginePreviewLegacyMigration, request),
   completeOnboarding: (request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCompleteOnboarding, request),
   getSyncStatus: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineGetSyncStatus),
   syncNow: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineSyncNow),
   setAutostart: (request: SetAutostartRequest): Promise<EngineStatus> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineSetAutostart, request),
+  /** R1: 첫 실행 이후 설정 화면. */
+  getConfig: (): Promise<RigsyncConfigDto> => ipcRenderer.invoke(IPC_CHANNELS.engineGetConfig),
+  updateConfig: (request: UpdateConfigRequest): Promise<RigsyncConfigDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineUpdateConfig, request),
   detectDuplicates: (): Promise<DuplicateWarningDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDetectDuplicates),
   detectReclassifications: (): Promise<ReclassificationEventDto[]> =>
@@ -105,6 +106,9 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineListSyncItems),
   toggleIgnore: (request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineToggleIgnore, request),
+  /** R5: Candidates 그룹 전체 토글 — ignore.toml 1회 읽기/쓰기 + 자동 커밋도 1회. */
+  toggleIgnoreBulk: (request: ToggleIgnoreBulkRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineToggleIgnoreBulk, request),
   apply: (request: ApplyRequest): Promise<ApplyResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
   /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */
