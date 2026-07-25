@@ -28,5 +28,14 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    // shadcn/ui가 `shadcn add`로 생성한 벤더 코드 -- house style을 맞추려고
+    // 손으로 고치면 다음 `add`/업데이트 때마다 다시 어긋난다. 이 두 규칙만 끈다.
+    files: ['src/renderer/src/components/ui/**/*.tsx'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      'react-refresh/only-export-components': 'off'
+    }
+  },
   eslintConfigPrettier
 )

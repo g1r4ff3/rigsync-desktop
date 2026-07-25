@@ -4,6 +4,9 @@
  * (CLAUDE.md 아키텍처 규칙 / FORWARD.md §3).
  */
 export * as capabilities from './capabilities'
+export * as dotfiles from './capabilities/dotfiles'
 export * as manifest from './manifest'
 export * as plan from './plan'
 export * as safety from './safety'
+export * from './context'
+export * as paths from './paths'
