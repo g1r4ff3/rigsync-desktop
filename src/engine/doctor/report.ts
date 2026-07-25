@@ -14,6 +14,8 @@ import type {
   GearLeverProvider
 } from '../capabilities/appimage/providerTypes'
 import { evaluateCheck } from './evaluate'
+import { checkNvidiaDriverMismatch } from './nvidia'
+import type { NvidiaCheckProvider } from './nvidia'
 import type { DoctorSystemProvider } from './providerTypes'
 import type { ChecksManifest, DoctorReport } from './types'
 
@@ -29,6 +31,7 @@ export function buildDoctorReport(
   systemProvider: DoctorSystemProvider,
   gearLeverProvider: GearLeverProvider,
   appimageSystemCheck: AppimageSystemCheckProvider,
+  nvidiaProvider: NvidiaCheckProvider,
   options: BuildDoctorReportOptions
 ): DoctorReport {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')
@@ -42,6 +45,7 @@ export function buildDoctorReport(
   const exitCode = checks.some((r) => r.result === 'fail') ? 1 : 0
 
   const appimage = checkAppimagePreflight(gearLeverProvider, appimageSystemCheck)
+  const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
 
   return {
     basic: {
@@ -52,6 +56,7 @@ export function buildDoctorReport(
     },
     checks,
     appimage,
+    nvidia,
     checksVisible: activeChecks.length > 0,
     exitCode
   }

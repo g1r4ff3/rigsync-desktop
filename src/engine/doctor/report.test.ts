@@ -4,7 +4,7 @@ import { writeCommonLayer } from '../manifest'
 import { writeIgnore } from '../testFixtures'
 import { makeFakeGearLeverProvider } from '../capabilities/appimage/testHelpers'
 import { buildDoctorReport, CHECKS_LAYER } from './report'
-import { makeFakeDoctorSystemProvider } from './testHelpers'
+import { makeFakeDoctorSystemProvider, makeFakeNvidiaProvider } from './testHelpers'
 
 // checksVisible 케이스 출처: 구 repo gui.py `doctor_visible`(코드 복사 아님).
 
@@ -16,6 +16,7 @@ describe('buildDoctorReport', () => {
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
     expect(report.checksVisible).toBe(false)
@@ -38,6 +39,7 @@ describe('buildDoctorReport', () => {
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
     expect(report.checks.map((c) => c.name)).toEqual(['tailscale'])
@@ -55,6 +57,7 @@ describe('buildDoctorReport', () => {
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
     expect(report.exitCode).toBe(1)
@@ -68,6 +71,10 @@ describe('buildDoctorReport', () => {
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: true, version: '4.6.2' }),
       { isPackageInstalled: (pkg: string) => pkg === 'libfuse2t64' },
+      makeFakeNvidiaProvider({
+        nvrmVersion: '580.173.02',
+        packages: [{ name: 'nvidia-driver-580', version: '580.173.02' }]
+      }),
       { configConfigured: true }
     )
     expect(report.basic).toEqual({
@@ -78,6 +85,12 @@ describe('buildDoctorReport', () => {
     })
     expect(report.appimage.gearLeverInstalled).toBe(true)
     expect(report.appimage.warnings).toEqual([])
+    expect(report.nvidia).toEqual({
+      applicable: true,
+      nvrmVersion: '580.173.02',
+      userspaceVersion: '580.173.02',
+      matched: true
+    })
     fixture.cleanup()
   })
 })

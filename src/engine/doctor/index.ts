@@ -1,5 +1,7 @@
 export { evaluateCheck } from './evaluate'
 export { buildDoctorReport, CHECKS_LAYER } from './report'
 export { ignoreDoctorCheck } from './toggle'
+export { checkNvidiaDriverMismatch } from './nvidia'
+export type { NvidiaCheckProvider, NvidiaDriverCheckResult, NvidiaDriverPackage } from './nvidia'
 export * from './types'
 export * from './providerTypes'

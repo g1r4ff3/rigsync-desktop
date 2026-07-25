@@ -1,5 +1,7 @@
-appId: com.electron.app
-productName: rigsync-scaffold
+# P4: v1은 Linux 전용(FORWARD.md §3) — mac/win 블록은 electron-vite 스캐폴드
+# 기본값을 건드리지 않고 남겨둔 미사용 자리표시자다(크로스플랫폼은 P5).
+appId: com.rigsync.desktop
+productName: rigsync-desktop
 directories:
   buildResources: build
 files:
@@ -12,7 +14,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: rigsync-scaffold
+  executableName: rigsync-desktop
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -20,24 +22,23 @@ nsis:
   createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  # AppImage가 주 타깃(정책상 rigsync 자신이 T3다 — GUI지만 호스트 바이너리
+  # 실행이 본질이라 flatpak 부적합, bare deb은 이 앱 자신의 INV-2(중복 설치
+  # 검출) 정신에 어긋나므로 최우선 배포 형태로 삼지 않는다). deb은 "되면 덤"
+  # 이라 시도는 남겨두되 실패해도 AppImage만 있으면 충분하다.
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: rigsync
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+# 자동 업데이트는 P4 비범위 — 원격/릴리스 인프라(push 대상 remote, 배포
+# 서버)가 아직 없다. publish 블록을 비워두면 electron-builder가 업데이트
+# 배선을 만들지 않는다(스캐폴드 기본값의 가짜 example.com URL 제거).
+publish: null

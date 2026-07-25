@@ -1,3 +1,4 @@
+import type { NvidiaCheckProvider, NvidiaDriverPackage } from './nvidia'
 import type { ShellCheckResult, DoctorSystemProvider } from './providerTypes'
 
 export interface FakeDoctorSystemState {
@@ -17,5 +18,17 @@ export function makeFakeDoctorSystemProvider(
     isAptPackageInstalled: (pkg: string) => state.aptInstalled?.[pkg] ?? false,
     runShellCmd: (cmdString: string) =>
       state.shellResults?.[cmdString] ?? { code: 1, combinedOutput: '' }
+  }
+}
+
+export interface FakeNvidiaState {
+  readonly nvrmVersion?: string | null
+  readonly packages?: readonly NvidiaDriverPackage[]
+}
+
+export function makeFakeNvidiaProvider(state: FakeNvidiaState = {}): NvidiaCheckProvider {
+  return {
+    readNvrmVersion: () => state.nvrmVersion ?? null,
+    listInstalledDriverPackages: () => state.packages ?? []
   }
 }

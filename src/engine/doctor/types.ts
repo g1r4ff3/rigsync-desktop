@@ -7,6 +7,7 @@
  */
 import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
+import type { NvidiaDriverCheckResult } from './nvidia'
 
 export type CheckType = 'file' | 'apt' | 'role' | 'cmd'
 
@@ -50,6 +51,8 @@ export interface DoctorReport {
   readonly basic: BasicDiagnostics
   readonly checks: readonly CheckResult[]
   readonly appimage: AppimagePreflightCheck
+  /** P4: NVRM 커널 모듈 vs dpkg 유저스페이스 드라이버 버전 불일치 체크. */
+  readonly nvidia: NvidiaDriverCheckResult
   /**
    * 구 repo `doctor_visible`(gui.py:588) 이식 — ignore 제외 후 checks가 하나라도
    * 있으면 true. UI가 "체크리스트" 섹션 자체를 숨길지 판단하는 데 쓴다(appimage

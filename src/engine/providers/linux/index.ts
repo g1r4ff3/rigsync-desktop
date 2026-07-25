@@ -16,7 +16,9 @@ import type { DconfProvider } from '../../capabilities/settings/providerTypes'
 import type { SystemdUserProvider } from '../../capabilities/services/providerTypes'
 import type { ToolsProvider } from '../../capabilities/tools/providerTypes'
 import type { DoctorSystemProvider } from '../../doctor/providerTypes'
+import type { NvidiaCheckProvider } from '../../doctor/nvidia'
 import type { ElevationExec } from '../../elevation/execTypes'
+import type { GitTransportProvider } from '../../transport/types'
 import { LinuxAptProvider } from './apt'
 import { LinuxCronProvider } from './cron'
 import { LinuxDconfProvider } from './dconf'
@@ -26,7 +28,9 @@ import { FetchDownloader } from './downloader'
 import { LinuxFlatpakProvider } from './flatpak'
 import { LinuxGearLeverProvider } from './gearlever'
 import { LinuxGitProvider } from './git'
+import { LinuxGitTransportProvider } from './gitTransport'
 import { GithubAssetResolver } from './githubAssetResolver'
+import { LinuxNvidiaCheckProvider } from './nvidia'
 import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
 import { LinuxSystemdUserProvider } from './systemdUser'
@@ -78,6 +82,10 @@ export const linuxCronProvider: CronProvider = new LinuxCronProvider()
 export const linuxToolsProvider: ToolsProvider = new LinuxToolsProvider()
 export const linuxGitProvider: GitProvider = new LinuxGitProvider()
 export const linuxDoctorSystemProvider: DoctorSystemProvider = new LinuxDoctorSystemProvider()
+export const linuxNvidiaCheckProvider: NvidiaCheckProvider = new LinuxNvidiaCheckProvider()
+
+/** P4: manifest repo의 git 전송(commit/push/fetch/pull) — main이 조립해 넘긴다. */
+export const linuxGitTransportProvider: GitTransportProvider = new LinuxGitTransportProvider()
 
 export {
   DpkgSystemCheckProvider,
@@ -90,6 +98,8 @@ export {
   LinuxFlatpakProvider,
   LinuxGearLeverProvider,
   LinuxGitProvider,
+  LinuxGitTransportProvider,
+  LinuxNvidiaCheckProvider,
   LinuxPkexecExec,
   LinuxSnapProvider,
   LinuxSystemdUserProvider,
