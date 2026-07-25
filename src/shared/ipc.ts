@@ -87,7 +87,7 @@ export interface ApplyRequest {
   readonly confirm: boolean
 }
 
-export type PlanActionStatus = 'ok' | 'failed' | 'refused' | 'planned' | 'not-run'
+export type PlanActionStatus = 'ok' | 'failed' | 'refused' | 'planned' | 'skipped' | 'not-run'
 
 export interface PlanActionResultDto {
   readonly capability: string

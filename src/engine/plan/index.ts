@@ -26,10 +26,18 @@ export interface PlanAction {
    * 보여야 하기 때문(구 repo `Action.always_run` 행동 이식).
    */
   readonly alwaysRun?: boolean
+  /**
+   * true면 권한 상승(sudo/pkexec)이 필요한 액션이다. P2a 확정 결정 ②: 권한
+   * 상승 통합(P2b) 전까지 executor는 이 액션을 **절대 실행하지 않는다** —
+   * confirm 여부·dry-run 여부와 무관하게 항상 `skipped`로 보고하고, `commands`
+   * (실행될 명령 전문)는 그대로 UI에 노출해 사용자가 수동으로 실행할 수 있게
+   * 한다(불변식 ⑥은 여전히 지킨다 — 다만 "누가 실행하느냐"만 사람으로 넘어간다).
+   */
+  readonly privileged?: boolean
   run(): Promise<{ ok: boolean; detail: string }>
 }
 
-export type PlanActionStatus = 'ok' | 'failed' | 'refused' | 'planned' | 'not-run'
+export type PlanActionStatus = 'ok' | 'failed' | 'refused' | 'planned' | 'skipped' | 'not-run'
 
 export interface PlanActionResult {
   readonly capability: string
@@ -84,6 +92,25 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
 
     for (let index = 0; index < plan.length; index++) {
       const action = plan[index]
+
+      if (action.privileged) {
+        // 권한 상승 통합(P2b) 전까지 절대 실행하지 않는다 — confirm·dry-run
+        // 여부와 무관하게 항상 skipped. 명령 전문은 UI가 그대로 노출한다.
+        const detail =
+          '권한 상승 통합(P2b) 전까지 보류 — 아래 명령을 수동으로 실행하세요: ' +
+          action.commands.join(' && ')
+        this.emit('action_start', { index, total, desc: action.summary })
+        results.push({
+          capability: action.capability,
+          summary: action.summary,
+          commands: action.commands,
+          status: 'skipped',
+          detail
+        })
+        skipped += 1
+        this.emit('action_done', { index, ok: false, error: detail })
+        continue
+      }
 
       if (!options.confirm && !action.alwaysRun) {
         // dry-run: 부작용이 있는 액션은 아예 실행하지 않는다 — 불변식 ①.

@@ -7,7 +7,7 @@ import { captureDotfiles } from './capture'
 import { DOTFILES_LAYER } from './constants'
 import { diffDotfiles } from './diff'
 import { planDotfiles } from './plan'
-import { makeFixture, writeHomeFile, type TestFixture } from './testHelpers'
+import { makeFixture, writeHomeFile, type TestFixture } from '../../testFixtures'
 
 // 케이스 출처: 구 repo tests/test_dotfiles.py
 // TestDotfilesDiffAndApplySymlink / TestDotfilesLinkFalseModeCopy /

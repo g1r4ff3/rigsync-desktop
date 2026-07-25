@@ -25,6 +25,8 @@ export interface CaptureReport {
   readonly missingHome: number
   readonly skippedBrokenSymlink: number
   readonly skippedInvalidStore: number
+  /** ignore.toml에 의해 건너뛴(그리고 manifest에서 제거된) 엔트리 수. */
+  readonly ignored: number
   readonly notes: readonly string[]
 }
 

@@ -1,9 +1,13 @@
 /**
  * Linux provider — v1의 유일한 구현 대상이지만 모양은 3-OS를 가정한다
- * (FORWARD.md §3 확정 사항: "처음부터 capability + provider"). 실제 apt/snap/
- * flatpak/dconf/systemd-user/cron 어댑터는 P2에서 채운다.
+ * (FORWARD.md §3 확정 사항: "처음부터 capability + provider"). apt/snap/
+ * flatpak은 P2a에서 채웠다 — dconf/systemd-user/cron은 이후 phase.
  */
 import type { CapabilityName } from '../../capabilities'
+import type { PackageProviders } from '../../capabilities/packages/providerTypes'
+import { LinuxAptProvider } from './apt'
+import { LinuxFlatpakProvider } from './flatpak'
+import { LinuxSnapProvider } from './snap'
 
 export interface Provider {
   readonly platform: NodeJS.Platform
@@ -27,3 +31,12 @@ export const linuxProvider: Provider = {
     'appimage'
   ]
 }
+
+/** dev(실제 머신)에서 쓰는 packages capability provider 묶음 — main이 조립해 넘긴다. */
+export const linuxPackageProviders: PackageProviders = {
+  apt: new LinuxAptProvider(),
+  snap: new LinuxSnapProvider(),
+  flatpak: new LinuxFlatpakProvider()
+}
+
+export { LinuxAptProvider, LinuxFlatpakProvider, LinuxSnapProvider }

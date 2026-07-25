@@ -5,7 +5,7 @@ import { effectiveLayer, writeCommonLayer } from '../../manifest'
 import { matchesDenylist } from '../../safety/denylist'
 import { captureDotfiles, FollowerCaptureBlockedError } from './capture'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
-import { makeFixture, writeHomeFile, type TestFixture } from './testHelpers'
+import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
 import type { DotfileEntry } from './types'
 
 // 케이스 출처: 구 repo ~/repos/rigsync/tests/test_dotfiles.py (행동만 옮김).
@@ -111,5 +111,44 @@ describe('captureDotfiles', () => {
     } finally {
       follower.cleanup()
     }
+  })
+
+  // 케이스 출처: 구 repo tests/test_ignore.py TestIgnoreDotfiles
+  // (행동만 옮김 — 코드 복사 아님).
+
+  // test_capture_never_seeds_ignored_home
+  it('never seeds an ignored home even if it exists on disk', async () => {
+    writeHomeFile(fixture, '.local/bin/sync-claude-to-opencode.sh', '#!/bin/sh\n')
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.local/bin/sync-claude-to-opencode.sh'] } })
+
+    const report = await captureDotfiles(fixture.ctx, { dryRun: false })
+
+    const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+    const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+    expect(homes).not.toContain('~/.local/bin/sync-claude-to-opencode.sh')
+    expect(report.ignored).toBeGreaterThanOrEqual(0)
+  })
+
+  // test_capture_removes_already_manifested_then_ignored_home
+  it('removes an already-manifested home once it becomes ignored (additive-only exception)', async () => {
+    writeHomeFile(fixture, '.local/bin/sync-claude-to-opencode.sh', '#!/bin/sh\n')
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        {
+          home: '~/.local/bin/sync-claude-to-opencode.sh',
+          store: 'dotfiles/.local/bin/sync-claude-to-opencode.sh',
+          type: 'file',
+          link: true
+        }
+      ]
+    })
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.local/bin/sync-claude-to-opencode.sh'] } })
+
+    const report = await captureDotfiles(fixture.ctx, { dryRun: false })
+
+    const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+    const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+    expect(homes).not.toContain('~/.local/bin/sync-claude-to-opencode.sh')
+    expect(report.ignored).toBe(1)
   })
 })

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
 import { diffDotfiles } from './diff'
 import { DOTFILES_LAYER } from './constants'
-import { makeFixture, writeHomeFile, type TestFixture } from './testHelpers'
+import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
 
 // 케이스 출처: 구 repo tests/test_dotfiles.py TestDotfilesInvalidStoreApplyRefusal
 // (행동만 옮김 — 코드 복사 아님).
@@ -33,5 +33,25 @@ describe('diffDotfiles', () => {
 
     const diff = await diffDotfiles(fixture.ctx)
     expect(diff.invalidStore).toContain(home)
+  })
+
+  // 케이스 출처: 구 repo tests/test_ignore.py
+  // TestIgnoreDotfiles.test_diff_silent_for_ignored_home (행동만 옮김).
+  it('is silent for an ignored home (not drift, not missing)', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        {
+          home: '~/.local/bin/sync-claude-to-opencode.sh',
+          store: 'dotfiles/.local/bin/sync-claude-to-opencode.sh',
+          type: 'file',
+          link: true
+        }
+      ]
+    })
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.local/bin/sync-claude-to-opencode.sh'] } })
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.toLink).toEqual([])
+    expect(diff.missingHome).toEqual([])
   })
 })
