@@ -7,9 +7,24 @@ import { isAutostartEnabled, setAutostart } from '../engine/autostart'
 import type { DriftSummary } from '../engine/drift'
 import { runDriftCheck } from './driftCheck'
 import { getEngineContext, refreshEngineContext, registerEngineIpc } from './ipc'
+import { runScreenshotHarness } from './screenshot'
 import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
 import { createAppTray, type AppTray } from './tray'
 import { IPC_CHANNELS } from '../shared/ipc'
+
+/**
+ * R4 스크린샷 하네스 트리거 — `RIGSYNC_SCREENSHOT_DIR`가 설정돼 있으면 이
+ * 프로세스는 평상시 앱이 아니라 캡처 도구로 동작한다. GPU 비활성화는
+ * `app.whenReady()` **이전에** 해야 적용된다(Electron 문서화된 제약) — 그래서
+ * 이 블록은 모듈 최상단, 다른 어떤 app.* 호출보다도 먼저 온다.
+ */
+const screenshotDir = process.env.RIGSYNC_SCREENSHOT_DIR
+if (screenshotDir) {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+  app.commandLine.appendSwitch('disable-software-rasterizer')
+  app.commandLine.appendSwitch('disable-gpu-compositing')
+}
 
 /**
  * autostart .desktop의 Exec= 값 + registerEngineIpc가 요구하는 execPath.
@@ -156,6 +171,26 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else showMainWindow()
   })
+
+  if (screenshotDir) {
+    const win = mainWindow
+    win?.webContents.once('did-finish-load', () => {
+      // renderer가 첫 status/config를 IPC로 받아올 시간을 조금 더 준다.
+      setTimeout(() => {
+        runScreenshotHarness(win, screenshotDir)
+          .then((results) => {
+            for (const r of results) {
+              console.log(`[screenshot] ${r.file}: ${r.ok ? 'ok' : `FAILED (${r.error})`}`)
+            }
+          })
+          .catch((err: unknown) => console.error('[screenshot] harness threw', err))
+          .finally(() => {
+            isQuitting = true
+            app.quit()
+          })
+      }, 1000)
+    })
+  }
 })
 
 // P3: 창을 닫아도(hide) 프로세스가 살아있어야 트레이 상주가 의미 있으므로,

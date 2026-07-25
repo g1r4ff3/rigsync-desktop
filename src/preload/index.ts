@@ -27,6 +27,7 @@ import {
   type ReposDiffReportDto,
   type RigsyncConfigDto,
   type ScheduledCaptureReportDto,
+  type ScreenshotRoute,
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
@@ -87,6 +88,13 @@ const engineApi = {
     const listener = (): void => callback()
     ipcRenderer.on(IPC_CHANNELS.engineFocusDiffTab, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.engineFocusDiffTab, listener)
+  },
+  /** R4: dev 스크린샷 하네스 전용 — main이 "이 화면으로 가라"고 지시하는 push 구독. */
+  onScreenshotGoto: (callback: (route: ScreenshotRoute) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, route: ScreenshotRoute): void =>
+      callback(route)
+    ipcRenderer.on(IPC_CHANNELS.engineScreenshotGoto, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.engineScreenshotGoto, listener)
   },
   completeOnboarding: (request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCompleteOnboarding, request),

@@ -53,10 +53,20 @@ export const IPC_CHANNELS = {
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
   /** main -> renderer 단방향 push (invoke 아님) — PlanExecutor 진행 이벤트 중계. */
-  enginePlanEvent: 'engine:planEvent'
+  enginePlanEvent: 'engine:planEvent',
+  /**
+   * R4: dev 전용 스크린샷 하네스(main/screenshot.ts)가 renderer에 "이 화면으로
+   * 가라"고 지시하는 단방향 push. `RIGSYNC_SCREENSHOT_DIR` env가 있을 때만
+   * main이 이 채널로 보낸다 — 평상시 앱 동작에는 전혀 관여하지 않는다.
+   */
+  engineScreenshotGoto: 'engine:screenshotGoto'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
+
+/** engine:screenshotGoto 페이로드 — App.tsx가 이 이름으로 탭/온보딩/다이얼로그를 강제 전환한다. */
+export type ScreenshotRoute =
+  'onboarding' | 'diff' | 'items' | 'doctor' | 'settings' | 'apply-dialog'
 
 export interface EnginePingRequest {
   readonly message?: string
@@ -411,10 +421,20 @@ export interface DoctorAppimagePreflightDto {
   readonly warnings: readonly string[]
 }
 
+/** P4: NVRM 커널 모듈 vs dpkg 유저스페이스 드라이버 버전 불일치 체크. */
+export interface DoctorNvidiaCheckDto {
+  readonly applicable: boolean
+  readonly nvrmVersion: string | null
+  readonly userspaceVersion: string | null
+  readonly matched: boolean
+  readonly warning?: string
+}
+
 export interface DoctorReportDto {
   readonly basic: DoctorBasicDiagnosticsDto
   readonly checks: readonly DoctorCheckResultDto[]
   readonly appimage: DoctorAppimagePreflightDto
+  readonly nvidia: DoctorNvidiaCheckDto
   readonly checksVisible: boolean
   readonly exitCode: number
 }
