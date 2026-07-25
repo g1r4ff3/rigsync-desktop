@@ -7,6 +7,7 @@ import {
   makeFakeFlatpakProvider,
   makeFakeSnapProvider
 } from './capabilities/packages/testHelpers'
+import { makeFakeToolsProvider } from './capabilities/tools/testHelpers'
 import { readIgnoreSet } from './ignore'
 import { listSyncItemGroups, toggleSyncItemIgnore } from './syncItems'
 import { makeFixture, type TestFixture } from './testFixtures'
@@ -34,7 +35,8 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
         snap: makeFakeSnapProvider([]),
         flatpak: makeFakeFlatpakProvider()
       },
-      makeFakeGearLeverProvider({ available: false })
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: false })
     )
 
     // dotfiles 그룹이 없으면(관리 항목·후보 둘 다 없으면) 생략되고, apt만 남는다.
@@ -89,12 +91,43 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
         snap: makeFakeSnapProvider([], false),
         flatpak: makeFakeFlatpakProvider({ available: false })
       },
-      gearLever
+      gearLever,
+      makeFakeToolsProvider({ available: false })
     )
     expect(groups.map((g) => g.capability)).toEqual(['appimage'])
     expect(groups[0].items[0]).toEqual({
       key: 'tev.desktop',
       label: 'tev.desktop',
+      managed: false,
+      ignored: false
+    })
+  })
+
+  it('toggling a tools item writes under the "packages" kind', () => {
+    toggleSyncItemIgnore(fixture.ctx, 'tools', 'claude-mermaid', true)
+    expect(readIgnoreSet(fixture.ctx, 'tools', 'packages')).toEqual(new Set(['claude-mermaid']))
+  })
+
+  it('toggling a repos item writes under the "paths" kind', () => {
+    toggleSyncItemIgnore(fixture.ctx, 'repos', '~/repos/scratch', true)
+    expect(readIgnoreSet(fixture.ctx, 'repos', 'paths')).toEqual(new Set(['~/repos/scratch']))
+  })
+
+  it('includes a tools group when npm globals are present', async () => {
+    const groups = await listSyncItemGroups(
+      fixture.ctx,
+      {
+        apt: makeFakeAptProvider({ available: false }),
+        snap: makeFakeSnapProvider([], false),
+        flatpak: makeFakeFlatpakProvider({ available: false })
+      },
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: true, globals: { pnpm: '10' } })
+    )
+    expect(groups.map((g) => g.capability)).toEqual(['tools'])
+    expect(groups[0].items[0]).toEqual({
+      key: 'pnpm',
+      label: 'pnpm',
       managed: false,
       ignored: false
     })

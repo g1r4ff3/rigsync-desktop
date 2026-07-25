@@ -10,15 +10,27 @@ import type {
 } from '../../capabilities/appimage/providerTypes'
 import type { CapabilityName } from '../../capabilities'
 import type { PackageProviders } from '../../capabilities/packages/providerTypes'
+import type { GitProvider } from '../../capabilities/repos/providerTypes'
+import type { CronProvider } from '../../capabilities/scheduled/providerTypes'
+import type { DconfProvider } from '../../capabilities/settings/providerTypes'
+import type { SystemdUserProvider } from '../../capabilities/services/providerTypes'
+import type { ToolsProvider } from '../../capabilities/tools/providerTypes'
+import type { DoctorSystemProvider } from '../../doctor/providerTypes'
 import type { ElevationExec } from '../../elevation/execTypes'
 import { LinuxAptProvider } from './apt'
+import { LinuxCronProvider } from './cron'
+import { LinuxDconfProvider } from './dconf'
+import { LinuxDoctorSystemProvider } from './doctorSystem'
 import { DpkgSystemCheckProvider } from './dpkgSystemCheck'
 import { FetchDownloader } from './downloader'
 import { LinuxFlatpakProvider } from './flatpak'
 import { LinuxGearLeverProvider } from './gearlever'
+import { LinuxGitProvider } from './git'
 import { GithubAssetResolver } from './githubAssetResolver'
 import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
+import { LinuxSystemdUserProvider } from './systemdUser'
+import { LinuxToolsProvider } from './tools'
 
 export interface Provider {
   readonly platform: NodeJS.Platform
@@ -59,13 +71,27 @@ export const linuxAssetResolver: AssetResolver = new GithubAssetResolver()
 export const linuxDownloader: Downloader = new FetchDownloader()
 export const linuxAppimageSystemCheck = new DpkgSystemCheckProvider()
 
+/** P2d: dev(실제 머신)에서 쓰는 settings/services/scheduled/tools/repos/doctor provider들. */
+export const linuxDconfProvider: DconfProvider = new LinuxDconfProvider()
+export const linuxSystemdUserProvider: SystemdUserProvider = new LinuxSystemdUserProvider()
+export const linuxCronProvider: CronProvider = new LinuxCronProvider()
+export const linuxToolsProvider: ToolsProvider = new LinuxToolsProvider()
+export const linuxGitProvider: GitProvider = new LinuxGitProvider()
+export const linuxDoctorSystemProvider: DoctorSystemProvider = new LinuxDoctorSystemProvider()
+
 export {
   DpkgSystemCheckProvider,
   FetchDownloader,
   GithubAssetResolver,
   LinuxAptProvider,
+  LinuxCronProvider,
+  LinuxDconfProvider,
+  LinuxDoctorSystemProvider,
   LinuxFlatpakProvider,
   LinuxGearLeverProvider,
+  LinuxGitProvider,
   LinuxPkexecExec,
-  LinuxSnapProvider
+  LinuxSnapProvider,
+  LinuxSystemdUserProvider,
+  LinuxToolsProvider
 }

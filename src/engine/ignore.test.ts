@@ -28,7 +28,8 @@ describe('readIgnoreSet', () => {
         'share',
         'rigsync-desktop',
         'apt-baseline.txt'
-      )
+      ),
+      settings: {}
     }
   })
 

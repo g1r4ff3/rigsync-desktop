@@ -9,6 +9,9 @@ import type { GearLeverProvider } from './capabilities/appimage/providerTypes'
 import { buildDotfilesSyncGroup } from './capabilities/dotfiles/syncItems'
 import { buildPackageSyncGroups } from './capabilities/packages/candidates'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
+import { buildReposSyncGroup } from './capabilities/repos/candidates'
+import { buildToolsSyncGroup } from './capabilities/tools/candidates'
+import type { ToolsProvider } from './capabilities/tools/providerTypes'
 import type { RigsyncContext } from './context'
 import { setIgnored } from './ignore'
 
@@ -21,7 +24,7 @@ export interface SyncItem {
 }
 
 export interface SyncItemGroup {
-  readonly capability: 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage'
+  readonly capability: 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'tools' | 'repos'
   readonly title: string
   readonly items: readonly SyncItem[]
   /**
@@ -37,21 +40,28 @@ const IGNORE_KIND_BY_CAPABILITY: Readonly<Record<SyncItemGroup['capability'], st
   apt: 'packages',
   snap: 'packages',
   flatpak: 'apps',
-  appimage: 'names'
+  appimage: 'names',
+  tools: 'packages',
+  repos: 'paths'
 }
 
 export async function listSyncItemGroups(
   ctx: RigsyncContext,
   providers: PackageProviders,
-  gearLeverProvider: GearLeverProvider
+  gearLeverProvider: GearLeverProvider,
+  toolsProvider: ToolsProvider
 ): Promise<SyncItemGroup[]> {
   const dotfilesGroup = buildDotfilesSyncGroup(ctx)
   const packageGroups = await buildPackageSyncGroups(ctx, providers)
   const appimageGroup = await buildAppimageSyncGroup(ctx, gearLeverProvider)
+  const toolsGroup = await buildToolsSyncGroup(ctx, toolsProvider)
+  const reposGroup = await buildReposSyncGroup(ctx)
   return [
     ...(dotfilesGroup ? [dotfilesGroup] : []),
     ...packageGroups,
-    ...(appimageGroup ? [appimageGroup] : [])
+    ...(appimageGroup ? [appimageGroup] : []),
+    ...(toolsGroup ? [toolsGroup] : []),
+    ...(reposGroup ? [reposGroup] : [])
   ]
 }
 

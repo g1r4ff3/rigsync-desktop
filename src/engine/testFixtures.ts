@@ -11,7 +11,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { RigsyncContext } from './context'
+import type { RigsyncContext, RigsyncSettings } from './context'
 import {
   writeCommonLayer,
   writeManifestFile,
@@ -30,6 +30,8 @@ export interface TestFixture {
 export interface MakeFixtureOptions {
   /** P2c: 있으면 ctx.profile을 세팅해 common→profile→host 3단 병합을 테스트할 수 있다. */
   readonly profile?: string
+  /** P2d: settings/services/scheduled/tools/repos capability용 config.toml [settings] 오버라이드. */
+  readonly settings?: RigsyncSettings
 }
 
 export function makeFixture(
@@ -48,6 +50,7 @@ export function makeFixture(
     homeDir,
     backupRoot: path.join(homeDir, '.rigsync-backup'),
     aptBaselinePath: path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'apt-baseline.txt'),
+    settings: options.settings ?? {},
     ...(options.profile ? { profile: options.profile } : {})
   }
 

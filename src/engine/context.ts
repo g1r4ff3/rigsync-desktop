@@ -22,6 +22,24 @@ import { parse as parseToml } from 'smol-toml'
 
 export type Role = 'reference' | 'follower'
 
+/**
+ * P2d: config.toml `[settings]` 테이블 — 구 repo `cfg.setting(*keys, default)`가
+ * 읽던 `rigsync.toml`의 사용자 조정 값들(감시할 dconf 경로, repos 스캔 디렉터리,
+ * nvm 버전 핀 등) 묶음. 각 capability가 이 값 없이도 동작해야 하므로(빈 설정 =
+ * "아직 아무것도 감시하지 않음") 전부 optional이고, 개별 capability에서
+ * `?? []`/`?? 기본값`으로 받는다.
+ */
+export interface RigsyncSettings {
+  /** dconf 레이어가 dump/load할 절대 경로 목록 (예: "/org/gnome/desktop/wm/keybindings"). */
+  readonly dconfPaths?: readonly string[]
+  /** repos 레이어가 depth-1로 스캔할 디렉터리 (예: "~/repos"). */
+  readonly repoScanDirs?: readonly string[]
+  /** scan_dirs 밖에 있지만 관리하고 싶은 개별 저장소 경로. */
+  readonly repoExtra?: readonly string[]
+  /** nvm 설치 스크립트 버전 핀 (기본 "v0.40.3" — 구 repo 기본값과 동일). */
+  readonly nvmVersion?: string
+}
+
 export interface RigsyncContext {
   readonly machineId: string
   readonly role: Role
@@ -43,6 +61,8 @@ export interface RigsyncContext {
    * 테스트가 temp 경로로 주입할 수 있어야 한다(안전선 — 실제 홈을 안 건드림).
    */
   readonly aptBaselinePath: string
+  /** P2d: 사용자 조정 설정 묶음 (없으면 모든 capability가 빈 배열/기본값으로 취급). */
+  readonly settings: RigsyncSettings
 }
 
 export interface ResolvedContext {
@@ -70,7 +90,22 @@ function devDefaultContext(homeDir: string): RigsyncContext {
     manifestDir: defaultManifestDir(homeDir),
     homeDir,
     backupRoot: path.join(homeDir, '.rigsync-backup'),
-    aptBaselinePath: defaultAptBaselinePath(homeDir)
+    aptBaselinePath: defaultAptBaselinePath(homeDir),
+    settings: {}
+  }
+}
+
+function readSettings(raw: Record<string, unknown>): RigsyncSettings {
+  const table = raw.settings
+  if (typeof table !== 'object' || table === null || Array.isArray(table)) return {}
+  const t = table as Record<string, unknown>
+  const strings = (v: unknown): readonly string[] | undefined =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
+  return {
+    ...(strings(t.dconfPaths) ? { dconfPaths: strings(t.dconfPaths) } : {}),
+    ...(strings(t.repoScanDirs) ? { repoScanDirs: strings(t.repoScanDirs) } : {}),
+    ...(strings(t.repoExtra) ? { repoExtra: strings(t.repoExtra) } : {}),
+    ...(typeof t.nvmVersion === 'string' && t.nvmVersion ? { nvmVersion: t.nvmVersion } : {})
   }
 }
 
@@ -104,9 +139,10 @@ export function resolveContext(
       ? raw.aptBaselinePath
       : defaultAptBaselinePath(homeDir)
   const profile = typeof raw.profile === 'string' && raw.profile ? raw.profile : undefined
+  const settings = readSettings(raw)
 
   return {
-    ctx: { machineId, role, manifestDir, homeDir, backupRoot, aptBaselinePath, profile },
+    ctx: { machineId, role, manifestDir, homeDir, backupRoot, aptBaselinePath, profile, settings },
     firstRun: false
   }
 }
