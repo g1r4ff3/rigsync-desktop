@@ -2,32 +2,59 @@
 @import 'tw-animate-css';
 
 /*
- * shadcn/ui의 표준 neutral 팔레트 값(변형 없이 그대로) — P0에서 `shadcn init`
- * 자동감지가 electron-vite 레이아웃 때문에 실패해 손으로 옮겨 적었다
- * (components.json은 P0에서 이미 수동 구성됨). 지금은 다크 한 벌만 정의한다 —
- * 라이트/다크 토글과 CLAUDE.md의 5색 고정 팔레트·단일 radius 디자인 계약은
- * 이후 디자인 phase에서 다룬다(P1은 "디자인 투자 금지").
+ * R4 디자인 패스 — CLAUDE.md "Design constraints" 계약: 다크 단일 테마,
+ * 5색 고정(bg/surface/text/accent/danger), 파생 톤은 이 5색의 알파 변형만
+ * (그라데이션·보라·6번째 색상 금지), radius 단일값.
+ *
+ * 5개 원천 토큰(--rig-*)만 실제 색상값을 가진다. 그 아래 shadcn 표준 변수들은
+ * 전부 이 5색을 그대로 참조하거나(할당) `color-mix()`로 alpha 섞은 값이다 —
+ * 새 색상을 추가하는 게 아니라 기존 shadcn 변수 이름 체계를 유지한 채 값의
+ * 원천만 5색으로 좁힌 것(컴포넌트 코드 무변경으로 계약 적용).
+ *
+ * "경고(warning)"는 별도 색이 아니라 --rig-danger의 저강도 알파 변형이다 —
+ * 색만으로 구분하지 않기 위해 실제 사용처(status.tsx)에서 항상 아이콘 모양을
+ * 함께 바꾼다(원 vs 삼각형 vs X, CLAUDE.md "색+형태 병행 인코딩").
  */
 :root {
+  /* -- 5개 원천 토큰(유일한 실제 색상 정의) ------------------------------ */
+  --rig-bg: oklch(0.16 0 0);
+  --rig-surface: oklch(0.223 0 0);
+  --rig-text: oklch(0.94 0 0);
+  /* btop/터미널 계기판 느낌의 시안 — 보라 계열(hue 280-330) 회피. */
+  --rig-accent: oklch(0.75 0.13 200);
+  --rig-danger: oklch(0.65 0.19 25);
+
   --radius: 0.5rem;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+
+  --background: var(--rig-bg);
+  --foreground: var(--rig-text);
+  --card: var(--rig-surface);
+  --card-foreground: var(--rig-text);
+  --popover: var(--rig-surface);
+  --popover-foreground: var(--rig-text);
+  --primary: var(--rig-accent);
+  --primary-foreground: var(--rig-bg);
+  --secondary: color-mix(in oklch, var(--rig-text) 10%, var(--rig-bg));
+  --secondary-foreground: var(--rig-text);
+  --muted: color-mix(in oklch, var(--rig-text) 6%, var(--rig-bg));
+  --muted-foreground: color-mix(in oklch, var(--rig-text) 58%, var(--rig-bg));
+  /* shadcn의 --accent는 브랜드 강조색이 아니라 hover/selected 배경 관례 —
+     여기서까지 브랜드색(시안)을 쓰면 화면 전체가 시안 범벅이 되므로 중립
+     알파 톤으로 둔다(브랜드 강조는 --primary/--rig-accent 쪽이 담당). */
+  --accent: color-mix(in oklch, var(--rig-text) 12%, var(--rig-bg));
+  --accent-foreground: var(--rig-text);
+  --destructive: var(--rig-danger);
+  --destructive-foreground: var(--rig-bg);
+  --border: color-mix(in oklch, var(--rig-text) 12%, transparent);
+  --input: color-mix(in oklch, var(--rig-text) 15%, transparent);
+  --ring: color-mix(in oklch, var(--rig-accent) 55%, transparent);
+
+  /* -- 상태 토큰 — 전 화면 공용(src/renderer/src/status.tsx가 유일 소비처) */
+  --status-ok: var(--rig-accent);
+  --status-warn: color-mix(in oklch, var(--rig-danger) 65%, var(--rig-text) 10%);
+  --status-error: var(--rig-danger);
+  --status-muted: var(--muted-foreground);
+  --status-running: var(--rig-accent);
 }
 
 @theme inline {
@@ -46,9 +73,15 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-status-ok: var(--status-ok);
+  --color-status-warn: var(--status-warn);
+  --color-status-error: var(--status-error);
+  --color-status-muted: var(--status-muted);
+  --color-status-running: var(--status-running);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -61,4 +94,35 @@
 body {
   @apply bg-background text-foreground;
   font-family: var(--font-sans);
+}
+
+/*
+ * 네이티브 checkbox/radio(OnboardingView·SettingsView·Candidates 그룹 토글)는
+ * 브라우저 기본값이 OS 파란색이라 그대로 두면 5색 팔레트가 깨진다 — 전부
+ * --rig-accent로 통일한다(색상을 늘리는 게 아니라 브라우저 기본 파랑을
+ * 우리 accent로 대체하는 것).
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--rig-accent);
+}
+
+/*
+ * 네이티브 스크롤바(Electron=Chromium)도 OS 기본 밝은 회색 트랙/썸이라 다크
+ * 대시보드 팔레트에서 튄다(Apply 다이얼로그 스크린샷에서 실제 확인) — 5색
+ * 원천(surface/text)의 알파 변형만 써서 다른 UI 요소와 동일한 규칙을 따른다.
+ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--rig-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--rig-text) 25%, var(--rig-surface));
+  border-radius: var(--radius);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--rig-text) 38%, var(--rig-surface));
 }

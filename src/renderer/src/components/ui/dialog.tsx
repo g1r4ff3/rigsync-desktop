@@ -51,7 +51,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
+          // R4 스크린샷 자기검수에서 발견: grid 컨테이너는 기본적으로 자식의
+          // min-width가 content 크기라 긴 경로/명령 같은 끊어지지 않는 문자열이
+          // 하나라도 있으면 grid 트랙 전체가 넓어져 다이얼로그가 가로 스크롤을
+          // 만든다(Apply plan 다이얼로그에서 실제 발견). min-w-0으로 자식이
+          // 컨테이너 너비 안에서 줄바꿈되도록 강제한다.
+          'fixed top-[50%] left-[50%] z-50 grid w-full min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
           className
         )}
         {...props}
