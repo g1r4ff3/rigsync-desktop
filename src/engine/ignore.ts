@@ -51,11 +51,30 @@ export function setIgnored(
   key: string,
   ignored: boolean
 ): void {
+  setIgnoredBulk(ctx, capability, kind, [key], ignored)
+}
+
+/**
+ * R5: Candidates 그룹 전체 토글 — `setIgnored`를 항목 수만큼 반복 호출하면
+ * ignore.toml을 그만큼 여러 번 읽고 쓰게 된다(그리고 호출부가 매번 자동
+ * commit+push까지 붙이면 커밋이 폭탄처럼 쌓인다). 여러 키를 **한 번의
+ * 읽기-수정-쓰기**로 처리해 diff가 항상 1커밋 분량이 되게 한다.
+ */
+export function setIgnoredBulk(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
+  capability: string,
+  kind: string,
+  keys: readonly string[],
+  ignored: boolean
+): void {
+  if (keys.length === 0) return
   const doc = readCommonLayer(ctx, IGNORE_LAYER)
   const section = (doc[capability] as ManifestDocument | undefined) ?? {}
   const current = new Set(Array.isArray(section[kind]) ? (section[kind] as string[]) : [])
-  if (ignored) current.add(key)
-  else current.delete(key)
+  for (const key of keys) {
+    if (ignored) current.add(key)
+    else current.delete(key)
+  }
   writeCommonLayer(ctx, IGNORE_LAYER, {
     ...doc,
     [capability]: { ...section, [kind]: [...current].sort() }

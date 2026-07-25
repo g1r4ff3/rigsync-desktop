@@ -183,24 +183,54 @@ export interface OnboardingConfig {
   readonly manifestDir: string
   readonly profile?: string
   readonly autostartEnabled: boolean
+  /**
+   * R1: Settings 화면이 이 필드를 채운다. `[settings]` 하위 테이블에
+   * 저장되는 값이라(다른 `RigsyncSettings` 필드들과 같은 테이블), 여기서
+   * 안 건드리면(undefined) 기존 config.toml의 `[settings]` 테이블 전체를
+   * 그대로 보존해야 한다 — 그래서 writeConfigFile은 항상 기존 파일을 먼저
+   * 읽어 병합한다(아래).
+   */
+  readonly driftCheckIntervalHours?: number
 }
 
 /**
- * 온보딩 위저드 완료 시 config.toml을 쓰는 유일한 통로. `resolveContext()`가
- * 읽는 필드와 1:1 대응한다 — 필드를 추가하면 여기와 `resolveContext` 양쪽을
- * 같이 고친다.
+ * 온보딩 위저드/설정 화면이 config.toml을 쓰는 유일한 통로.
+ * `resolveContext()`가 읽는 필드와 1:1 대응한다 — 필드를 추가하면 여기와
+ * `resolveContext` 양쪽을 같이 고친다.
+ *
+ * **읽기-병합-쓰기**: `[settings]` 테이블은 이 함수가 모르는 다른 키(예:
+ * dconfPaths·repoScanDirs — config.toml 직접 편집으로만 채워지는 값)를 담고
+ * 있을 수 있다. 매번 새 문서를 처음부터 만들면 그 값들을 지워버리므로,
+ * 기존 파일이 있으면 먼저 읽어 `[settings]` 하위 테이블만 얕게 병합한다.
  */
 export function writeConfigFile(
   homeDir: string,
   config: OnboardingConfig,
   configPath: string = defaultConfigPath(homeDir)
 ): void {
+  const existing = fs.existsSync(configPath)
+    ? (parseToml(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>)
+    : {}
+  const existingSettings =
+    typeof existing.settings === 'object' &&
+    existing.settings !== null &&
+    !Array.isArray(existing.settings)
+      ? (existing.settings as Record<string, unknown>)
+      : {}
+  const mergedSettings = {
+    ...existingSettings,
+    ...(config.driftCheckIntervalHours !== undefined
+      ? { driftCheckIntervalHours: config.driftCheckIntervalHours }
+      : {})
+  }
+
   const doc: Record<string, unknown> = {
     machineId: config.machineId,
     role: config.role,
     manifestDir: config.manifestDir,
     autostartEnabled: config.autostartEnabled,
-    ...(config.profile ? { profile: config.profile } : {})
+    ...(config.profile ? { profile: config.profile } : {}),
+    ...(Object.keys(mergedSettings).length > 0 ? { settings: mergedSettings } : {})
   }
   fs.mkdirSync(path.dirname(configPath), { recursive: true })
   fs.writeFileSync(configPath, stringifyToml(doc as unknown as TomlTable))

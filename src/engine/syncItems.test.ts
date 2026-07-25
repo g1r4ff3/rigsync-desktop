@@ -9,7 +9,7 @@ import {
 } from './capabilities/packages/testHelpers'
 import { makeFakeToolsProvider } from './capabilities/tools/testHelpers'
 import { readIgnoreSet } from './ignore'
-import { listSyncItemGroups, toggleSyncItemIgnore } from './syncItems'
+import { listSyncItemGroups, toggleSyncItemIgnore, toggleSyncItemIgnoreBulk } from './syncItems'
 import { makeFixture, type TestFixture } from './testFixtures'
 
 describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
@@ -131,5 +131,27 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
       managed: false,
       ignored: false
     })
+  })
+
+  it('toggleSyncItemIgnoreBulk ignores every key in a group in one shot, under the right kind', () => {
+    toggleSyncItemIgnoreBulk(fixture.ctx, 'apt', ['zoom', 'unityhub', 'firefox'], true)
+    expect(readIgnoreSet(fixture.ctx, 'apt', 'packages')).toEqual(
+      new Set(['firefox', 'unityhub', 'zoom'])
+    )
+  })
+
+  it('toggleSyncItemIgnoreBulk un-ignores in one shot, leaving other capabilities untouched', () => {
+    toggleSyncItemIgnoreBulk(fixture.ctx, 'apt', ['zoom', 'unityhub'], true)
+    toggleSyncItemIgnore(fixture.ctx, 'flatpak', 'org.deskflow.deskflow', true)
+    toggleSyncItemIgnoreBulk(fixture.ctx, 'apt', ['zoom'], false)
+    expect(readIgnoreSet(fixture.ctx, 'apt', 'packages')).toEqual(new Set(['unityhub']))
+    expect(readIgnoreSet(fixture.ctx, 'flatpak', 'apps')).toEqual(
+      new Set(['org.deskflow.deskflow'])
+    )
+  })
+
+  it('toggleSyncItemIgnoreBulk on a detection-only capability (snap) still writes ignore.toml', () => {
+    toggleSyncItemIgnoreBulk(fixture.ctx, 'snap', ['code', 'discord'], true)
+    expect(readIgnoreSet(fixture.ctx, 'snap', 'packages')).toEqual(new Set(['code', 'discord']))
   })
 })

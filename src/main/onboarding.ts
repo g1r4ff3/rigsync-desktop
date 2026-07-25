@@ -1,15 +1,14 @@
 /**
- * 온보딩 위저드 "배선" — 판단(마이그레이션 매핑)은
- * `src/engine/migration/legacy.ts`, config.toml 쓰기는
+ * 온보딩 위저드 "배선" — config.toml 쓰기는
  * `src/engine/context.ts`(`writeConfigFile`), 여기는 요청 파싱 + 순서 조립만
- * 한다: (필요시) manifestDir 준비 -> (필요시) 마이그레이션 실행 -> config.toml
- * 쓰기 -> autostart 반영 -> 컨텍스트/스케줄러 갱신.
+ * 한다: manifestDir 준비 -> config.toml 쓰기 -> autostart 반영.
+ *
+ * R2: 구 rigsync 마이그레이션 기능은 제거됐다(사용자 결정 — "fresh capture로
+ * 충분"). manifestSource는 'new'|'existing' 2택만 남는다.
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { migrateLegacyManifest } from '../engine/migration/legacy'
-import type { LegacyMigrationSummary } from '../engine/migration/types'
-import { defaultManifestDir, writeConfigFile, type RigsyncContext } from '../engine/context'
+import { defaultManifestDir, writeConfigFile } from '../engine/context'
 import { setAutostart } from '../engine/autostart'
 import type { CompleteOnboardingRequest } from '../shared/ipc'
 
@@ -28,30 +27,9 @@ export function expandTilde(inputPath: string, homeDir: string): string {
 export async function completeOnboarding(
   request: CompleteOnboardingRequest,
   deps: CompleteOnboardingDeps
-): Promise<{ migration?: LegacyMigrationSummary }> {
+): Promise<void> {
   const manifestDir = expandTilde(request.manifestDir, deps.homeDir)
   fs.mkdirSync(manifestDir, { recursive: true })
-
-  let migration: LegacyMigrationSummary | undefined
-  if (request.manifestSource === 'migrate') {
-    if (!request.legacyRepoPath) {
-      throw new Error('manifestSource=migrate인데 legacyRepoPath가 없음')
-    }
-    // 마이그레이션이 쓰는 ctx는 manifestDir/machineId 두 필드만 실제로 쓰인다
-    // (legacy.ts 참조) -- 아직 온보딩 완료 전이라 role 등 나머지는 임시값으로 채운다.
-    const migrationCtx: RigsyncContext = {
-      machineId: request.machineId,
-      role: request.role,
-      manifestDir,
-      homeDir: deps.homeDir,
-      backupRoot: `${deps.homeDir}/.rigsync-backup`,
-      aptBaselinePath: `${deps.homeDir}/.local/share/rigsync-desktop/apt-baseline.txt`,
-      settings: {},
-      autostartEnabled: false
-    }
-    const legacyRepoPath = expandTilde(request.legacyRepoPath, deps.homeDir)
-    migration = await migrateLegacyManifest(migrationCtx, legacyRepoPath, { dryRun: false })
-  }
 
   writeConfigFile(deps.homeDir, {
     machineId: request.machineId,
@@ -62,8 +40,6 @@ export async function completeOnboarding(
   })
 
   setAutostart(deps.homeDir, request.autostartEnabled, deps.execPath)
-
-  return { migration }
 }
 
 /** manifestSource==='new'일 때 위저드가 제안하는 기본 manifestDir. */

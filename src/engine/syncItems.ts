@@ -13,7 +13,7 @@ import { buildReposSyncGroup } from './capabilities/repos/candidates'
 import { buildToolsSyncGroup } from './capabilities/tools/candidates'
 import type { ToolsProvider } from './capabilities/tools/providerTypes'
 import type { RigsyncContext } from './context'
-import { setIgnored } from './ignore'
+import { setIgnored, setIgnoredBulk } from './ignore'
 
 export interface SyncItem {
   readonly key: string
@@ -72,4 +72,14 @@ export function toggleSyncItemIgnore(
   ignored: boolean
 ): void {
   setIgnored(ctx, capability, IGNORE_KIND_BY_CAPABILITY[capability], key, ignored)
+}
+
+/** R5: Candidates 그룹 전체 토글 — 항목 수만큼 반복 호출하지 않고 1회 읽기/쓰기로. */
+export function toggleSyncItemIgnoreBulk(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
+  capability: SyncItemGroup['capability'],
+  keys: readonly string[],
+  ignored: boolean
+): void {
+  setIgnoredBulk(ctx, capability, IGNORE_KIND_BY_CAPABILITY[capability], keys, ignored)
 }
