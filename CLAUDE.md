@@ -37,6 +37,21 @@ rigsync는 랜딩페이지가 아니라 **계기판**이다. 사용자는 렌더
 - 컴포넌트는 shadcn/ui에서 가져온다 — 비슷한 걸 손으로 깎지 않는다 (shadcn MCP 사용)
 - 금지: 그라데이션, 글래스모피즘, 보라색, 가운데 정렬 히어로, 200px 넘는 빈 여백, 이모지 아이콘
 
+## Explanability contract (non-negotiable — R4, 2026-07-25 사용자 승인)
+
+앱은 개발자가 아닌 사람이 처음 봐도 각 요소의 기능을 알 수 있어야 한다. 어기는 순간 버그로 취급:
+근거 원칙은 Nielsen 휴리스틱의 recognition-over-recall / help & documentation / real-world match.
+참조 제품: Tailscale(상태를 평문으로), GitHub Desktop(개념을 행동 언어로).
+
+- **언어 정책**: 라벨·버튼·탭 = 영어, 설명·툴팁·헬프·상태 문구 = 한국어.
+- **4층 시스템** (전 화면 일관 적용):
+  1. Microcopy — 모든 버튼에 한 줄 부제, 모든 섹션에 한 줄 설명. 용어는 상수 파일 한 곳에서 관리.
+  2. Tooltip — 모든 인터랙티브 요소에 shadcn Tooltip. 비활성 요소엔 반드시 "왜 비활성인지".
+  3. Help — 화면마다 ? 팝오버로 개념 설명 3–5문장 (reference/follower·drift·INV-1 등 내부 개념).
+  4. State — 빈 화면·에러는 반드시 다음 행동을 안내한다 ("먼저 Capture를 실행하세요").
+- 온보딩 투어는 만들지 않는다 (v1 범위 밖 — 사용자 결정).
+- UI 변경 검증은 스크린샷 루프로 한다 (dev 스크린샷 하네스 사용).
+
 ## 개발 규율
 
 - 테스트: Vitest. capability 구현 시 구 repo `tests/test_*.py`의 대응 케이스를 옮겨
