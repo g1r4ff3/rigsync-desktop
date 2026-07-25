@@ -34,6 +34,15 @@ export function hostLayerPath(
   return path.join(ctx.manifestDir, 'hosts', ctx.machineId, `${layer}.toml`)
 }
 
+/** P2c profiles 계층: `<manifestDir>/profiles/<profile>/<layer>.toml`. */
+export function profileLayerPath(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
+  profile: string,
+  layer: string
+): string {
+  return path.join(ctx.manifestDir, 'profiles', profile, `${layer}.toml`)
+}
+
 /** manifest TOML 파일을 읽는다. 파일이 없으면 빈 문서({})를 반환한다. */
 export function readManifestFile(filePath: string): ManifestDocument {
   if (!fs.existsSync(filePath)) return {}
@@ -67,6 +76,15 @@ export function readHostLayer(
   layer: string
 ): ManifestDocument {
   return readManifestFile(hostLayerPath(ctx, layer))
+}
+
+/** ctx.profile이 없으면 빈 문서(프로필 단계 스킵 — 하위 호환). */
+export function readProfileLayer(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'profile'>,
+  layer: string
+): ManifestDocument {
+  if (!ctx.profile) return {}
+  return readManifestFile(profileLayerPath(ctx, ctx.profile, layer))
 }
 
 /**
@@ -136,11 +154,19 @@ function isPlainTable(v: unknown): v is ManifestDocument {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
-/** common+host를 병합한 유효(effective) manifest 레이어. */
+/**
+ * common → profile → host 3단을 병합한 유효(effective) manifest 레이어
+ * (FORWARD.md §7 "profiles 계층"). `ctx.profile`이 없으면 profile 단계가
+ * 빈 문서라 사실상 기존 common→host 2단과 동일하다(하위 호환 — mergeLayer는
+ * 빈 문서를 그냥 통과시킨다).
+ */
 export function effectiveLayer(
-  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId' | 'profile'>,
   layer: string,
   keyFields: Readonly<Record<string, string>> = {}
 ): ManifestDocument {
-  return mergeLayer(readCommonLayer(ctx, layer), readHostLayer(ctx, layer), keyFields)
+  const common = readCommonLayer(ctx, layer)
+  const profile = readProfileLayer(ctx, layer)
+  const host = readHostLayer(ctx, layer)
+  return mergeLayer(mergeLayer(common, profile, keyFields), host, keyFields)
 }

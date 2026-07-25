@@ -31,6 +31,18 @@ export interface RigsyncContext {
   readonly homeDir: string
   /** 덮어쓰기 전 백업을 쌓는 루트 (런별로 <backupRoot>/<ISO timestamp>/). */
   readonly backupRoot: string
+  /**
+   * P2c: 있으면 manifest 오버레이가 `common → profile → host` 3단으로
+   * 병합된다(FORWARD.md §7 "profiles 계층"). 없으면 profile 단계는 건너뛰고
+   * 기존 common→host 2단 그대로(하위 호환).
+   */
+  readonly profile?: string
+  /**
+   * P2c apt baseline 필터: `apt-mark showmanual` 전체 스냅샷을 저장하는 경로.
+   * 기본은 `<homeDir>/.local/share/rigsync-desktop/apt-baseline.txt`지만
+   * 테스트가 temp 경로로 주입할 수 있어야 한다(안전선 — 실제 홈을 안 건드림).
+   */
+  readonly aptBaselinePath: string
 }
 
 export interface ResolvedContext {
@@ -47,13 +59,18 @@ function defaultManifestDir(homeDir: string): string {
   return path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'manifest')
 }
 
+function defaultAptBaselinePath(homeDir: string): string {
+  return path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'apt-baseline.txt')
+}
+
 function devDefaultContext(homeDir: string): RigsyncContext {
   return {
     machineId: os.hostname(),
     role: 'reference',
     manifestDir: defaultManifestDir(homeDir),
     homeDir,
-    backupRoot: path.join(homeDir, '.rigsync-backup')
+    backupRoot: path.join(homeDir, '.rigsync-backup'),
+    aptBaselinePath: defaultAptBaselinePath(homeDir)
   }
 }
 
@@ -82,6 +99,14 @@ export function resolveContext(
     typeof raw.backupRoot === 'string' && raw.backupRoot
       ? raw.backupRoot
       : path.join(homeDir, '.rigsync-backup')
+  const aptBaselinePath =
+    typeof raw.aptBaselinePath === 'string' && raw.aptBaselinePath
+      ? raw.aptBaselinePath
+      : defaultAptBaselinePath(homeDir)
+  const profile = typeof raw.profile === 'string' && raw.profile ? raw.profile : undefined
 
-  return { ctx: { machineId, role, manifestDir, homeDir, backupRoot }, firstRun: false }
+  return {
+    ctx: { machineId, role, manifestDir, homeDir, backupRoot, aptBaselinePath, profile },
+    firstRun: false
+  }
 }

@@ -20,7 +20,15 @@ describe('readIgnoreSet', () => {
       role: 'reference',
       manifestDir: path.join(root, 'manifest'),
       homeDir: path.join(root, 'home'),
-      backupRoot: path.join(root, 'home', '.rigsync-backup')
+      backupRoot: path.join(root, 'home', '.rigsync-backup'),
+      aptBaselinePath: path.join(
+        root,
+        'home',
+        '.local',
+        'share',
+        'rigsync-desktop',
+        'apt-baseline.txt'
+      )
     }
   })
 

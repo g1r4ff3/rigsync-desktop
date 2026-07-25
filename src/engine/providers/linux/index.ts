@@ -3,11 +3,20 @@
  * (FORWARD.md §3 확정 사항: "처음부터 capability + provider"). apt/snap/
  * flatpak은 P2a에서 채웠다 — dconf/systemd-user/cron은 이후 phase.
  */
+import type {
+  AssetResolver,
+  Downloader,
+  GearLeverProvider
+} from '../../capabilities/appimage/providerTypes'
 import type { CapabilityName } from '../../capabilities'
 import type { PackageProviders } from '../../capabilities/packages/providerTypes'
 import type { ElevationExec } from '../../elevation/execTypes'
 import { LinuxAptProvider } from './apt'
+import { DpkgSystemCheckProvider } from './dpkgSystemCheck'
+import { FetchDownloader } from './downloader'
 import { LinuxFlatpakProvider } from './flatpak'
+import { LinuxGearLeverProvider } from './gearlever'
+import { GithubAssetResolver } from './githubAssetResolver'
 import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
 
@@ -44,4 +53,19 @@ export const linuxPackageProviders: PackageProviders = {
 /** dev(실제 머신)에서 pkexec를 실제로 spawn하는 ElevationExec 구현. */
 export const linuxElevationExec: ElevationExec = new LinuxPkexecExec()
 
-export { LinuxAptProvider, LinuxFlatpakProvider, LinuxPkexecExec, LinuxSnapProvider }
+/** dev(실제 머신)에서 쓰는 appimage(T3) capability provider 묶음. */
+export const linuxGearLeverProvider: GearLeverProvider = new LinuxGearLeverProvider()
+export const linuxAssetResolver: AssetResolver = new GithubAssetResolver()
+export const linuxDownloader: Downloader = new FetchDownloader()
+export const linuxAppimageSystemCheck = new DpkgSystemCheckProvider()
+
+export {
+  DpkgSystemCheckProvider,
+  FetchDownloader,
+  GithubAssetResolver,
+  LinuxAptProvider,
+  LinuxFlatpakProvider,
+  LinuxGearLeverProvider,
+  LinuxPkexecExec,
+  LinuxSnapProvider
+}

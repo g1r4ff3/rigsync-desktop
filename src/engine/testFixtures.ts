@@ -16,6 +16,7 @@ import {
   writeCommonLayer,
   writeManifestFile,
   hostLayerPath,
+  profileLayerPath,
   type ManifestDocument
 } from './manifest'
 
@@ -26,7 +27,15 @@ export interface TestFixture {
   cleanup(): void
 }
 
-export function makeFixture(role: RigsyncContext['role'] = 'reference'): TestFixture {
+export interface MakeFixtureOptions {
+  /** P2c: 있으면 ctx.profile을 세팅해 common→profile→host 3단 병합을 테스트할 수 있다. */
+  readonly profile?: string
+}
+
+export function makeFixture(
+  role: RigsyncContext['role'] = 'reference',
+  options: MakeFixtureOptions = {}
+): TestFixture {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-desktop-test-'))
   const homeDir = path.join(root, 'home')
   const manifestDir = path.join(root, 'manifest')
@@ -37,7 +46,9 @@ export function makeFixture(role: RigsyncContext['role'] = 'reference'): TestFix
     role,
     manifestDir,
     homeDir,
-    backupRoot: path.join(homeDir, '.rigsync-backup')
+    backupRoot: path.join(homeDir, '.rigsync-backup'),
+    aptBaselinePath: path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'apt-baseline.txt'),
+    ...(options.profile ? { profile: options.profile } : {})
   }
 
   return {
@@ -68,4 +79,14 @@ export function writeIgnore(fixture: TestFixture, data: ManifestDocument, host =
   } else {
     writeCommonLayer(fixture.ctx, 'ignore', data)
   }
+}
+
+/** P2c: profiles/<profile>/<layer>.toml을 직접 써 넣는다 (3단 병합 테스트용). */
+export function writeProfileLayer(
+  fixture: TestFixture,
+  profile: string,
+  layer: string,
+  data: ManifestDocument
+): void {
+  writeManifestFile(profileLayerPath(fixture.ctx, profile, layer), data)
 }

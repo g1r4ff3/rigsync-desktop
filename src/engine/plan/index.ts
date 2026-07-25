@@ -39,6 +39,15 @@ export interface PlanAction {
    * 여전히 실행되지 않는다.
    */
   readonly privileged?: boolean
+  /**
+   * 설정돼 있으면(P2c) 이 액션은 confirm·dry-run과 무관하게 항상 `skipped`로만
+   * 보고되고 `run()`은 절대 호출되지 않는다 — "실행할 수는 있지만 이번 구현이
+   * 지원하지 않는" 경우를 정직하게 표시하는 용도(예: appimage의 GithubUpdater
+   * 외 소스는 diff엔 나타나지만 자동 설치는 미지원). `privileged`와 독립적인
+   * 별개의 스킵 사유다 — 이유는 다르지만 "실행 안 함, 사유 노출"이라는 처리
+   * 방식이 같아 같은 상태 어휘(`skipped`)를 공유한다.
+   */
+  readonly skipReason?: string
   run(): Promise<{ ok: boolean; detail: string }>
 }
 
@@ -121,6 +130,21 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
           detail
         })
         cancelled += 1
+        this.emit('action_done', { index, ok: false, error: detail })
+        continue
+      }
+
+      if (action.skipReason !== undefined) {
+        const detail = action.skipReason
+        this.emit('action_start', { index, total, desc: action.summary })
+        results.push({
+          capability: action.capability,
+          summary: action.summary,
+          commands: action.commands,
+          status: 'skipped',
+          detail
+        })
+        skipped += 1
         this.emit('action_done', { index, ok: false, error: detail })
         continue
       }

@@ -6,6 +6,7 @@
 export * as capabilities from './capabilities'
 export * as dotfiles from './capabilities/dotfiles'
 export * as packages from './capabilities/packages'
+export * as appimage from './capabilities/appimage'
 export * as manifest from './manifest'
 export * as plan from './plan'
 export * as safety from './safety'
