@@ -42,6 +42,7 @@ import { captureTools } from '../engine/capabilities/tools/capture'
 import { diffTools } from '../engine/capabilities/tools/diff'
 import { planTools } from '../engine/capabilities/tools/plan'
 import { resolveContext, type RigsyncContext } from '../engine/context'
+import { orderCombinedPlan } from './planOrder'
 import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
@@ -74,6 +75,7 @@ import {
   type CapturePackagesRequest,
   type CaptureRequest,
   type DoctorReportDto,
+  type DriftSummaryDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DuplicateWarningDto,
@@ -119,6 +121,15 @@ function getContext(): RigsyncContext {
   return resolved.ctx
 }
 
+/**
+ * P3: index.ts(스케줄러/트레이 배선)가 이 ipc.ts와 같은 캐시된 ctx를 쓰기
+ * 위한 통로 — 별도로 `resolveContext()`를 다시 호출하면 온보딩(P4) 후
+ * `refreshEngineContext()`가 갱신한 값과 어긋날 수 있다.
+ */
+export function getEngineContext(): RigsyncContext {
+  return resolved.ctx
+}
+
 function runTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-')
 }
@@ -143,16 +154,22 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     diffTools(ctx, toolsProvider),
     diffRepos(ctx)
   ])
-  return [
-    ...planDotfiles(ctx, dotfilesDiff, runTs),
-    ...planPackages(ctx, providers, packagesDiff, runTs),
-    ...planAppimage(ctx, gearLeverProvider, linuxAssetResolver, linuxDownloader, appimageDiff),
-    ...planSettings(ctx, dconfProvider, settingsDiff),
-    ...planServices(ctx, systemdUserProvider, servicesDiff, runTs),
-    ...planScheduled(ctx, cronProvider, scheduledDiff, runTs),
-    ...planTools(ctx, toolsProvider, toolsDiff),
-    ...planRepos(ctx, gitProvider, reposDiff)
-  ]
+  return orderCombinedPlan({
+    repos: planRepos(ctx, gitProvider, reposDiff),
+    dotfiles: planDotfiles(ctx, dotfilesDiff, runTs),
+    packages: planPackages(ctx, providers, packagesDiff, runTs),
+    appimage: planAppimage(
+      ctx,
+      gearLeverProvider,
+      linuxAssetResolver,
+      linuxDownloader,
+      appimageDiff
+    ),
+    settings: planSettings(ctx, dconfProvider, settingsDiff),
+    services: planServices(ctx, systemdUserProvider, servicesDiff, runTs),
+    scheduled: planScheduled(ctx, cronProvider, scheduledDiff, runTs),
+    tools: planTools(ctx, toolsProvider, toolsDiff)
+  })
 }
 
 // 현재 진행 중인 apply의 ApplyRunner -- engine:cancelApply가 신호를 보낼
@@ -160,7 +177,12 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
 // 클릭을 허용하지 않는 건 UI 쪽 책임)로 단순하게 모듈 변수 하나로 둔다.
 let currentApplyRunner: ApplyRunner | null = null
 
-export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): void {
+export function registerEngineIpc(
+  getMainWindow: () => BrowserWindow | null,
+  // P3: 스케줄러 인스턴스는 index.ts가 소유한다(트레이도 같이 참조해야 하므로
+  // main/scheduler.ts를 여기서 새로 만들지 않는다) — ipc.ts는 조회 콜백만 받는다.
+  getLastDriftCheck: () => DriftSummaryDto | null = () => null
+): void {
   ipcMain.handle(IPC_CHANNELS.engineGetStatus, async (): Promise<EngineStatus> => {
     const { ctx, firstRun } = resolved
     return { machineId: ctx.machineId, role: ctx.role, manifestDir: ctx.manifestDir, firstRun }
@@ -275,6 +297,13 @@ export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): vo
         linuxAppimageSystemCheck,
         { configConfigured: !resolved.firstRun }
       )
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineGetLastDriftCheck,
+    async (): Promise<DriftSummaryDto | null> => {
+      return getLastDriftCheck()
     }
   )
 

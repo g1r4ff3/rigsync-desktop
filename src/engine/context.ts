@@ -38,7 +38,16 @@ export interface RigsyncSettings {
   readonly repoExtra?: readonly string[]
   /** nvm 설치 스크립트 버전 핀 (기본 "v0.40.3" — 구 repo 기본값과 동일). */
   readonly nvmVersion?: string
+  /**
+   * P3: 트레이 상주 drift 체크 반복 간격(시간 단위). 기본
+   * `DEFAULT_DRIFT_CHECK_INTERVAL_HOURS`(6), 0이면 스케줄러 전체 비활성(첫
+   * 체크도 하지 않음 — "감시 끔" 의미로 해석; `main/scheduler.ts` 주석 참조).
+   */
+  readonly driftCheckIntervalHours?: number
 }
+
+/** P3 drift 체크 반복 간격 기본값 (시간) — config.toml에 없으면 이 값. */
+export const DEFAULT_DRIFT_CHECK_INTERVAL_HOURS = 6
 
 export interface RigsyncContext {
   readonly machineId: string
@@ -105,7 +114,10 @@ function readSettings(raw: Record<string, unknown>): RigsyncSettings {
     ...(strings(t.dconfPaths) ? { dconfPaths: strings(t.dconfPaths) } : {}),
     ...(strings(t.repoScanDirs) ? { repoScanDirs: strings(t.repoScanDirs) } : {}),
     ...(strings(t.repoExtra) ? { repoExtra: strings(t.repoExtra) } : {}),
-    ...(typeof t.nvmVersion === 'string' && t.nvmVersion ? { nvmVersion: t.nvmVersion } : {})
+    ...(typeof t.nvmVersion === 'string' && t.nvmVersion ? { nvmVersion: t.nvmVersion } : {}),
+    ...(typeof t.driftCheckIntervalHours === 'number' && Number.isFinite(t.driftCheckIntervalHours)
+      ? { driftCheckIntervalHours: t.driftCheckIntervalHours }
+      : {})
   }
 }
 
