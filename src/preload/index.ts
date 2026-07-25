@@ -13,6 +13,7 @@ import {
   type DoctorReportDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
+  type DriftSummaryDto,
   type DuplicateWarningDto,
   type EngineStatus,
   type IgnoreDoctorCheckRequest,
@@ -72,6 +73,14 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineGetDoctorReport),
   ignoreDoctorCheck: (request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineIgnoreDoctorCheck, request),
+  getLastDriftCheck: (): Promise<DriftSummaryDto | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineGetLastDriftCheck),
+  /** 트레이 알림 클릭 시 main -> renderer "Diff 탭으로 전환" push 구독. */
+  onFocusDiffTab: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.engineFocusDiffTab, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.engineFocusDiffTab, listener)
+  },
   detectDuplicates: (): Promise<DuplicateWarningDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDetectDuplicates),
   detectReclassifications: (): Promise<ReclassificationEventDto[]> =>

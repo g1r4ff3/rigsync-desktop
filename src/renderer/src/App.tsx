@@ -19,6 +19,11 @@ function App(): React.JSX.Element {
       )
   }, [])
 
+  // P3: 트레이 알림 클릭 -> main이 창을 보여준 뒤 이 push로 Diff 탭을 연다.
+  useEffect(() => {
+    return window.api.engine.onFocusDiffTab(() => setTab('diff'))
+  }, [])
+
   return (
     <div className="flex min-h-screen flex-col bg-background p-6 text-foreground">
       <header className="mb-4">

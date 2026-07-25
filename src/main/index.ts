@@ -1,10 +1,21 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Notification } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { registerEngineIpc } from './ipc'
+import { DEFAULT_DRIFT_CHECK_INTERVAL_HOURS } from '../engine/context'
+import type { DriftSummary } from '../engine/drift'
+import { runDriftCheck } from './driftCheck'
+import { getEngineContext, refreshEngineContext, registerEngineIpc } from './ipc'
+import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
+import { createAppTray, type AppTray } from './tray'
+import { IPC_CHANNELS } from '../shared/ipc'
 
 let mainWindow: BrowserWindow | null = null
+let scheduler: DriftCheckScheduler | null = null
+let tray: AppTray | null = null
+// 트레이 "종료"로만 실제 quit — 창 X 버튼은 hide로 가로챈다(P3 결정 ② — "창
+// 닫기 = 트레이로 숨김, 앱 종료 아님").
+let isQuitting = false
 
 function createWindow(): void {
   // Create the browser window.
@@ -29,6 +40,14 @@ function createWindow(): void {
     win.show()
   })
 
+  // P3 결정 ② — 창을 닫아도 앱은 종료되지 않고 트레이로 숨는다. 실제 종료는
+  // 트레이 메뉴 "종료"(app.quit() -> before-quit에서 isQuitting=true)로만.
+  win.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    win.hide()
+  })
+
   win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -41,6 +60,32 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+function showMainWindow(): void {
+  if (!mainWindow) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** 알림 클릭 시: 창을 보여주고 renderer에 "Diff 탭 열어라" push (P3 결정 ①). */
+function focusDiffTab(): void {
+  showMainWindow()
+  mainWindow?.webContents.send(IPC_CHANNELS.engineFocusDiffTab)
+}
+
+function notifyDrift(summary: DriftSummary): void {
+  if (!Notification.isSupported()) return
+  const notification = new Notification({
+    title: 'rigsync',
+    body: `main이 기준과 다름 — 항목 ${summary.total}개`
+  })
+  notification.on('click', focusDiffTab)
+  notification.show()
 }
 
 // This method will be called when Electron has finished
@@ -60,27 +105,64 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
+  // P3: 스케줄러 -- 판단(shouldNotify)은 engine/drift.ts, 여기는 실제
+  // read-only diff 호출(driftCheck.ts) + electron Notification 연결만.
+  scheduler = createDriftCheckScheduler({
+    runCheck: () => runDriftCheck(getEngineContext()),
+    notify: notifyDrift,
+    intervalHours:
+      getEngineContext().settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
+  })
+
   // 한 번만 등록 -- ipcMain.handle은 같은 채널 재등록 시 던진다. 창은
   // (macOS activate로) 다시 만들어질 수 있어 참조를 콜백으로 늦게 묶는다.
-  registerEngineIpc(() => mainWindow)
+  registerEngineIpc(
+    () => mainWindow,
+    () => scheduler?.getLastResult() ?? null
+  )
 
   createWindow()
+
+  // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". 아이콘은
+  // placeholder(design pass 예정, trayIcon.ts 주석 참조).
+  tray = createAppTray({
+    showWindow: showMainWindow,
+    runCheckNow: () => scheduler?.runNow() ?? Promise.resolve(),
+    quit: () => app.quit(),
+    getLastResult: () => scheduler?.getLastResult() ?? null
+  })
+
+  scheduler.start()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showMainWindow()
   })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+// P3: 창을 닫아도(hide) 프로세스가 살아있어야 트레이 상주가 의미 있으므로,
+// "창이 전부 닫히면 종료"라는 기존 규칙을 더 이상 쓰지 않는다 — 종료는
+// 트레이 메뉴로만.
+app.on('before-quit', () => {
+  isQuitting = true
+  scheduler?.stop()
+  tray?.destroy()
 })
+
+/** 온보딩 위저드(P4)가 config.toml을 새로 쓴 뒤 스케줄러 간격도 다시 읽어야 한다. */
+export function refreshSchedulerAfterOnboarding(): void {
+  refreshEngineContext()
+  const ctx = getEngineContext()
+  scheduler?.stop()
+  scheduler = createDriftCheckScheduler({
+    runCheck: () => runDriftCheck(getEngineContext()),
+    notify: notifyDrift,
+    intervalHours: ctx.settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
+  })
+  scheduler.start()
+}
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.

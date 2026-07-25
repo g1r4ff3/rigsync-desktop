@@ -33,6 +33,10 @@ export const IPC_CHANNELS = {
   engineCaptureRepos: 'engine:captureRepos',
   engineGetDoctorReport: 'engine:getDoctorReport',
   engineIgnoreDoctorCheck: 'engine:ignoreDoctorCheck',
+  // P3: 트레이 상주 drift 체크 — 스케줄러가 메모리에 든 마지막 결과 조회 +
+  // 트레이 알림 클릭 시 main -> renderer로 "Diff 탭으로 전환" push.
+  engineGetLastDriftCheck: 'engine:getLastDriftCheck',
+  engineFocusDiffTab: 'engine:focusDiffTab',
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
@@ -354,6 +358,17 @@ export interface DoctorReportDto {
 export interface IgnoreDoctorCheckRequest {
   readonly name: string
   readonly ignored: boolean
+}
+
+// ---------------------------------------------------------------------------
+// engine:getLastDriftCheck (P3 — 트레이 상주 스케줄러의 마지막 결과 조회)
+// ---------------------------------------------------------------------------
+
+export interface DriftSummaryDto {
+  readonly checkedAt: string
+  readonly total: number
+  readonly byCapability: Readonly<Record<string, number>>
+  readonly hash: string
 }
 
 // ---------------------------------------------------------------------------
