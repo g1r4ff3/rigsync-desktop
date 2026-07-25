@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { ActionButton } from '@/components/ActionButton'
+import { HelpPopover } from '@/components/HelpPopover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { buttonCopy, emptyStateCopy, helpCopy } from '../copy'
+import { StatusText } from '../status'
 import type { RigsyncConfigDto } from '../../../shared/ipc'
 
 /**
@@ -61,7 +65,7 @@ function SettingsView(): React.JSX.Element {
   }
 
   if (!loaded) {
-    return <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+    return <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
   }
 
   const roleChanged = role !== loaded.role
@@ -69,100 +73,143 @@ function SettingsView(): React.JSX.Element {
   const canSave = machineId.trim().length > 0 && manifestDir.trim().length > 0 && !saving
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <section className="space-y-1">
-        <label className="block text-xs font-medium text-neutral-300">머신 이름</label>
-        <input
-          className={inputClass}
-          value={machineId}
-          onChange={(e) => setMachineId(e.target.value)}
-        />
-      </section>
+    <div className="h-full overflow-y-auto pr-1">
+      <div className="mb-4">
+        <HelpPopover text={helpCopy.settings} />
+      </div>
 
-      <section className="space-y-1">
-        <label className="block text-xs font-medium text-neutral-300">역할 (role)</label>
-        <select
-          className={inputClass}
-          value={role}
-          onChange={(e) => setRole(e.target.value as 'reference' | 'follower')}
-        >
-          <option value="reference">reference — 이 머신에서 capture(저작)하고 commit+push</option>
-          <option value="follower">follower — pull+apply만 수신 (capture 비활성)</option>
-        </select>
-        {roleChanged && role === 'follower' && (
-          <p className="font-mono text-xs text-amber-400">
-            ⚠ reference → follower: 저장하면 이 머신에서 capture가 즉시 차단됩니다(follower는
-            pull+apply만 수신). follower UI 동작을 확인하려는 용도로도 쓸 수 있습니다.
+      <div className="mx-auto max-w-xl space-y-6">
+        <section className="space-y-1">
+          <label className="block text-xs font-medium text-foreground">Machine name</label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                className={inputClass}
+                value={machineId}
+                onChange={(e) => setMachineId(e.target.value)}
+              />
+            </TooltipTrigger>
+            <TooltipContent>이 머신을 구별하는 고유 이름 — hostname 중복에 주의</TooltipContent>
+          </Tooltip>
+        </section>
+
+        <section className="space-y-1">
+          <label className="block text-xs font-medium text-foreground">Role</label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <select
+                className={inputClass}
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'reference' | 'follower')}
+              >
+                <option value="reference">
+                  reference — 이 머신에서 capture(저작)하고 commit+push
+                </option>
+                <option value="follower">follower — pull+apply만 수신 (capture 비활성)</option>
+              </select>
+            </TooltipTrigger>
+            <TooltipContent>reference=저작 / follower=수신 전용 (단방향 배포)</TooltipContent>
+          </Tooltip>
+          {roleChanged && role === 'follower' && (
+            <StatusText kind="warn">
+              reference → follower: 저장하면 이 머신에서 capture가 즉시 차단됩니다(follower는
+              pull+apply만 수신). follower UI 동작을 확인하려는 용도로도 쓸 수 있습니다.
+            </StatusText>
+          )}
+          {roleChanged && role === 'reference' && (
+            <StatusText kind="warn">
+              follower → reference: 저장하면 이 머신이 manifest에 대한 저작 권한을 갖습니다 —
+              이제부터 capture 결과가 commit+push됩니다.
+            </StatusText>
+          )}
+        </section>
+
+        <section className="space-y-1">
+          <label className="block text-xs font-medium text-foreground">Manifest path</label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                className={inputClass}
+                value={manifestDir}
+                onChange={(e) => setManifestDir(e.target.value)}
+              />
+            </TooltipTrigger>
+            <TooltipContent>여러 머신이 공유하는 manifest 저장소 경로</TooltipContent>
+          </Tooltip>
+          <p className="text-xs text-muted-foreground">
+            경로만 바뀌며 기존 데이터를 새 경로로 옮기지 않습니다 — 직접 이동/복사해야 합니다.
           </p>
-        )}
-        {roleChanged && role === 'reference' && (
-          <p className="font-mono text-xs text-amber-400">
-            ⚠ follower → reference: 저장하면 이 머신이 manifest에 대한 저작 권한을 갖습니다 —
-            이제부터 capture 결과가 commit+push됩니다.
-          </p>
-        )}
-      </section>
+          {manifestDirChanged && (
+            <StatusText kind="warn">
+              저장하면 이 머신은 새 경로를 manifest로 사용합니다. 그 경로에 아직 유효한 manifest가
+              없으면 capture 전까지는 빈 상태로 보일 수 있습니다.
+            </StatusText>
+          )}
+        </section>
 
-      <section className="space-y-1">
-        <label className="block text-xs font-medium text-neutral-300">manifest 저장소 경로</label>
-        <input
-          className={inputClass}
-          value={manifestDir}
-          onChange={(e) => setManifestDir(e.target.value)}
+        <section className="space-y-1">
+          <label className="block text-xs font-medium text-foreground">Profile (optional)</label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                className={inputClass}
+                value={profile}
+                onChange={(e) => setProfile(e.target.value)}
+                placeholder="비워두면 common→host 2단 병합"
+              />
+            </TooltipTrigger>
+            <TooltipContent>있으면 common→profile→host 3단 병합으로 전환</TooltipContent>
+          </Tooltip>
+        </section>
+
+        <section className="space-y-1">
+          <label className="block text-xs font-medium text-foreground">
+            Drift check interval (hours, 0 = off)
+          </label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                type="number"
+                min={0}
+                className={inputClass}
+                value={driftCheckIntervalHours}
+                onChange={(e) =>
+                  setDriftCheckIntervalHours(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            </TooltipTrigger>
+            <TooltipContent>0으로 두면 트레이 상주 drift 감시가 완전히 꺼집니다</TooltipContent>
+          </Tooltip>
+        </section>
+
+        <section>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <label className="flex items-center gap-2 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={autostartEnabled}
+                  onChange={(e) => setAutostartEnabled(e.target.checked)}
+                />
+                Start on login (tray)
+              </label>
+            </TooltipTrigger>
+            <TooltipContent>로그인 시 트레이 상주 상태로 자동 시작합니다</TooltipContent>
+          </Tooltip>
+        </section>
+
+        {error && <StatusText kind="error">{error}</StatusText>}
+        {saved && !error && <StatusText kind="ok">저장됨 — 즉시 반영됩니다.</StatusText>}
+
+        <ActionButton
+          label={buttonCopy.saveSettings.label}
+          subtitle={buttonCopy.saveSettings.subtitle}
+          disabledReason={buttonCopy.saveSettingsDisabled}
+          busy={saving}
+          disabled={!canSave}
+          onClick={handleSave}
         />
-        <p className="font-mono text-xs text-neutral-500">
-          경로만 바뀌며 기존 데이터를 새 경로로 옮기지 않습니다 — 직접 이동/복사해야 합니다.
-        </p>
-        {manifestDirChanged && (
-          <p className="font-mono text-xs text-amber-400">
-            ⚠ 저장하면 이 머신은 새 경로를 manifest로 사용합니다. 그 경로에 아직 유효한 manifest가
-            없으면 capture 전까지는 빈 상태로 보일 수 있습니다.
-          </p>
-        )}
-      </section>
-
-      <section className="space-y-1">
-        <label className="block text-xs font-medium text-neutral-300">profile (선택)</label>
-        <input
-          className={inputClass}
-          value={profile}
-          onChange={(e) => setProfile(e.target.value)}
-          placeholder="비워두면 common→host 2단 병합"
-        />
-      </section>
-
-      <section className="space-y-1">
-        <label className="block text-xs font-medium text-neutral-300">
-          drift 체크 반복 간격 (시간, 0=끔)
-        </label>
-        <input
-          type="number"
-          min={0}
-          className={inputClass}
-          value={driftCheckIntervalHours}
-          onChange={(e) => setDriftCheckIntervalHours(Math.max(0, Number(e.target.value) || 0))}
-        />
-      </section>
-
-      <section>
-        <label className="flex items-center gap-2 font-mono text-xs text-neutral-300">
-          <input
-            type="checkbox"
-            checked={autostartEnabled}
-            onChange={(e) => setAutostartEnabled(e.target.checked)}
-          />
-          로그인 시 자동 시작 (트레이 상주)
-        </label>
-      </section>
-
-      {error && <p className="font-mono text-xs text-red-400">error: {error}</p>}
-      {saved && !error && (
-        <p className="font-mono text-xs text-green-400">저장됨 — 즉시 반영됩니다.</p>
-      )}
-
-      <Button disabled={!canSave} onClick={handleSave}>
-        {saving ? '저장 중…' : '저장'}
-      </Button>
+      </div>
     </div>
   )
 }

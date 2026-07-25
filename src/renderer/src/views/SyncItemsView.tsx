@@ -1,6 +1,10 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { HelpPopover } from '@/components/HelpPopover'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { emptyStateCopy, helpCopy } from '../copy'
+import { StatusText } from '../status'
 import type { SyncItemGroupDto } from '../../../shared/ipc'
 
 /**
@@ -16,6 +20,12 @@ import type { SyncItemGroupDto } from '../../../shared/ipc'
  * 하고, 반드시 배치 IPC(`toggleIgnoreBulk`) 하나로 처리한다 — 항목별 루프로
  * 얹으면 자동 commit+push가 항목 수만큼 쌓이는 커밋 폭탄이 된다(main/ipc.ts
  * 주석 참조).
+ *
+ * R4 스코프 결정: 개별 항목 스위치(수백 개까지 가는 가상 스크롤 목록)는
+ * shadcn Tooltip을 안 쓰고 네이티브 `title` 속성만 쓴다 — 행마다 Radix
+ * Portal을 띄우면 가상 스크롤 성능이 떨어지고, 항목 각각의 설명이 라벨
+ * 자체로 이미 자명하다(이름 그대로). 구조적 컨트롤(검색창·그룹 체크박스)에는
+ * 전부 shadcn Tooltip을 붙인다.
  */
 
 type GroupToggleState = 'all-synced' | 'all-ignored' | 'mixed'
@@ -26,6 +36,7 @@ type Row =
       readonly key: string
       readonly title: string
       readonly capability: SyncItemGroupDto['capability']
+      readonly detectionOnly: boolean
       readonly groupState: GroupToggleState
       /** 그룹 전체 항목의 key 목록(검색 필터와 무관 — 그룹 토글은 항상 전체 대상). */
       readonly allItemKeys: readonly string[]
@@ -48,6 +59,13 @@ function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
   return 'mixed'
 }
 
+function groupCheckboxLabel(state: GroupToggleState): string {
+  if (state === 'all-synced') return '전체 동기화 대상 — 클릭하면 그룹 전체를 ignore 처리합니다'
+  if (state === 'all-ignored')
+    return '전체 ignore됨 — 클릭하면 그룹 전체를 동기화 대상으로 되돌립니다'
+  return '일부만 ignore됨(혼합) — 클릭하면 그룹 전체를 동기화 대상으로 되돌립니다'
+}
+
 /** 네이티브 checkbox는 `indeterminate`를 prop이 아니라 DOM 속성으로만 지원한다. */
 function GroupCheckbox({
   state,
@@ -59,23 +77,21 @@ function GroupCheckbox({
   readonly onClick: () => void
 }): React.JSX.Element {
   return (
-    <input
-      type="checkbox"
-      checked={state === 'all-synced'}
-      disabled={disabled}
-      ref={(el) => {
-        if (el) el.indeterminate = state === 'mixed'
-      }}
-      onChange={onClick}
-      title={
-        state === 'all-synced'
-          ? '전체 동기화 대상 — 클릭하면 그룹 전체를 ignore'
-          : state === 'all-ignored'
-            ? '전체 ignore됨 — 클릭하면 그룹 전체를 동기화 대상으로'
-            : '일부만 ignore됨(혼합) — 클릭하면 그룹 전체를 동기화 대상으로'
-      }
-      aria-label="그룹 전체 토글"
-    />
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <input
+          type="checkbox"
+          checked={state === 'all-synced'}
+          disabled={disabled}
+          ref={(el) => {
+            if (el) el.indeterminate = state === 'mixed'
+          }}
+          onChange={onClick}
+          aria-label="그룹 전체 토글"
+        />
+      </TooltipTrigger>
+      <TooltipContent>{groupCheckboxLabel(state)}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -106,6 +122,7 @@ function SyncItemsView(): React.JSX.Element {
         key: `h:${group.capability}`,
         title: `${group.title} (${items.length})`,
         capability: group.capability,
+        detectionOnly: !!group.detectionOnly,
         // 그룹 토글은 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
         groupState: computeGroupState(group.items),
         allItemKeys: group.items.map((i) => i.key)
@@ -176,20 +193,28 @@ function SyncItemsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="검색…"
-        className="rounded border border-border bg-transparent px-2 py-1.5 font-mono text-xs text-foreground outline-none placeholder:text-neutral-600"
-      />
+      <div className="flex items-center gap-2">
+        <HelpPopover text={helpCopy.items} />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search…"
+              className="flex-1 rounded border border-border bg-transparent px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </TooltipTrigger>
+          <TooltipContent>이름으로 항목 필터링(그룹 전체 토글에는 영향 없음)</TooltipContent>
+        </Tooltip>
+      </div>
 
-      {error && <p className="font-mono text-xs text-red-400">error: {error}</p>}
+      {error && <StatusText kind="error">{error}</StatusText>}
 
       {groups === null ? (
-        <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
       ) : rows.length === 0 ? (
-        <p className="font-mono text-xs text-neutral-500">
-          {query ? '검색 결과 없음' : '동기화 대상 항목이 없습니다.'}
+        <p className="text-xs text-muted-foreground">
+          {query ? emptyStateCopy.noSearchResults : emptyStateCopy.noCandidates}
         </p>
       ) : (
         <div ref={parentRef} className="flex-1 overflow-y-auto rounded border border-border">
@@ -209,7 +234,7 @@ function SyncItemsView(): React.JSX.Element {
                   }}
                   className={
                     row.kind === 'header'
-                      ? 'flex items-center gap-2 bg-secondary px-2 font-mono text-xs font-semibold text-secondary-foreground'
+                      ? 'flex items-center gap-2 bg-secondary px-2 text-xs font-semibold text-secondary-foreground'
                       : 'flex items-center justify-between border-t border-border px-2 font-mono text-xs'
                   }
                 >
@@ -220,14 +245,24 @@ function SyncItemsView(): React.JSX.Element {
                         disabled={!!pendingGroups[row.capability]}
                         onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
                       />
-                      {row.title}
+                      <span>{row.title}</span>
+                      {row.detectionOnly && (
+                        <span className="text-status-muted">— detection-only</span>
+                      )}
                     </>
                   ) : (
                     <>
-                      <span className={row.managed ? 'text-foreground' : 'text-neutral-500'}>
+                      <span
+                        className={row.managed ? 'text-foreground' : 'text-muted-foreground'}
+                        title={
+                          row.managed
+                            ? '관리 중 — manifest에 기록됨'
+                            : '미관리 후보 — 아직 manifest에 없음'
+                        }
+                      >
                         {row.label}
                         {!row.managed && (
-                          <span className="ml-2 text-neutral-600">(미관리 후보)</span>
+                          <span className="ml-2 text-status-muted">(candidate)</span>
                         )}
                       </span>
                       <Switch
@@ -235,6 +270,11 @@ function SyncItemsView(): React.JSX.Element {
                         disabled={pendingKeys[row.key]}
                         onCheckedChange={(checked) => toggle(row.capability, row.itemKey, checked)}
                         aria-label={`${row.label} ignore 토글`}
+                        title={
+                          row.ignored
+                            ? '무시됨 — 클릭하면 동기화 대상으로'
+                            : '동기화 대상 — 클릭하면 무시'
+                        }
                       />
                     </>
                   )}

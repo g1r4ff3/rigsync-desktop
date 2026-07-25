@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ActionButton } from '@/components/ActionButton'
+import { HelpPopover } from '@/components/HelpPopover'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -8,6 +10,11 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { buttonCopy, emptyStateCopy, helpCopy, sectionCopy } from '../copy'
+import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
+import { StatusIcon, StatusText } from '../status'
+import { planActionStatusKind, type StatusKind } from '../statusKind'
 import type {
   ApplyResponse,
   AppimageDiffReportDto,
@@ -36,14 +43,6 @@ function statusLabel(
   if (finalResults) return finalResults[index]?.status ?? '?'
   if (live[index]?.running) return 'running'
   return preview?.results[index]?.status ?? '?'
-}
-
-function statusColor(status: string): string {
-  if (status === 'ok') return 'text-green-400'
-  if (status === 'failed' || status === 'refused') return 'text-red-400'
-  if (status === 'skipped') return 'text-amber-500'
-  if (status === 'running') return 'text-amber-400'
-  return 'text-neutral-500'
 }
 
 // snap은 P2c에서 동기화 plan/apply 대상에서 빠졌다(정책 §7 비목표) — diff는
@@ -90,6 +89,60 @@ function hasToolsDrift(tools: ToolsDiffReportDto | null): boolean {
 function hasReposDrift(repos: ReposDiffReportDto | null): boolean {
   if (!repos) return false
   return repos.toClone.length > 0 || repos.manualNoUrl.length > 0
+}
+
+/** 화면 전체가 이 하나의 섹션 틀을 공유한다 — 제목·한 줄 설명·로딩/빈/목록 3단 상태. */
+function DriftSection({
+  title,
+  description,
+  loading,
+  empty,
+  children
+}: {
+  readonly title: string
+  readonly description: string
+  readonly loading: boolean
+  readonly empty: boolean
+  readonly children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <section className="mt-5 first:mt-0">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      <p className="mb-1.5 text-xs text-muted-foreground">{description}</p>
+      {loading ? (
+        <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
+      ) : empty ? (
+        <StatusText kind="ok">기준과 일치</StatusText>
+      ) : (
+        <ul className="space-y-1">{children}</ul>
+      )}
+    </section>
+  )
+}
+
+function DriftRow({
+  kind,
+  children
+}: {
+  readonly kind: StatusKind
+  readonly children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <li className="flex items-center gap-1.5 font-mono text-xs">
+      <StatusIcon kind={kind} />
+      <span
+        className={
+          kind === 'error'
+            ? 'text-status-error'
+            : kind === 'warn'
+              ? 'text-status-warn'
+              : 'text-muted-foreground'
+        }
+      >
+        {children}
+      </span>
+    </li>
+  )
 }
 
 interface DiffViewProps {
@@ -281,6 +334,16 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     }
   }
 
+  // R4: 스크린샷 하네스가 Apply 다이얼로그를 열어야 할 때(App.tsx가 window
+  // CustomEvent로 다시 뿌린다 -- 자세한 이유는 App.tsx 주석).
+  useEffect(() => {
+    const listener = (): void => {
+      void openApplyPreview()
+    }
+    window.addEventListener(SCREENSHOT_GOTO_EVENT, listener)
+    return () => window.removeEventListener(SCREENSHOT_GOTO_EVENT, listener)
+  }, [])
+
   // Apply 흐름 2단계: 사용자가 다이얼로그에서 확인을 누르면 실제로 실행하고,
   // engine:planEvent 구독으로 행마다 실시간 진행을 표시한다. privileged
   // 액션은 pkexec 1회 인증으로 스크립트 하나가 실행되고(P2b), 그 진행도 같은
@@ -319,305 +382,288 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-end gap-2">
-        <Button
-          variant="secondary"
-          disabled={busy || status?.role === 'follower'}
-          title={
-            status?.role === 'follower'
-              ? 'follower 머신은 capture가 차단됩니다 (reference/follower 단방향 배포, 불변식 ⑦)'
-              : undefined
-          }
-          onClick={handleCapture}
-        >
-          Capture
-        </Button>
-        <Button disabled={busy || !hasDrift} onClick={openApplyPreview}>
-          Apply
-        </Button>
+    <div className="h-full overflow-y-auto pr-1">
+      <div className="mb-4 flex items-start justify-between gap-2">
+        <HelpPopover text={helpCopy.diff} />
+        <div className="flex items-start gap-3">
+          <ActionButton
+            variant="secondary"
+            label={buttonCopy.capture.label}
+            subtitle={buttonCopy.capture.subtitle}
+            disabledReason={buttonCopy.captureDisabledFollower}
+            busy={busy}
+            disabled={busy || status?.role === 'follower'}
+            onClick={handleCapture}
+          />
+          <ActionButton
+            label={buttonCopy.apply.label}
+            subtitle={buttonCopy.apply.subtitle}
+            disabledReason={buttonCopy.applyDisabledNoDrift}
+            busy={busy}
+            disabled={busy || !hasDrift}
+            onClick={openApplyPreview}
+          />
+        </div>
       </div>
 
       {status?.role === 'follower' && (
-        <p className="mb-4 font-mono text-xs text-amber-400">
+        <StatusText kind="muted" className="mb-4">
           이 머신은 follower입니다 — capture는 reference 전용이라 비활성화되어 있습니다.
+        </StatusText>
+      )}
+
+      {error && (
+        <StatusText kind="error" className="mb-4">
+          {error}
+        </StatusText>
+      )}
+
+      <DriftSection
+        title="Dotfiles"
+        description={sectionCopy.dotfiles}
+        loading={!dotfilesDiff}
+        empty={
+          !!dotfilesDiff &&
+          dotfilesDiff.toLink.length === 0 &&
+          dotfilesDiff.contentChanged.length === 0 &&
+          dotfilesDiff.invalidStore.length === 0
+        }
+      >
+        {dotfilesDiff?.toLink.map((home) => (
+          <DriftRow key={`link-${home}`} kind="warn">
+            [to-link] {home}
+          </DriftRow>
+        ))}
+        {dotfilesDiff?.contentChanged.map((item) => (
+          <DriftRow key={`changed-${item}`} kind="warn">
+            [content-changed] {item}
+          </DriftRow>
+        ))}
+        {dotfilesDiff?.invalidStore.map((home) => (
+          <DriftRow key={`invalid-${home}`} kind="error">
+            [invalid-store] {home}
+          </DriftRow>
+        ))}
+      </DriftSection>
+
+      <DriftSection
+        title="Packages"
+        description={sectionCopy.packages}
+        loading={!packagesDiff}
+        empty={!!packagesDiff && !hasPackagesDrift(packagesDiff)}
+      >
+        {packagesDiff?.apt.toInstall.map((name) => (
+          <DriftRow key={`apt-install-${name}`} kind="warn">
+            [apt to-install] {name}
+          </DriftRow>
+        ))}
+        {packagesDiff?.apt.sourcesMissing.map((name) => (
+          <DriftRow key={`apt-src-missing-${name}`} kind="error">
+            [apt source missing] {name}
+          </DriftRow>
+        ))}
+        {packagesDiff?.apt.sourcesContentChanged.map((name) => (
+          <DriftRow key={`apt-src-changed-${name}`} kind="warn">
+            [apt source changed] {name}
+          </DriftRow>
+        ))}
+        {packagesDiff?.flatpak.toAddRemotes.map((r) => (
+          <DriftRow key={`flatpak-remote-${r.name}`} kind="warn">
+            [flatpak remote to-add] {r.name}
+          </DriftRow>
+        ))}
+        {packagesDiff?.flatpak.toInstall.map((a) => (
+          <DriftRow key={`flatpak-install-${a.application}`} kind="warn">
+            [flatpak to-install] {a.application}
+          </DriftRow>
+        ))}
+      </DriftSection>
+
+      <DriftSection
+        title="AppImage"
+        description={sectionCopy.appimage}
+        loading={!appimageDiff}
+        empty={!!appimageDiff && !hasAppimageDrift(appimageDiff)}
+      >
+        {appimageDiff?.toInstall.map((name) => (
+          <DriftRow key={`appimage-install-${name}`} kind="warn">
+            [appimage to-install] {name}
+          </DriftRow>
+        ))}
+        {appimageDiff?.pinMismatch.map((m) => (
+          <DriftRow key={`appimage-pin-${m.name}`} kind="warn">
+            [appimage pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installed})
+          </DriftRow>
+        ))}
+      </DriftSection>
+      {appimageDiff && appimageDiff.unsupportedSource.length > 0 && (
+        <p className="-mt-3 text-xs text-muted-foreground">
+          미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
         </p>
       )}
 
-      {error && <p className="mb-4 font-mono text-xs text-red-400">error: {error}</p>}
+      <DriftSection
+        title="Settings (dconf)"
+        description={sectionCopy.settings}
+        loading={!settingsDiff}
+        empty={!!settingsDiff && !hasSettingsDrift(settingsDiff)}
+      >
+        {settingsDiff?.contentChanged.map((p) => (
+          <DriftRow key={`settings-${p}`} kind="warn">
+            [content-changed] {p}
+          </DriftRow>
+        ))}
+      </DriftSection>
 
-      <section className="mb-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">dotfiles</h2>
-        {!dotfilesDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : dotfilesDiff.toLink.length === 0 &&
-          dotfilesDiff.contentChanged.length === 0 &&
-          dotfilesDiff.invalidStore.length === 0 ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {dotfilesDiff.toLink.map((home) => (
-              <li key={`link-${home}`} className="text-amber-400">
-                [to-link] {home}
-              </li>
-            ))}
-            {dotfilesDiff.contentChanged.map((item) => (
-              <li key={`changed-${item}`} className="text-amber-400">
-                [content-changed] {item}
-              </li>
-            ))}
-            {dotfilesDiff.invalidStore.map((home) => (
-              <li key={`invalid-${home}`} className="text-red-400">
-                [invalid-store] {home}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <DriftSection
+        title="Services (systemd --user)"
+        description={sectionCopy.services}
+        loading={!servicesDiff}
+        empty={!!servicesDiff && !hasServicesDrift(servicesDiff)}
+      >
+        {servicesDiff?.missing.map((name) => (
+          <DriftRow key={`svc-missing-${name}`} kind="error">
+            [missing] {name}
+          </DriftRow>
+        ))}
+        {servicesDiff?.contentChanged.map((name) => (
+          <DriftRow key={`svc-changed-${name}`} kind="warn">
+            [content-changed] {name}
+          </DriftRow>
+        ))}
+        {servicesDiff?.enabledMismatch.map((name) => (
+          <DriftRow key={`svc-enabled-${name}`} kind="warn">
+            [enabled mismatch] {name}
+          </DriftRow>
+        ))}
+      </DriftSection>
 
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">packages</h2>
-        {!packagesDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasPackagesDrift(packagesDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {packagesDiff.apt.toInstall.map((name) => (
-              <li key={`apt-install-${name}`} className="text-amber-400">
-                [apt to-install] {name}
-              </li>
-            ))}
-            {packagesDiff.apt.sourcesMissing.map((name) => (
-              <li key={`apt-src-missing-${name}`} className="text-red-400">
-                [apt source missing] {name}
-              </li>
-            ))}
-            {packagesDiff.apt.sourcesContentChanged.map((name) => (
-              <li key={`apt-src-changed-${name}`} className="text-amber-400">
-                [apt source changed] {name}
-              </li>
-            ))}
-            {packagesDiff.flatpak.toAddRemotes.map((r) => (
-              <li key={`flatpak-remote-${r.name}`} className="text-amber-400">
-                [flatpak remote to-add] {r.name}
-              </li>
-            ))}
-            {packagesDiff.flatpak.toInstall.map((a) => (
-              <li key={`flatpak-install-${a.application}`} className="text-amber-400">
-                [flatpak to-install] {a.application}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <DriftSection
+        title="Scheduled (cron)"
+        description={sectionCopy.scheduled}
+        loading={!scheduledDiff}
+        empty={!!scheduledDiff && !hasScheduledDrift(scheduledDiff)}
+      >
+        {scheduledDiff?.lineDiff.added.map((line) => (
+          <DriftRow key={`cron-add-${line}`} kind="warn">
+            [+] {line}
+          </DriftRow>
+        ))}
+        {scheduledDiff?.lineDiff.removed.map((line) => (
+          <DriftRow key={`cron-remove-${line}`} kind="error">
+            [-] {line}
+          </DriftRow>
+        ))}
+      </DriftSection>
 
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">appimage</h2>
-        {!appimageDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasAppimageDrift(appimageDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {appimageDiff.toInstall.map((name) => (
-              <li key={`appimage-install-${name}`} className="text-amber-400">
-                [appimage to-install] {name}
-              </li>
-            ))}
-            {appimageDiff.pinMismatch.map((m) => (
-              <li key={`appimage-pin-${m.name}`} className="text-amber-400">
-                [appimage pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installed})
-              </li>
-            ))}
-          </ul>
+      <DriftSection
+        title="Tools (nvm/node/npm)"
+        description={sectionCopy.tools}
+        loading={!toolsDiff}
+        empty={!!toolsDiff && !hasToolsDrift(toolsDiff)}
+      >
+        {toolsDiff?.nodeToInstall && (
+          <DriftRow kind="warn">[node to-install] {toolsDiff.nodeToInstall}</DriftRow>
         )}
-        {appimageDiff && appimageDiff.unsupportedSource.length > 0 && (
-          <p className="mt-1 font-mono text-xs text-neutral-500">
-            미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
-          </p>
-        )}
-      </section>
+        {toolsDiff?.toInstall.map((pkg) => (
+          <DriftRow key={`tools-install-${pkg}`} kind="warn">
+            [npm -g to-install] {pkg}
+          </DriftRow>
+        ))}
+      </DriftSection>
 
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">settings (dconf)</h2>
-        {!settingsDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasSettingsDrift(settingsDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {settingsDiff.contentChanged.map((p) => (
-              <li key={`settings-${p}`} className="text-amber-400">
-                [content-changed] {p}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">services (systemd --user)</h2>
-        {!servicesDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasServicesDrift(servicesDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {servicesDiff.missing.map((name) => (
-              <li key={`svc-missing-${name}`} className="text-red-400">
-                [missing] {name}
-              </li>
-            ))}
-            {servicesDiff.contentChanged.map((name) => (
-              <li key={`svc-changed-${name}`} className="text-amber-400">
-                [content-changed] {name}
-              </li>
-            ))}
-            {servicesDiff.enabledMismatch.map((name) => (
-              <li key={`svc-enabled-${name}`} className="text-amber-400">
-                [enabled mismatch] {name}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">scheduled (cron)</h2>
-        {!scheduledDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasScheduledDrift(scheduledDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {scheduledDiff.lineDiff.added.map((line) => (
-              <li key={`cron-add-${line}`} className="text-amber-400">
-                [+] {line}
-              </li>
-            ))}
-            {scheduledDiff.lineDiff.removed.map((line) => (
-              <li key={`cron-remove-${line}`} className="text-red-400">
-                [-] {line}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">tools (nvm/node/npm)</h2>
-        {!toolsDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasToolsDrift(toolsDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {toolsDiff.nodeToInstall && (
-              <li className="text-amber-400">[node to-install] {toolsDiff.nodeToInstall}</li>
-            )}
-            {toolsDiff.toInstall.map((pkg) => (
-              <li key={`tools-install-${pkg}`} className="text-amber-400">
-                [npm -g to-install] {pkg}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">repos (git)</h2>
-        {!reposDiff ? (
-          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
-        ) : !hasReposDrift(reposDiff) ? (
-          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
-        ) : (
-          <ul className="space-y-1 font-mono text-xs">
-            {reposDiff.toClone.map((r) => (
-              <li key={`repos-clone-${r.path}`} className="text-amber-400">
-                [to-clone] {r.path} ({r.url})
-              </li>
-            ))}
-            {reposDiff.manualNoUrl.map((p) => (
-              <li key={`repos-manual-${p}`} className="text-neutral-500">
-                [manual, no url] {p}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <DriftSection
+        title="Repos (git)"
+        description={sectionCopy.repos}
+        loading={!reposDiff}
+        empty={!!reposDiff && !hasReposDrift(reposDiff)}
+      >
+        {reposDiff?.toClone.map((r) => (
+          <DriftRow key={`repos-clone-${r.path}`} kind="warn">
+            [to-clone] {r.path} ({r.url})
+          </DriftRow>
+        ))}
+        {reposDiff?.manualNoUrl.map((p) => (
+          <DriftRow key={`repos-manual-${p}`} kind="muted">
+            [manual, no url] {p}
+          </DriftRow>
+        ))}
+      </DriftSection>
 
       {duplicates.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-sm font-medium text-neutral-300">중복 설치 경고 (INV-1)</h2>
-          <ul className="space-y-1 font-mono text-xs">
-            {duplicates.map((d) => (
-              <li key={d.name} className={d.ignored ? 'text-neutral-600' : 'text-red-400'}>
-                {d.name}: {d.layers.map((l) => `${l.capability}(${l.label})`).join(' + ')}
-                {d.ignored ? ' — 무시됨' : ''}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <DriftSection
+          title="Duplicate installs (INV-1)"
+          description={sectionCopy.duplicates}
+          loading={false}
+          empty={false}
+        >
+          {duplicates.map((d) => (
+            <DriftRow key={d.name} kind={d.ignored ? 'muted' : 'error'}>
+              {d.name}: {d.layers.map((l) => `${l.capability}(${l.label})`).join(' + ')}
+              {d.ignored ? ' — 무시됨' : ''}
+            </DriftRow>
+          ))}
+        </DriftSection>
       )}
 
       {reclassifications.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-sm font-medium text-neutral-300">계층 재분류 감지</h2>
-          <ul className="space-y-1 font-mono text-xs text-amber-400">
-            {reclassifications.map((r) => (
-              <li key={r.name}>
-                {r.name}: manifest={r.manifestedIn} → 실제={r.foundIn}
-                {status?.role === 'follower'
-                  ? ' — reference에서 매니페스트를 갱신하세요'
-                  : ' — 매니페스트 갱신을 검토하세요 (자동 갱신 없음)'}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <DriftSection
+          title="Reclassifications"
+          description={sectionCopy.reclassifications}
+          loading={false}
+          empty={false}
+        >
+          {reclassifications.map((r) => (
+            <DriftRow key={r.name} kind="warn">
+              {r.name}: manifest={r.manifestedIn} → 실제={r.foundIn}
+              {status?.role === 'follower'
+                ? ' — reference에서 매니페스트를 갱신하세요'
+                : ' — 매니페스트 갱신을 검토하세요 (자동 갱신 없음)'}
+            </DriftRow>
+          ))}
+        </DriftSection>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Apply 계획 확인</DialogTitle>
-            <DialogDescription>
-              일반 작업은 바로 실행되고, 관리자 권한이 필요한 작업은 아래 스크립트 하나로 묶여
-              시스템 인증(polkit) 1회로 실행됩니다 (덮어쓰기 전 자동 백업됨).
-              <code className="text-amber-500"> skipped</code>로 표시되면 pkexec가 없거나 인증이
-              거부된 것 — 표시된 명령을 터미널에서 직접 실행하세요.
-            </DialogDescription>
+            <DialogTitle>Apply plan</DialogTitle>
+            <DialogDescription>{helpCopy.applyDialog}</DialogDescription>
           </DialogHeader>
 
           {preview?.sudoScriptPreview && (
-            <div className="rounded border border-amber-900 bg-neutral-950 p-2">
-              <p className="mb-1 font-mono text-xs text-amber-500">
+            <div className="rounded border border-border bg-muted p-2">
+              <p className="mb-1 text-xs text-status-warn">
                 관리자 권한 스크립트 (polkit 1회 인증으로 실행)
               </p>
-              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-neutral-300">
+              <pre className="max-h-48 overflow-y-auto font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground">
                 {preview.sudoScriptPreview}
               </pre>
             </div>
           )}
 
-          <ul className="space-y-3 font-mono text-xs">
+          <ul className="space-y-3">
             {preview?.results.map((action, index) => {
               const rowState = finalResults?.[index]
               const liveRow = live[index]
               const label = statusLabel(index, preview, finalResults, live)
+              const kind = planActionStatusKind(label as Parameters<typeof planActionStatusKind>[0])
               return (
                 <li key={`${action.summary}-${index}`} className="rounded border border-border p-2">
-                  <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                     <span>{action.summary}</span>
-                    <span className={statusColor(label)}>{label}</span>
+                    <StatusText kind={kind}>{label}</StatusText>
                   </div>
                   {action.commands.map((cmd, cmdIndex) => (
-                    <div key={cmdIndex} className="text-neutral-400">
+                    <div
+                      key={cmdIndex}
+                      className="font-mono text-xs break-all text-muted-foreground"
+                    >
                       $ {cmd}
                     </div>
                   ))}
                   {(rowState?.detail ?? liveRow?.error) && (
-                    <div className="mt-1 text-neutral-500">
+                    <div className="mt-1 font-mono text-xs text-muted-foreground">
                       {rowState?.detail ?? liveRow?.error}
                     </div>
                   )}
@@ -628,16 +674,39 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
 
           <DialogFooter>
             {applying && (
-              <Button variant="secondary" onClick={cancelApply}>
-                취소
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="secondary" onClick={cancelApply}>
+                    {buttonCopy.applyCancel.label}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{buttonCopy.applyCancel.subtitle}</TooltipContent>
+              </Tooltip>
             )}
-            <Button variant="secondary" onClick={() => setDialogOpen(false)} disabled={applying}>
-              닫기
-            </Button>
-            <Button onClick={confirmApply} disabled={applying || finalResults !== null}>
-              {applying ? '실행 중…' : finalResults !== null ? '완료됨' : '확인 — 실행'}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  onClick={() => setDialogOpen(false)}
+                  disabled={applying}
+                >
+                  {buttonCopy.applyClose.label}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{buttonCopy.applyClose.subtitle}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button onClick={confirmApply} disabled={applying || finalResults !== null}>
+                  {applying
+                    ? '실행 중…'
+                    : finalResults !== null
+                      ? '완료됨'
+                      : buttonCopy.applyConfirm.label}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{buttonCopy.applyConfirm.subtitle}</TooltipContent>
+            </Tooltip>
           </DialogFooter>
         </DialogContent>
       </Dialog>
