@@ -10,11 +10,14 @@ import {
 } from '@/components/ui/dialog'
 import type {
   ApplyResponse,
+  AppimageDiffReportDto,
   DotfilesDiffReport,
+  DuplicateWarningDto,
   EngineStatus,
   PackagesDiffReport,
   PlanActionResultDto,
-  PlanEvent
+  PlanEvent,
+  ReclassificationEventDto
 } from '../../../shared/ipc'
 
 type RowLiveState = { running?: boolean; ok?: boolean; error?: string }
@@ -38,16 +41,23 @@ function statusColor(status: string): string {
   return 'text-neutral-500'
 }
 
+// snap은 P2c에서 동기화 plan/apply 대상에서 빠졌다(정책 §7 비목표) — diff는
+// 여전히 계산되지만(중복 검출용) 이 액션 지향 화면에는 안 보여준다. snap
+// 상태는 "항목" 화면에 detectionOnly로 나온다.
 function hasPackagesDrift(packages: PackagesDiffReport | null): boolean {
   if (!packages) return false
   return (
     packages.apt.toInstall.length > 0 ||
     packages.apt.sourcesMissing.length > 0 ||
     packages.apt.sourcesContentChanged.length > 0 ||
-    packages.snap.toInstall.length > 0 ||
     packages.flatpak.toAddRemotes.length > 0 ||
     packages.flatpak.toInstall.length > 0
   )
+}
+
+function hasAppimageDrift(appimage: AppimageDiffReportDto | null): boolean {
+  if (!appimage) return false
+  return appimage.toInstall.length > 0 || appimage.pinMismatch.length > 0
 }
 
 interface DiffViewProps {
@@ -57,6 +67,11 @@ interface DiffViewProps {
 function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [dotfilesDiff, setDotfilesDiff] = useState<DotfilesDiffReport | null>(null)
   const [packagesDiff, setPackagesDiff] = useState<PackagesDiffReport | null>(null)
+  const [appimageDiff, setAppimageDiff] = useState<AppimageDiffReportDto | null>(null)
+  const [duplicates, setDuplicates] = useState<readonly DuplicateWarningDto[]>([])
+  const [reclassifications, setReclassifications] = useState<readonly ReclassificationEventDto[]>(
+    []
+  )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -67,19 +82,34 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [applying, setApplying] = useState(false)
 
   async function refreshDiff(): Promise<void> {
-    const [dotfiles, packages] = await Promise.all([
+    const [dotfiles, packages, appimage, dupes, reclass] = await Promise.all([
       window.api.engine.diffDotfiles(),
-      window.api.engine.diffPackages()
+      window.api.engine.diffPackages(),
+      window.api.engine.diffAppimage(),
+      window.api.engine.detectDuplicates(),
+      window.api.engine.detectReclassifications()
     ])
     setDotfilesDiff(dotfiles)
     setPackagesDiff(packages)
+    setAppimageDiff(appimage)
+    setDuplicates(dupes)
+    setReclassifications(reclass)
   }
 
   useEffect(() => {
-    Promise.all([window.api.engine.diffDotfiles(), window.api.engine.diffPackages()]).then(
-      ([dotfiles, packages]) => {
+    Promise.all([
+      window.api.engine.diffDotfiles(),
+      window.api.engine.diffPackages(),
+      window.api.engine.diffAppimage(),
+      window.api.engine.detectDuplicates(),
+      window.api.engine.detectReclassifications()
+    ]).then(
+      ([dotfiles, packages, appimage, dupes, reclass]) => {
         setDotfilesDiff(dotfiles)
         setPackagesDiff(packages)
+        setAppimageDiff(appimage)
+        setDuplicates(dupes)
+        setReclassifications(reclass)
       },
       (err: unknown) => setError(err instanceof Error ? err.message : String(err))
     )
@@ -91,17 +121,19 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         dotfilesDiff.contentChanged.length > 0 ||
         dotfilesDiff.invalidStore.length > 0
       : false
-    return dotfilesDrift || hasPackagesDrift(packagesDiff)
-  }, [dotfilesDiff, packagesDiff])
+    return dotfilesDrift || hasPackagesDrift(packagesDiff) || hasAppimageDrift(appimageDiff)
+  }, [dotfilesDiff, packagesDiff, appimageDiff])
 
-  // capture-first: dotfiles + packages를 한 번에 캡처한다 (결정 ③ — additive-only).
+  // capture-first: dotfiles + packages + appimage를 한 번에 캡처한다
+  // (결정 ③ — additive-only).
   async function handleCapture(): Promise<void> {
     setBusy(true)
     setError(null)
     try {
       await Promise.all([
         window.api.engine.captureDotfiles({ dryRun: false }),
-        window.api.engine.capturePackages({ dryRun: false })
+        window.api.engine.capturePackages({ dryRun: false }),
+        window.api.engine.captureAppimage({ dryRun: false })
       ])
       await refreshDiff()
     } catch (err) {
@@ -248,11 +280,6 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
                 [apt source changed] {name}
               </li>
             ))}
-            {packagesDiff.snap.toInstall.map((s) => (
-              <li key={`snap-install-${s.name}`} className="text-amber-400">
-                [snap to-install] {s.name}
-              </li>
-            ))}
             {packagesDiff.flatpak.toAddRemotes.map((r) => (
               <li key={`flatpak-remote-${r.name}`} className="text-amber-400">
                 [flatpak remote to-add] {r.name}
@@ -266,6 +293,63 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           </ul>
         )}
       </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">appimage</h2>
+        {!appimageDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasAppimageDrift(appimageDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {appimageDiff.toInstall.map((name) => (
+              <li key={`appimage-install-${name}`} className="text-amber-400">
+                [appimage to-install] {name}
+              </li>
+            ))}
+            {appimageDiff.pinMismatch.map((m) => (
+              <li key={`appimage-pin-${m.name}`} className="text-amber-400">
+                [appimage pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installed})
+              </li>
+            ))}
+          </ul>
+        )}
+        {appimageDiff && appimageDiff.unsupportedSource.length > 0 && (
+          <p className="mt-1 font-mono text-xs text-neutral-500">
+            미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
+          </p>
+        )}
+      </section>
+
+      {duplicates.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">중복 설치 경고 (INV-1)</h2>
+          <ul className="space-y-1 font-mono text-xs">
+            {duplicates.map((d) => (
+              <li key={d.name} className={d.ignored ? 'text-neutral-600' : 'text-red-400'}>
+                {d.name}: {d.layers.map((l) => `${l.capability}(${l.label})`).join(' + ')}
+                {d.ignored ? ' — 무시됨' : ''}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {reclassifications.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">계층 재분류 감지</h2>
+          <ul className="space-y-1 font-mono text-xs text-amber-400">
+            {reclassifications.map((r) => (
+              <li key={r.name}>
+                {r.name}: manifest={r.manifestedIn} → 실제={r.foundIn}
+                {status?.role === 'follower'
+                  ? ' — reference에서 매니페스트를 갱신하세요'
+                  : ' — 매니페스트 갱신을 검토하세요 (자동 갱신 없음)'}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">

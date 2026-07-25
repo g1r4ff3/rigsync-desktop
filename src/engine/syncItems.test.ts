@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { makeFakeGearLeverProvider } from './capabilities/appimage/testHelpers'
 import { captureApt } from './capabilities/packages/apt'
 import { writeAptBaseline } from './capabilities/packages/aptBaseline'
 import {
@@ -26,11 +27,15 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
     const aptProvider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, aptProvider, { dryRun: false })
 
-    const groups = await listSyncItemGroups(fixture.ctx, {
-      apt: aptProvider,
-      snap: makeFakeSnapProvider([]),
-      flatpak: makeFakeFlatpakProvider()
-    })
+    const groups = await listSyncItemGroups(
+      fixture.ctx,
+      {
+        apt: aptProvider,
+        snap: makeFakeSnapProvider([]),
+        flatpak: makeFakeFlatpakProvider()
+      },
+      makeFakeGearLeverProvider({ available: false })
+    )
 
     // dotfiles 그룹이 없으면(관리 항목·후보 둘 다 없으면) 생략되고, apt만 남는다.
     expect(groups.map((g) => g.capability)).toEqual(['apt'])
@@ -54,5 +59,44 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
   it('toggling a dotfiles item writes under the "homes" kind', () => {
     toggleSyncItemIgnore(fixture.ctx, 'dotfiles', '~/.zshrc', true)
     expect(readIgnoreSet(fixture.ctx, 'dotfiles', 'homes')).toEqual(new Set(['~/.zshrc']))
+  })
+
+  it('toggling an appimage item writes under the "names" kind', () => {
+    toggleSyncItemIgnore(fixture.ctx, 'appimage', 'tev.desktop', true)
+    expect(readIgnoreSet(fixture.ctx, 'appimage', 'names')).toEqual(new Set(['tev.desktop']))
+  })
+
+  it('includes an appimage group when Gear Lever has installed apps', async () => {
+    const gearLever = makeFakeGearLeverProvider({
+      installed: [
+        {
+          name: 'tev (2.13.1)',
+          path: '/home/cglab/AppImages/tev.appimage',
+          desktopId: 'tev.desktop',
+          currentVersion: '2.13.1',
+          availableVersion: null,
+          downloadSize: null,
+          manager: 'GithubUpdater',
+          embeddedSource: false,
+          running: false
+        }
+      ]
+    })
+    const groups = await listSyncItemGroups(
+      fixture.ctx,
+      {
+        apt: makeFakeAptProvider({ available: false }),
+        snap: makeFakeSnapProvider([], false),
+        flatpak: makeFakeFlatpakProvider({ available: false })
+      },
+      gearLever
+    )
+    expect(groups.map((g) => g.capability)).toEqual(['appimage'])
+    expect(groups[0].items[0]).toEqual({
+      key: 'tev.desktop',
+      label: 'tev.desktop',
+      managed: false,
+      ignored: false
+    })
   })
 })

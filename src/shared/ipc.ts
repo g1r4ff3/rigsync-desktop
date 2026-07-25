@@ -16,6 +16,10 @@ export const IPC_CHANNELS = {
   engineCaptureDotfiles: 'engine:captureDotfiles',
   engineDiffPackages: 'engine:diffPackages',
   engineCapturePackages: 'engine:capturePackages',
+  engineDiffAppimage: 'engine:diffAppimage',
+  engineCaptureAppimage: 'engine:captureAppimage',
+  engineDetectDuplicates: 'engine:detectDuplicates',
+  engineDetectReclassifications: 'engine:detectReclassifications',
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
@@ -167,6 +171,58 @@ export interface PackagesCaptureReport {
   readonly apt: AptCaptureReportDto
   readonly snap: SnapCaptureReportDto
   readonly flatpak: FlatpakCaptureReportDto
+}
+
+// ---------------------------------------------------------------------------
+// engine:diffAppimage / engine:captureAppimage (P2c — T3 Gear Lever)
+// ---------------------------------------------------------------------------
+
+export interface AppimagePinMismatchDto {
+  readonly name: string
+  readonly pinned: string
+  readonly installed: string
+}
+
+export interface AppimageDiffReportDto {
+  readonly skipped: boolean
+  readonly toInstall: readonly string[]
+  readonly pinMismatch: readonly AppimagePinMismatchDto[]
+  readonly unsupportedSource: readonly string[]
+  readonly uncaptured: readonly string[]
+}
+
+export interface CaptureAppimageRequest {
+  readonly dryRun: boolean
+}
+
+export interface AppimageCaptureReportDto {
+  readonly skipped: boolean
+  readonly capturedCount: number
+  readonly added: number
+  readonly notes: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
+// engine:detectDuplicates (INV-1) / engine:detectReclassifications (정책 §5)
+// ---------------------------------------------------------------------------
+
+export type DuplicateCapabilityDto = 'apt' | 'snap' | 'flatpak' | 'appimage'
+
+export interface DuplicateSourceItemDto {
+  readonly capability: DuplicateCapabilityDto
+  readonly label: string
+}
+
+export interface DuplicateWarningDto {
+  readonly name: string
+  readonly layers: readonly DuplicateSourceItemDto[]
+  readonly ignored: boolean
+}
+
+export interface ReclassificationEventDto {
+  readonly name: string
+  readonly manifestedIn: DuplicateCapabilityDto
+  readonly foundIn: DuplicateCapabilityDto
 }
 
 // ---------------------------------------------------------------------------

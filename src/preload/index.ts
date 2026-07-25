@@ -4,14 +4,19 @@ import {
   IPC_CHANNELS,
   type ApplyRequest,
   type ApplyResponse,
+  type AppimageCaptureReportDto,
+  type AppimageDiffReportDto,
+  type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
+  type DuplicateWarningDto,
   type EngineStatus,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
+  type ReclassificationEventDto,
   type SyncItemGroupDto,
   type ToggleIgnoreRequest
 } from '../shared/ipc'
@@ -28,6 +33,14 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineDiffPackages),
   capturePackages: (request: CapturePackagesRequest): Promise<PackagesCaptureReport> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCapturePackages, request),
+  diffAppimage: (): Promise<AppimageDiffReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDiffAppimage),
+  captureAppimage: (request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureAppimage, request),
+  detectDuplicates: (): Promise<DuplicateWarningDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDetectDuplicates),
+  detectReclassifications: (): Promise<ReclassificationEventDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDetectReclassifications),
   listSyncItems: (): Promise<SyncItemGroupDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineListSyncItems),
   toggleIgnore: (request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> =>

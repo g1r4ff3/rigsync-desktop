@@ -4,6 +4,8 @@
  * 해석한다. dotfiles(homes)/apt·snap(packages)/flatpak(apps) — 구 repo
  * ignore.toml 스키마의 kind 이름을 그대로 따른다.
  */
+import { buildAppimageSyncGroup } from './capabilities/appimage/candidates'
+import type { GearLeverProvider } from './capabilities/appimage/providerTypes'
 import { buildDotfilesSyncGroup } from './capabilities/dotfiles/syncItems'
 import { buildPackageSyncGroups } from './capabilities/packages/candidates'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
@@ -40,11 +42,17 @@ const IGNORE_KIND_BY_CAPABILITY: Readonly<Record<SyncItemGroup['capability'], st
 
 export async function listSyncItemGroups(
   ctx: RigsyncContext,
-  providers: PackageProviders
+  providers: PackageProviders,
+  gearLeverProvider: GearLeverProvider
 ): Promise<SyncItemGroup[]> {
   const dotfilesGroup = buildDotfilesSyncGroup(ctx)
   const packageGroups = await buildPackageSyncGroups(ctx, providers)
-  return dotfilesGroup ? [dotfilesGroup, ...packageGroups] : packageGroups
+  const appimageGroup = await buildAppimageSyncGroup(ctx, gearLeverProvider)
+  return [
+    ...(dotfilesGroup ? [dotfilesGroup] : []),
+    ...packageGroups,
+    ...(appimageGroup ? [appimageGroup] : [])
+  ]
 }
 
 export function toggleSyncItemIgnore(

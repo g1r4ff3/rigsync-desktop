@@ -10,8 +10,13 @@
  * 액션은 기존 PlanExecutor로, 특권 액션(apt/snap install 등)은 pkexec 스크립트
  * 하나로 묶어 실행한다. main은 정말 "배선만" 한다(결정 ① — 스크립트 생성·파싱은
  * 순수 엔진 코드, pkexec spawn은 `linuxElevationExec`).
+ * P2c: T3 appimage(Gear Lever)도 diff/capture/apply에 합류. INV-1 중복 검출과
+ * 정책 §5 재분류 감지는 조회 전용 엔드포인트로 노출한다.
  */
 import { ipcMain, type BrowserWindow } from 'electron'
+import { captureAppimage } from '../engine/capabilities/appimage/capture'
+import { diffAppimage } from '../engine/capabilities/appimage/diff'
+import { planAppimage } from '../engine/capabilities/appimage/plan'
 import { captureDotfiles } from '../engine/capabilities/dotfiles/capture'
 import { diffDotfiles } from '../engine/capabilities/dotfiles/diff'
 import { planDotfiles } from '../engine/capabilities/dotfiles/plan'
@@ -20,29 +25,44 @@ import { diffPackages } from '../engine/capabilities/packages/diff'
 import { planPackages } from '../engine/capabilities/packages/plan'
 import { resolveContext, type RigsyncContext } from '../engine/context'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
-import { linuxElevationExec, linuxPackageProviders } from '../engine/providers/linux'
+import { detectDuplicates } from '../engine/duplicates'
 import type { PlanAction } from '../engine/plan'
+import {
+  linuxAssetResolver,
+  linuxDownloader,
+  linuxElevationExec,
+  linuxGearLeverProvider,
+  linuxPackageProviders
+} from '../engine/providers/linux'
+import { detectReclassifications } from '../engine/reclassification'
 import { listSyncItemGroups, toggleSyncItemIgnore } from '../engine/syncItems'
 import {
   IPC_CHANNELS,
   type ApplyRequest,
   type ApplyResponse,
+  type AppimageCaptureReportDto,
+  type AppimageDiffReportDto,
+  type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
+  type DuplicateWarningDto,
   type EngineStatus,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
   type PlanSummaryDto,
+  type ReclassificationEventDto,
   type SyncItemGroupDto,
   type ToggleIgnoreRequest
 } from '../shared/ipc'
 
-// packages capability의 provider 묶음 -- v1은 Linux 고정 (FORWARD.md §3: "v1은
-// Linux provider만"). darwin/win32가 생기면 process.platform으로 분기한다.
+// packages/appimage capability의 provider 묶음 -- v1은 Linux 고정 (FORWARD.md
+// §3: "v1은 Linux provider만"). darwin/win32가 생기면 process.platform으로
+// 분기한다.
 const providers = linuxPackageProviders
+const gearLeverProvider = linuxGearLeverProvider
 
 // config.toml은 온보딩 위저드(P4) 전에는 없는 게 정상이라 dev 기본값으로
 // 뜬다 — 앱 프로세스 생애주기 동안 한 번만 해석한다(전역 상태처럼 보이지만
@@ -60,9 +80,11 @@ function runTimestamp(): string {
 async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<PlanAction[]> {
   const dotfilesDiff = await diffDotfiles(ctx)
   const packagesDiff = await diffPackages(ctx, providers)
+  const appimageDiff = await diffAppimage(ctx, gearLeverProvider)
   return [
     ...planDotfiles(ctx, dotfilesDiff, runTs),
-    ...planPackages(ctx, providers, packagesDiff, runTs)
+    ...planPackages(ctx, providers, packagesDiff, runTs),
+    ...planAppimage(ctx, gearLeverProvider, linuxAssetResolver, linuxDownloader, appimageDiff)
   ]
 }
 
@@ -99,15 +121,46 @@ export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): vo
     }
   )
 
+  ipcMain.handle(IPC_CHANNELS.engineDiffAppimage, async (): Promise<AppimageDiffReportDto> => {
+    return diffAppimage(getContext(), gearLeverProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureAppimage,
+    async (_event, request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> => {
+      return captureAppimage(getContext(), gearLeverProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDetectDuplicates, async (): Promise<DuplicateWarningDto[]> => {
+    return detectDuplicates(getContext(), providers, gearLeverProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineDetectReclassifications,
+    async (): Promise<ReclassificationEventDto[]> => {
+      const ctx = getContext()
+      const [packagesDiff, appimageDiff] = await Promise.all([
+        diffPackages(ctx, providers),
+        diffAppimage(ctx, gearLeverProvider)
+      ])
+      return detectReclassifications(providers, gearLeverProvider, {
+        apt: packagesDiff.apt.toInstall,
+        flatpak: packagesDiff.flatpak.toInstall.map((a) => a.application),
+        appimage: appimageDiff.toInstall
+      })
+    }
+  )
+
   ipcMain.handle(IPC_CHANNELS.engineListSyncItems, async (): Promise<SyncItemGroupDto[]> => {
-    return listSyncItemGroups(getContext(), providers)
+    return listSyncItemGroups(getContext(), providers, gearLeverProvider)
   })
 
   ipcMain.handle(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
-      return listSyncItemGroups(getContext(), providers)
+      return listSyncItemGroups(getContext(), providers, gearLeverProvider)
     }
   )
 

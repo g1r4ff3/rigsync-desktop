@@ -31,7 +31,7 @@ export interface DuplicateWarning {
 /** 너무 짧은 이름끼리는(예: "at") 포함 매칭이 대부분 오탐이라 최소 길이를 둔다. */
 const MIN_MATCH_LENGTH = 3
 
-function namesOverlap(a: string, b: string): boolean {
+export function namesOverlap(a: string, b: string): boolean {
   const na = a.toLowerCase()
   const nb = b.toLowerCase()
   if (na.length < MIN_MATCH_LENGTH || nb.length < MIN_MATCH_LENGTH) return false
