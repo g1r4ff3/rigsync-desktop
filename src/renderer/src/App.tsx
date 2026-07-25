@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { HelpPopover } from '@/components/HelpPopover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { tabCopy } from './copy'
+import { truncatePathStart } from '@/lib/utils'
+import { helpCopy, tabCopy } from './copy'
 import { SCREENSHOT_GOTO_EVENT } from './screenshotBus'
 import { StatusText } from './status'
 import { syncStatusKind } from './statusKind'
@@ -10,6 +12,10 @@ import DoctorView from './views/DoctorView'
 import OnboardingView from './views/OnboardingView'
 import SettingsView from './views/SettingsView'
 import SyncItemsView from './views/SyncItemsView'
+
+// R4-2 #1: 헤더 경로는 좌측 생략으로 꼬리만 보여준다(중요도 순 배치 원칙 —
+// machineId·role·sync 상태가 먼저 읽혀야 하고 경로는 참고 정보다).
+const MANIFEST_DIR_MAX_CHARS = 34
 
 type Tab = 'diff' | 'items' | 'doctor' | 'settings'
 
@@ -142,9 +148,14 @@ function App(): React.JSX.Element {
               </>
             )}
             <span className="shrink-0">·</span>
-            <span className="min-w-0 truncate font-mono text-[11px]" title={status.manifestDir}>
-              {status.manifestDir}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="max-w-[34ch] shrink-0 overflow-hidden font-mono text-[11px]">
+                  {truncatePathStart(status.manifestDir, MANIFEST_DIR_MAX_CHARS)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-none">{status.manifestDir}</TooltipContent>
+            </Tooltip>
           </div>
         ) : statusError ? (
           <StatusText kind="error">{statusError}</StatusText>
@@ -153,28 +164,35 @@ function App(): React.JSX.Element {
         )}
       </header>
 
-      <nav className="mb-3 flex gap-1 border-b border-border">
-        {(['diff', 'items', 'doctor', 'settings'] as const).map((id) => {
-          const t = tabCopy[id]
-          return (
-            <Tooltip key={id}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setTab(id)}
-                  className={
-                    'border-b-2 px-3 py-1.5 text-xs font-medium ' +
-                    (tab === id
-                      ? 'border-primary text-foreground'
-                      : 'border-transparent text-muted-foreground hover:text-foreground')
-                  }
-                >
-                  {t.label}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{t.subtitle}</TooltipContent>
-            </Tooltip>
-          )
-        })}
+      {/* R4-2 #2: "?" 헬프는 화면마다 제각각 떠 있던 걸(Settings·Candidates에선
+          좌측에 홀로) 탭 바 우측 끝 한 자리로 통일한다 — 위치·형태가 전 화면에서
+          항상 같아야 "여기 누르면 된다"가 학습된다(일관성 원칙). 화면별 텍스트는
+          그대로 helpCopy[tab]에서 가져오므로 각 화면 고유 설명은 유지된다. */}
+      <nav className="mb-3 flex items-center justify-between gap-2 border-b border-border">
+        <div className="flex gap-1">
+          {(['diff', 'items', 'doctor', 'settings'] as const).map((id) => {
+            const t = tabCopy[id]
+            return (
+              <Tooltip key={id}>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setTab(id)}
+                    className={
+                      'border-b-2 px-3 py-1.5 text-xs font-medium ' +
+                      (tab === id
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:text-foreground')
+                    }
+                  >
+                    {t.label}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{t.subtitle}</TooltipContent>
+              </Tooltip>
+            )
+          })}
+        </div>
+        <HelpPopover text={helpCopy[tab]} />
       </nav>
 
       <main className="flex-1 overflow-hidden">

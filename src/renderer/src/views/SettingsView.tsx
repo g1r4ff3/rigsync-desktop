@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
-import { HelpPopover } from '@/components/HelpPopover'
-import { ViewToolbar } from '@/components/ViewToolbar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { buttonCopy, emptyStateCopy, helpCopy } from '../copy'
+import { buttonCopy, emptyStateCopy } from '../copy'
 import { StatusText } from '../status'
 import type { RigsyncConfigDto } from '../../../shared/ipc'
 
@@ -84,11 +82,12 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
 
   return (
     <div className="h-full overflow-y-auto pr-1">
-      <ViewToolbar>
-        <HelpPopover text={helpCopy.settings} />
-      </ViewToolbar>
-
-      <div className="mx-auto max-w-xl space-y-6">
+      {/* R4-2 #2/#3: 화면별 "?" 헬프는 App.tsx 탭 바 우측 끝으로 통일했으니
+          여기 있던 단독 ViewToolbar(딴 컨트롤 없이 "?" 하나만 떠 있던 자리)는
+          제거한다. 폼도 Differences처럼 좌측 정렬로 맞추고(mx-auto 제거) 폭만
+          640px로 제한 — 이전엔 mx-auto가 폼을 가운데/우측으로 밀어 좌측에
+          쓸모없는 빈 열이 생겼다(사용자 지적 사례). */}
+      <div className="max-w-[640px] space-y-6">
         <section className="space-y-1">
           <label className="block text-xs font-medium text-foreground">Machine name</label>
           <Tooltip>

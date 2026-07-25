@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
-import { HelpPopover } from '@/components/HelpPopover'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,6 +43,15 @@ function statusLabel(
   if (finalResults) return finalResults[index]?.status ?? '?'
   if (live[index]?.running) return 'running'
   return preview?.results[index]?.status ?? '?'
+}
+
+function hasDotfilesDrift(dotfiles: DotfilesDiffReport | null): boolean {
+  if (!dotfiles) return false
+  return (
+    dotfiles.toLink.length > 0 ||
+    dotfiles.contentChanged.length > 0 ||
+    dotfiles.invalidStore.length > 0
+  )
 }
 
 // snap은 P2c에서 동기화 plan/apply 대상에서 빠졌다(정책 §7 비목표) — diff는
@@ -266,13 +274,8 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   }, [status])
 
   const hasDrift = useMemo(() => {
-    const dotfilesDrift = dotfilesDiff
-      ? dotfilesDiff.toLink.length > 0 ||
-        dotfilesDiff.contentChanged.length > 0 ||
-        dotfilesDiff.invalidStore.length > 0
-      : false
     return (
-      dotfilesDrift ||
+      hasDotfilesDrift(dotfilesDiff) ||
       hasPackagesDrift(packagesDiff) ||
       hasAppimageDrift(appimageDiff) ||
       hasSettingsDrift(settingsDiff) ||
@@ -372,6 +375,61 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     ? driftCounts.reduce((sum, c) => sum + (c.count ?? 0), 0)
     : null
   const activeDuplicateCount = duplicates.filter((d) => !d.ignored).length
+  // 확인 결과: totalDrift는 driftCounts(8개 capability)만 합산하고 Duplicates·
+  // Reclassifications는 애초에 이 배열에 없어 수치에는 안 섞인다. 다만 요약
+  // 카드 안에서 나란히 보이면 "N건에 Duplicates도 포함"으로 오독할 수 있어
+  // (안전 불변식 ⑤: 중복은 보고만, Apply로 안 고쳐진다) 아래 캡션으로 명시한다.
+  const hasReportOnlyWarnings = activeDuplicateCount > 0 || reclassifications.length > 0
+
+  // R4-2 #5: capability 8개를 전부 펼치면(각 ~145px) 전부 "일치"인 화면도
+  // 스크롤이 생겨 계약("머신 상태가 스크롤 없이 한 화면에")을 못 지킨다.
+  // drift 있는 것만 아래에서 DriftSection으로 펼치고, 일치하는 것들은 여기
+  // 한 데 모아 컴팩트 그리드 한 줄씩으로 접는다. 위 요약 카드의 칩(아이콘+
+  // 라벨만)과 정보가 겹치지 않도록 여기는 각 capability의 설명(sectionCopy)을
+  // 덧붙여 "무엇을 추적하는지"까지 보여준다 — 로딩 중(diff===null)인 항목은
+  // 아직 판정이 안 났으므로 포함하지 않는다(로딩 상태는 아래 DriftSection이
+  // 계속 담당).
+  const matchedCapabilities = useMemo(() => {
+    const list: { key: string; title: string; description: string }[] = []
+    if (dotfilesDiff && !hasDotfilesDrift(dotfilesDiff)) {
+      list.push({ key: 'dotfiles', title: 'Dotfiles', description: sectionCopy.dotfiles })
+    }
+    if (packagesDiff && !hasPackagesDrift(packagesDiff)) {
+      list.push({ key: 'packages', title: 'Packages', description: sectionCopy.packages })
+    }
+    if (appimageDiff && !hasAppimageDrift(appimageDiff)) {
+      list.push({ key: 'appimage', title: 'AppImage', description: sectionCopy.appimage })
+    }
+    if (settingsDiff && !hasSettingsDrift(settingsDiff)) {
+      list.push({ key: 'settings', title: 'Settings (dconf)', description: sectionCopy.settings })
+    }
+    if (servicesDiff && !hasServicesDrift(servicesDiff)) {
+      list.push({
+        key: 'services',
+        title: 'Services (systemd --user)',
+        description: sectionCopy.services
+      })
+    }
+    if (scheduledDiff && !hasScheduledDrift(scheduledDiff)) {
+      list.push({ key: 'scheduled', title: 'Scheduled (cron)', description: sectionCopy.scheduled })
+    }
+    if (toolsDiff && !hasToolsDrift(toolsDiff)) {
+      list.push({ key: 'tools', title: 'Tools (nvm/node/npm)', description: sectionCopy.tools })
+    }
+    if (reposDiff && !hasReposDrift(reposDiff)) {
+      list.push({ key: 'repos', title: 'Repos (git)', description: sectionCopy.repos })
+    }
+    return list
+  }, [
+    dotfilesDiff,
+    packagesDiff,
+    appimageDiff,
+    settingsDiff,
+    servicesDiff,
+    scheduledDiff,
+    toolsDiff,
+    reposDiff
+  ])
 
   // capture-first: 전 capability를 한 번에 캡처한다 (결정 ③ — additive-only).
   async function handleCapture(): Promise<void> {
@@ -468,10 +526,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       {/* R1b 원칙①(시각적 위계): "이 머신이 기준과 다른가"가 화면에서 가장 크고
           먼저 읽혀야 한다 — capability별 세부 목록보다 앞, 가장 큰 글자로. */}
       <section className="mb-3 rounded-lg border border-border bg-card p-4">
-        <div className="flex items-center gap-1.5">
-          <HelpPopover text={helpCopy.diff} />
-          <h2 className="text-xs font-medium text-muted-foreground">이 머신이 기준과 다른 점</h2>
-        </div>
+        {/* R4-2 #2: 화면별 "?" 헬프는 App.tsx 탭 바 우측 끝 하나로 통일했다 —
+            여기 있던 인스턴스는 그 통일 위치와 중복이라 제거. */}
+        <h2 className="text-xs font-medium text-muted-foreground">이 머신이 기준과 다른 점</h2>
         <div className="mt-1.5 flex items-center gap-2">
           <StatusIcon
             kind={totalDrift === null ? 'muted' : totalDrift === 0 ? 'ok' : 'warn'}
@@ -524,12 +581,23 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
             </span>
           )}
         </div>
+        {/* 확인 결과: 위 "N건" 수치(totalDrift)는 driftCounts 8개 capability만
+            합산하고 Duplicates·Reclassified는 원래부터 안 섞인다(engine의 안전
+            불변식 ⑤ — 중복은 Apply로 해결 안 되고 보고만). 다만 칩이 같은 카드
+            안에 나란히 있으면 오독 소지가 있어 명시적으로 분리해 알려준다. */}
+        {hasReportOnlyWarnings && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Duplicates·Reclassified는 위 건수에 포함되지 않습니다 — Apply로 해결되지 않고 보고만
+            합니다.
+          </p>
+        )}
       </section>
 
       {/* R1b 원칙②(액션 배치): 액션(Capture/Apply)은 요약 바로 아래, 좌측 정렬
           한 줄로 — 이전에는 justify-between으로 오른쪽 끝에 붙어 그 옆(왼쪽)에
-          쓸모없는 빈 띠가 생겼다(사용자 지적 사례). */}
-      <ViewToolbar>
+          쓸모없는 빈 띠가 생겼다(사용자 지적 사례). R4-2 #5: 버튼 행과 "세부
+          항목" 라벨 사이 여백도 mb-2로 조여 빈 공간을 줄인다. */}
+      <ViewToolbar className="mb-2">
         <ActionButton
           variant="secondary"
           label={buttonCopy.capture.label}
@@ -550,13 +618,13 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       </ViewToolbar>
 
       {status?.role === 'follower' && (
-        <StatusText kind="muted" className="mb-3">
+        <StatusText kind="muted" className="mb-2">
           이 머신은 follower입니다 — capture는 reference 전용이라 비활성화되어 있습니다.
         </StatusText>
       )}
 
       {error && (
-        <StatusText kind="error" className="mb-3">
+        <StatusText kind="error" className="mb-2">
           {error}
         </StatusText>
       )}
@@ -565,177 +633,215 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         세부 항목
       </h3>
 
-      <DriftSection
-        title="Dotfiles"
-        description={sectionCopy.dotfiles}
-        loading={!dotfilesDiff}
-        empty={
-          !!dotfilesDiff &&
-          dotfilesDiff.toLink.length === 0 &&
-          dotfilesDiff.contentChanged.length === 0 &&
-          dotfilesDiff.invalidStore.length === 0
-        }
-      >
-        {dotfilesDiff?.toLink.map((home) => (
-          <DriftRow key={`link-${home}`} kind="warn">
-            [to-link] {home}
-          </DriftRow>
-        ))}
-        {dotfilesDiff?.contentChanged.map((item) => (
-          <DriftRow key={`changed-${item}`} kind="warn">
-            [content-changed] {item}
-          </DriftRow>
-        ))}
-        {dotfilesDiff?.invalidStore.map((home) => (
-          <DriftRow key={`invalid-${home}`} kind="error">
-            [invalid-store] {home}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {/* R4-2 #5: 기준과 일치하는 capability는 각자 섹션(제목+설명+"기준과
+          일치")을 펼치지 않고 여기 한 데 모아 한 줄씩 컴팩트하게 접는다 —
+          drift가 있는 것만 아래에서 온전히 펼쳐진다. */}
+      {matchedCapabilities.length > 0 && (
+        <section className="mb-4 rounded-md border border-border bg-card/50 p-2.5">
+          <p className="mb-1.5 text-xs text-muted-foreground">
+            기준과 일치 ({matchedCapabilities.length})
+          </p>
+          <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            {matchedCapabilities.map((c) => (
+              <div key={c.key} className="flex min-w-0 items-center gap-1.5 text-xs">
+                <StatusIcon kind="ok" className="size-3 shrink-0" />
+                <span className="shrink-0 font-medium text-foreground">{c.title}</span>
+                <span className="truncate text-muted-foreground" title={c.description}>
+                  — {c.description}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <DriftSection
-        title="Packages"
-        description={sectionCopy.packages}
-        loading={!packagesDiff}
-        empty={!!packagesDiff && !hasPackagesDrift(packagesDiff)}
-      >
-        {packagesDiff?.apt.toInstall.map((name) => (
-          <DriftRow key={`apt-install-${name}`} kind="warn">
-            [apt to-install] {name}
-          </DriftRow>
-        ))}
-        {packagesDiff?.apt.sourcesMissing.map((name) => (
-          <DriftRow key={`apt-src-missing-${name}`} kind="error">
-            [apt source missing] {name}
-          </DriftRow>
-        ))}
-        {packagesDiff?.apt.sourcesContentChanged.map((name) => (
-          <DriftRow key={`apt-src-changed-${name}`} kind="warn">
-            [apt source changed] {name}
-          </DriftRow>
-        ))}
-        {packagesDiff?.flatpak.toAddRemotes.map((r) => (
-          <DriftRow key={`flatpak-remote-${r.name}`} kind="warn">
-            [flatpak remote to-add] {r.name}
-          </DriftRow>
-        ))}
-        {packagesDiff?.flatpak.toInstall.map((a) => (
-          <DriftRow key={`flatpak-install-${a.application}`} kind="warn">
-            [flatpak to-install] {a.application}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!dotfilesDiff || hasDotfilesDrift(dotfilesDiff)) && (
+        <DriftSection
+          title="Dotfiles"
+          description={sectionCopy.dotfiles}
+          loading={!dotfilesDiff}
+          empty={
+            !!dotfilesDiff &&
+            dotfilesDiff.toLink.length === 0 &&
+            dotfilesDiff.contentChanged.length === 0 &&
+            dotfilesDiff.invalidStore.length === 0
+          }
+        >
+          {dotfilesDiff?.toLink.map((home) => (
+            <DriftRow key={`link-${home}`} kind="warn">
+              [to-link] {home}
+            </DriftRow>
+          ))}
+          {dotfilesDiff?.contentChanged.map((item) => (
+            <DriftRow key={`changed-${item}`} kind="warn">
+              [content-changed] {item}
+            </DriftRow>
+          ))}
+          {dotfilesDiff?.invalidStore.map((home) => (
+            <DriftRow key={`invalid-${home}`} kind="error">
+              [invalid-store] {home}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
-      <DriftSection
-        title="AppImage"
-        description={sectionCopy.appimage}
-        loading={!appimageDiff}
-        empty={!!appimageDiff && !hasAppimageDrift(appimageDiff)}
-      >
-        {appimageDiff?.toInstall.map((name) => (
-          <DriftRow key={`appimage-install-${name}`} kind="warn">
-            [appimage to-install] {name}
-          </DriftRow>
-        ))}
-        {appimageDiff?.pinMismatch.map((m) => (
-          <DriftRow key={`appimage-pin-${m.name}`} kind="warn">
-            [appimage pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installed})
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!packagesDiff || hasPackagesDrift(packagesDiff)) && (
+        <DriftSection
+          title="Packages"
+          description={sectionCopy.packages}
+          loading={!packagesDiff}
+          empty={!!packagesDiff && !hasPackagesDrift(packagesDiff)}
+        >
+          {packagesDiff?.apt.toInstall.map((name) => (
+            <DriftRow key={`apt-install-${name}`} kind="warn">
+              [apt to-install] {name}
+            </DriftRow>
+          ))}
+          {packagesDiff?.apt.sourcesMissing.map((name) => (
+            <DriftRow key={`apt-src-missing-${name}`} kind="error">
+              [apt source missing] {name}
+            </DriftRow>
+          ))}
+          {packagesDiff?.apt.sourcesContentChanged.map((name) => (
+            <DriftRow key={`apt-src-changed-${name}`} kind="warn">
+              [apt source changed] {name}
+            </DriftRow>
+          ))}
+          {packagesDiff?.flatpak.toAddRemotes.map((r) => (
+            <DriftRow key={`flatpak-remote-${r.name}`} kind="warn">
+              [flatpak remote to-add] {r.name}
+            </DriftRow>
+          ))}
+          {packagesDiff?.flatpak.toInstall.map((a) => (
+            <DriftRow key={`flatpak-install-${a.application}`} kind="warn">
+              [flatpak to-install] {a.application}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
+
+      {(!appimageDiff || hasAppimageDrift(appimageDiff)) && (
+        <DriftSection
+          title="AppImage"
+          description={sectionCopy.appimage}
+          loading={!appimageDiff}
+          empty={!!appimageDiff && !hasAppimageDrift(appimageDiff)}
+        >
+          {appimageDiff?.toInstall.map((name) => (
+            <DriftRow key={`appimage-install-${name}`} kind="warn">
+              [appimage to-install] {name}
+            </DriftRow>
+          ))}
+          {appimageDiff?.pinMismatch.map((m) => (
+            <DriftRow key={`appimage-pin-${m.name}`} kind="warn">
+              [appimage pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installed})
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
       {appimageDiff && appimageDiff.unsupportedSource.length > 0 && (
         <p className="-mt-3 text-xs text-muted-foreground">
           미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
         </p>
       )}
 
-      <DriftSection
-        title="Settings (dconf)"
-        description={sectionCopy.settings}
-        loading={!settingsDiff}
-        empty={!!settingsDiff && !hasSettingsDrift(settingsDiff)}
-      >
-        {settingsDiff?.contentChanged.map((p) => (
-          <DriftRow key={`settings-${p}`} kind="warn">
-            [content-changed] {p}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!settingsDiff || hasSettingsDrift(settingsDiff)) && (
+        <DriftSection
+          title="Settings (dconf)"
+          description={sectionCopy.settings}
+          loading={!settingsDiff}
+          empty={!!settingsDiff && !hasSettingsDrift(settingsDiff)}
+        >
+          {settingsDiff?.contentChanged.map((p) => (
+            <DriftRow key={`settings-${p}`} kind="warn">
+              [content-changed] {p}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
-      <DriftSection
-        title="Services (systemd --user)"
-        description={sectionCopy.services}
-        loading={!servicesDiff}
-        empty={!!servicesDiff && !hasServicesDrift(servicesDiff)}
-      >
-        {servicesDiff?.missing.map((name) => (
-          <DriftRow key={`svc-missing-${name}`} kind="error">
-            [missing] {name}
-          </DriftRow>
-        ))}
-        {servicesDiff?.contentChanged.map((name) => (
-          <DriftRow key={`svc-changed-${name}`} kind="warn">
-            [content-changed] {name}
-          </DriftRow>
-        ))}
-        {servicesDiff?.enabledMismatch.map((name) => (
-          <DriftRow key={`svc-enabled-${name}`} kind="warn">
-            [enabled mismatch] {name}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!servicesDiff || hasServicesDrift(servicesDiff)) && (
+        <DriftSection
+          title="Services (systemd --user)"
+          description={sectionCopy.services}
+          loading={!servicesDiff}
+          empty={!!servicesDiff && !hasServicesDrift(servicesDiff)}
+        >
+          {servicesDiff?.missing.map((name) => (
+            <DriftRow key={`svc-missing-${name}`} kind="error">
+              [missing] {name}
+            </DriftRow>
+          ))}
+          {servicesDiff?.contentChanged.map((name) => (
+            <DriftRow key={`svc-changed-${name}`} kind="warn">
+              [content-changed] {name}
+            </DriftRow>
+          ))}
+          {servicesDiff?.enabledMismatch.map((name) => (
+            <DriftRow key={`svc-enabled-${name}`} kind="warn">
+              [enabled mismatch] {name}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
-      <DriftSection
-        title="Scheduled (cron)"
-        description={sectionCopy.scheduled}
-        loading={!scheduledDiff}
-        empty={!!scheduledDiff && !hasScheduledDrift(scheduledDiff)}
-      >
-        {scheduledDiff?.lineDiff.added.map((line) => (
-          <DriftRow key={`cron-add-${line}`} kind="warn">
-            [+] {line}
-          </DriftRow>
-        ))}
-        {scheduledDiff?.lineDiff.removed.map((line) => (
-          <DriftRow key={`cron-remove-${line}`} kind="error">
-            [-] {line}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!scheduledDiff || hasScheduledDrift(scheduledDiff)) && (
+        <DriftSection
+          title="Scheduled (cron)"
+          description={sectionCopy.scheduled}
+          loading={!scheduledDiff}
+          empty={!!scheduledDiff && !hasScheduledDrift(scheduledDiff)}
+        >
+          {scheduledDiff?.lineDiff.added.map((line) => (
+            <DriftRow key={`cron-add-${line}`} kind="warn">
+              [+] {line}
+            </DriftRow>
+          ))}
+          {scheduledDiff?.lineDiff.removed.map((line) => (
+            <DriftRow key={`cron-remove-${line}`} kind="error">
+              [-] {line}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
-      <DriftSection
-        title="Tools (nvm/node/npm)"
-        description={sectionCopy.tools}
-        loading={!toolsDiff}
-        empty={!!toolsDiff && !hasToolsDrift(toolsDiff)}
-      >
-        {toolsDiff?.nodeToInstall && (
-          <DriftRow kind="warn">[node to-install] {toolsDiff.nodeToInstall}</DriftRow>
-        )}
-        {toolsDiff?.toInstall.map((pkg) => (
-          <DriftRow key={`tools-install-${pkg}`} kind="warn">
-            [npm -g to-install] {pkg}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!toolsDiff || hasToolsDrift(toolsDiff)) && (
+        <DriftSection
+          title="Tools (nvm/node/npm)"
+          description={sectionCopy.tools}
+          loading={!toolsDiff}
+          empty={!!toolsDiff && !hasToolsDrift(toolsDiff)}
+        >
+          {toolsDiff?.nodeToInstall && (
+            <DriftRow kind="warn">[node to-install] {toolsDiff.nodeToInstall}</DriftRow>
+          )}
+          {toolsDiff?.toInstall.map((pkg) => (
+            <DriftRow key={`tools-install-${pkg}`} kind="warn">
+              [npm -g to-install] {pkg}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
-      <DriftSection
-        title="Repos (git)"
-        description={sectionCopy.repos}
-        loading={!reposDiff}
-        empty={!!reposDiff && !hasReposDrift(reposDiff)}
-      >
-        {reposDiff?.toClone.map((r) => (
-          <DriftRow key={`repos-clone-${r.path}`} kind="warn">
-            [to-clone] {r.path} ({r.url})
-          </DriftRow>
-        ))}
-        {reposDiff?.manualNoUrl.map((p) => (
-          <DriftRow key={`repos-manual-${p}`} kind="muted">
-            [manual, no url] {p}
-          </DriftRow>
-        ))}
-      </DriftSection>
+      {(!reposDiff || hasReposDrift(reposDiff)) && (
+        <DriftSection
+          title="Repos (git)"
+          description={sectionCopy.repos}
+          loading={!reposDiff}
+          empty={!!reposDiff && !hasReposDrift(reposDiff)}
+        >
+          {reposDiff?.toClone.map((r) => (
+            <DriftRow key={`repos-clone-${r.path}`} kind="warn">
+              [to-clone] {r.path} ({r.url})
+            </DriftRow>
+          ))}
+          {reposDiff?.manualNoUrl.map((p) => (
+            <DriftRow key={`repos-manual-${p}`} kind="muted">
+              [manual, no url] {p}
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
 
       {duplicates.length > 0 && (
         <DriftSection

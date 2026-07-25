@@ -1,11 +1,10 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { HelpPopover } from '@/components/HelpPopover'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { emptyStateCopy, helpCopy } from '../copy'
-import { StatusText } from '../status'
+import { emptyStateCopy } from '../copy'
+import { StatusIcon, StatusText } from '../status'
 import type { SyncItemGroupDto } from '../../../shared/ipc'
 
 /**
@@ -194,8 +193,8 @@ function SyncItemsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col gap-3">
+      {/* R4-2 #2: "?" 헬프는 App.tsx 탭 바 우측 끝으로 통일했다(중복 제거). */}
       <ViewToolbar className="mb-0">
-        <HelpPopover text={helpCopy.items} />
         <Tooltip>
           <TooltipTrigger asChild>
             <input
@@ -253,18 +252,25 @@ function SyncItemsView(): React.JSX.Element {
                     </>
                   ) : (
                     <>
+                      {/* R4-2 #4: 예전엔 미관리 항목마다 "(candidate)" 텍스트를 반복해
+                          붙였는데, 이미 색(muted vs foreground)으로도 같은 정보를
+                          중복 전달하고 있어 "반복되는 상수"로 읽혔다(158행 전부가
+                          미관리인 화면에서 특히). 색만으로 구분하면 안 되므로
+                          (Design constraints) 텍스트 라벨을 지우는 대신 아이콘 형태
+                          (check vs 빈 원)로 바꿔 managed/unmanaged를 계속 색+형태
+                          두 채널로 인코딩한다 — 노이즈 없이. */}
                       <span
-                        className={row.managed ? 'text-foreground' : 'text-muted-foreground'}
+                        className="flex min-w-0 items-center gap-1.5"
                         title={
                           row.managed
                             ? '관리 중 — manifest에 기록됨'
                             : '미관리 후보 — 아직 manifest에 없음'
                         }
                       >
-                        {row.label}
-                        {!row.managed && (
-                          <span className="ml-2 text-status-muted">(candidate)</span>
-                        )}
+                        <StatusIcon kind={row.managed ? 'ok' : 'muted'} className="size-3" />
+                        <span className={row.managed ? 'text-foreground' : 'text-muted-foreground'}>
+                          {row.label}
+                        </span>
                       </span>
                       <Switch
                         // 스크린샷 자기검수에서 발견: 그룹 체크박스는 켜짐=all-synced(포함)인데

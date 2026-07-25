@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
-import { HelpPopover } from '@/components/HelpPopover'
 import { ViewToolbar } from '@/components/ViewToolbar'
-import { buttonCopy, emptyStateCopy, helpCopy } from '../copy'
+import { buttonCopy, emptyStateCopy } from '../copy'
 import { StatusText } from '../status'
 import { doctorResultKind } from '../statusKind'
 import type { DoctorReportDto } from '../../../shared/ipc'
@@ -61,8 +60,8 @@ function DoctorView(): React.JSX.Element {
 
   return (
     <div className="h-full space-y-5 overflow-y-auto pr-1">
+      {/* R4-2 #2: "?" 헬프는 App.tsx 탭 바 우측 끝으로 통일했다(중복 제거). */}
       <ViewToolbar className="mb-0">
-        <HelpPopover text={helpCopy.doctor} />
         <ActionButton
           variant="secondary"
           label={buttonCopy.refresh.label}
