@@ -6,11 +6,13 @@ export {
 } from './capture'
 export { diffPackages } from './diff'
 export { planPackages } from './plan'
+export { planSnap } from './snap'
 export type {
   AptProvider,
   AptSourceFile,
   FlatpakAppRow,
   FlatpakCommandResult,
+  FlatpakOverrideFile,
   FlatpakProvider,
   FlatpakRemoteRow,
   PackageProviders,
@@ -25,6 +27,7 @@ export type {
   FlatpakAppEntry,
   FlatpakCaptureReport,
   FlatpakDiffReport,
+  FlatpakOverrideEntry,
   FlatpakRemoteEntry,
   FlatpakSection,
   PackagesCaptureReport,

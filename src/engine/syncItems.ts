@@ -19,16 +19,23 @@ export interface SyncItem {
 }
 
 export interface SyncItemGroup {
-  readonly capability: 'dotfiles' | 'apt' | 'snap' | 'flatpak'
+  readonly capability: 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage'
   readonly title: string
   readonly items: readonly SyncItem[]
+  /**
+   * P2c 결정 ②: snap은 동기화 plan/apply에서 빠졌다(정책 §7 비목표) — 이
+   * 화면에 여전히 나오는 건 INV-1 중복 검출을 위한 조회일 뿐, ignore 토글을
+   * 눌러도 apply에 아무 영향이 없다는 걸 이 플래그로 표시한다.
+   */
+  readonly detectionOnly?: boolean
 }
 
 const IGNORE_KIND_BY_CAPABILITY: Readonly<Record<SyncItemGroup['capability'], string>> = {
   dotfiles: 'homes',
   apt: 'packages',
   snap: 'packages',
-  flatpak: 'apps'
+  flatpak: 'apps',
+  appimage: 'names'
 }
 
 export async function listSyncItemGroups(

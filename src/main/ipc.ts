@@ -60,7 +60,10 @@ function runTimestamp(): string {
 async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<PlanAction[]> {
   const dotfilesDiff = await diffDotfiles(ctx)
   const packagesDiff = await diffPackages(ctx, providers)
-  return [...planDotfiles(ctx, dotfilesDiff, runTs), ...planPackages(ctx, providers, packagesDiff)]
+  return [
+    ...planDotfiles(ctx, dotfilesDiff, runTs),
+    ...planPackages(ctx, providers, packagesDiff, runTs)
+  ]
 }
 
 // 현재 진행 중인 apply의 ApplyRunner -- engine:cancelApply가 신호를 보낼

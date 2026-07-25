@@ -60,9 +60,11 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
       toInstall: [
         { application: 'org.deskflow.deskflow', origin: 'flathub', installation: 'system' }
       ],
-      uncaptured: []
+      uncaptured: [],
+      overridesMissing: [],
+      overridesChanged: []
     }
-    const actions = planFlatpak(provider, diff)
+    const actions = planFlatpak(fixture.ctx, provider, diff, 'run-ts')
     expect(actions).toHaveLength(2)
     expect(actions.every((a) => a.privileged === false)).toBe(true)
     expect(actions[0].commands[0]).toBe(
@@ -95,5 +97,94 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
 
     const diff = await diffFlatpak(fixture.ctx, provider)
     expect(diff.toInstall).toEqual([])
+  })
+
+  // 신규 (구 repo엔 override 동기화 자체가 없었음) — P2c 결정 ④.
+  describe('flatpak permission overrides', () => {
+    it('captures a live override file into the store', async () => {
+      const provider = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=host;\n' }
+      })
+      const report = await captureFlatpak(fixture.ctx, provider, { dryRun: false })
+      expect(report.overridesAdded).toBe(1)
+
+      const flatpak = readEffectivePackages(fixture.ctx).flatpak
+      expect(flatpak?.overrides?.[0]?.appId).toBe('org.gimp.GIMP')
+    })
+
+    it('diff reports a missing override (manifested but no live file)', async () => {
+      const provider1 = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=host;\n' }
+      })
+      await captureFlatpak(fixture.ctx, provider1, { dryRun: false })
+
+      const provider2 = makeFakeFlatpakProvider({ overrideFiles: {} })
+      const diff = await diffFlatpak(fixture.ctx, provider2)
+      expect(diff.overridesMissing).toEqual(['org.gimp.GIMP'])
+    })
+
+    it('diff reports a changed override (live content differs from store)', async () => {
+      const provider1 = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=host;\n' }
+      })
+      await captureFlatpak(fixture.ctx, provider1, { dryRun: false })
+
+      const provider2 = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=!host;\n' }
+      })
+      const diff = await diffFlatpak(fixture.ctx, provider2)
+      expect(diff.overridesChanged).toEqual(['org.gimp.GIMP'])
+    })
+
+    it('plan backs up the live override then writes the stored content through the provider', async () => {
+      const provider1 = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=host;\n' }
+      })
+      await captureFlatpak(fixture.ctx, provider1, { dryRun: false })
+
+      const provider2 = makeFakeFlatpakProvider({
+        overrideFiles: { 'org.gimp.GIMP': '[Context]\nfilesystems=!host;\n' }
+      })
+      const diff = await diffFlatpak(fixture.ctx, provider2)
+      const actions = planFlatpak(fixture.ctx, provider2, diff, 'run-override')
+      expect(actions).toHaveLength(1)
+      expect(actions[0].privileged).toBeFalsy()
+
+      const result = await actions[0].run()
+      expect(result.ok).toBe(true)
+      expect(provider2.writeOverrideCalls).toHaveLength(1)
+      expect(provider2.writeOverrideCalls[0].content.toString('utf-8')).toBe(
+        '[Context]\nfilesystems=host;\n'
+      )
+    })
+
+    it('a restore action fails cleanly when the store has nothing captured yet', async () => {
+      const diff = {
+        skipped: false,
+        toAddRemotes: [],
+        toInstall: [],
+        uncaptured: [],
+        overridesMissing: ['org.orphan.App'],
+        overridesChanged: []
+      }
+      // manifest에 엔트리가 없으므로(직접 diff를 주입) plan은 액션을 못 만든다 --
+      // 실제로는 diffFlatpak이 manifest 기반이라 이 케이스는 일어나지 않지만,
+      // "스토어에 없으면 실패" 방어 로직 자체는 store 파일 부재 시나리오로 확인한다.
+      const provider = makeFakeFlatpakProvider()
+      writeIgnore(fixture, {}) // no-op, fixture 사용 확인용
+      const { writeCommonLayer } = await import('../../manifest')
+      writeCommonLayer(fixture.ctx, 'packages', {
+        flatpak: {
+          overrides: [
+            { appId: 'org.orphan.App', storeFile: 'packages/flatpak/overrides/org.orphan.App' }
+          ]
+        }
+      })
+      const actions = planFlatpak(fixture.ctx, provider, diff, 'run-missing-store')
+      expect(actions).toHaveLength(1)
+      const result = await actions[0].run()
+      expect(result.ok).toBe(false)
+      expect(result.detail).toContain('capture')
+    })
   })
 })

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
 import { captureApt, diffApt, findKeyringRef, planApt } from './apt'
+import { writeAptBaseline } from './aptBaseline'
 import { readCommonPackages, readEffectivePackages } from './io'
 import { makeFakeAptProvider } from './testHelpers'
 
@@ -36,6 +37,11 @@ describe('captureApt / diffApt / planApt', () => {
 
   beforeEach(() => {
     fixture = makeFixture('reference')
+    // 대부분의 기존 케이스는 "capture가 그냥 캡처한다"는 전제라, baseline
+    // 스냅샷 자체를 다루는 케이스만 빼고 여기서 빈 baseline을 미리 심어
+    // 첫 capture부터 정상적으로 캡처되게 한다 (P2c apt baseline 필터 전용
+    // 테스트는 아래 별도 describe에서 이 프리셋 없이 검증한다).
+    writeAptBaseline(fixture.ctx, [])
   })
 
   afterEach(() => {
@@ -185,5 +191,60 @@ describe('captureApt / diffApt / planApt', () => {
     const provider2 = makeFakeAptProvider({ manual: ['git', 'unityhub'] })
     const diff = await diffApt(fixture.ctx, provider2)
     expect(diff.uncaptured).not.toContain('unityhub')
+  })
+})
+
+// 신규 — FORWARD.md §7/정책 §8-B apt baseline 필터. 구 repo엔 이 개념이 없다
+// (§8-B는 "확정 필요" 항목으로만 남아 있었다) — 이 fixture는 위 describe의
+// `beforeEach`가 빈 baseline을 미리 심어두는 것과 달리, 진짜 "첫 capture"
+// 상황(baseline 파일이 아예 없음)을 그대로 검증한다.
+describe('apt baseline filter (first capture snapshots the distro-default set)', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('first capture snapshots everything as baseline and captures nothing new', async () => {
+    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(false)
+
+    const provider = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git'] })
+    const report = await captureApt(fixture.ctx, provider, { dryRun: false })
+
+    expect(report.manualInstalled).toBe(3) // 원본 apt-mark 총계는 그대로 보고
+    expect(report.packagesInManifest).toBe(0) // 하지만 baseline 자체라 manifest엔 아무것도 안 남는다
+    expect(report.notes.some((n) => n.includes('baseline'))).toBe(true)
+    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(true)
+    expect(fs.readFileSync(fixture.ctx.aptBaselinePath, 'utf-8')).toContain('git')
+  })
+
+  it('a second capture only picks up packages installed after the baseline snapshot', async () => {
+    const first = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git'] })
+    await captureApt(fixture.ctx, first, { dryRun: false })
+
+    const second = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git', 'ripgrep'] })
+    const report = await captureApt(fixture.ctx, second, { dryRun: false })
+
+    expect(report.packagesInManifest).toBe(1)
+    const apt = readEffectivePackages(fixture.ctx).apt
+    expect(apt?.packages).toEqual(['ripgrep'])
+  })
+
+  it('dry-run on the first capture does not write the baseline file', async () => {
+    const provider = makeFakeAptProvider({ manual: ['bash'] })
+    await captureApt(fixture.ctx, provider, { dryRun: true })
+    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(false)
+  })
+
+  it('diff also excludes baseline packages from uncaptured candidates', async () => {
+    const provider = makeFakeAptProvider({ manual: ['bash', 'coreutils'] })
+    await captureApt(fixture.ctx, provider, { dryRun: false }) // baseline = {bash, coreutils}
+
+    const diff = await diffApt(fixture.ctx, provider)
+    expect(diff.uncaptured).toEqual([]) // 둘 다 baseline이라 후보로 안 뜬다
   })
 })

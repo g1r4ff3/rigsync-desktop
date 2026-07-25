@@ -8,6 +8,7 @@ import type {
   AptSourceFile,
   FlatpakAppRow,
   FlatpakCommandResult,
+  FlatpakOverrideFile,
   FlatpakProvider,
   FlatpakRemoteRow,
   SnapListRow,
@@ -51,11 +52,15 @@ export interface FakeFlatpakProviderOptions {
   readonly apps?: readonly FlatpakAppRow[]
   readonly addRemoteResult?: FlatpakCommandResult
   readonly installResult?: FlatpakCommandResult
+  /** appId -> 라이브 override 파일 내용. `listOverrideFiles`/`overrideFileExists`/`readOverrideFileBytes`가 여기서만 답한다. */
+  readonly overrideFiles?: Readonly<Record<string, string | Buffer>>
+  readonly writeOverrideResult?: FlatpakCommandResult
 }
 
 export interface FakeFlatpakProvider extends FlatpakProvider {
   readonly addRemoteCalls: Array<{ name: string; url: string }>
   readonly installCalls: Array<{ origin: string; application: string }>
+  readonly writeOverrideCalls: Array<{ appId: string; content: Buffer }>
 }
 
 export function makeFakeFlatpakProvider(
@@ -63,6 +68,14 @@ export function makeFakeFlatpakProvider(
 ): FakeFlatpakProvider {
   const addRemoteCalls: Array<{ name: string; url: string }> = []
   const installCalls: Array<{ origin: string; application: string }> = []
+  const writeOverrideCalls: Array<{ appId: string; content: Buffer }> = []
+  const overrideFiles = new Map<string, Buffer>(
+    Object.entries(opts.overrideFiles ?? {}).map(([k, v]) => [
+      k,
+      Buffer.isBuffer(v) ? v : Buffer.from(v)
+    ])
+  )
+
   return {
     isAvailable: () => opts.available ?? true,
     remotes: () => [...(opts.remotes ?? [])],
@@ -75,7 +88,20 @@ export function makeFakeFlatpakProvider(
       installCalls.push({ origin, application })
       return opts.installResult ?? { ok: true, output: '' }
     },
+    listOverrideFiles: (): FlatpakOverrideFile[] =>
+      [...overrideFiles.entries()].map(([appId, content]) => ({
+        appId,
+        content: content.toString('utf-8')
+      })),
+    overrideFileExists: (appId) => overrideFiles.has(appId),
+    readOverrideFileBytes: (appId) => overrideFiles.get(appId) ?? null,
+    writeOverrideFile: (appId, content) => {
+      writeOverrideCalls.push({ appId, content })
+      overrideFiles.set(appId, content)
+      return opts.writeOverrideResult ?? { ok: true, output: '' }
+    },
     addRemoteCalls,
-    installCalls
+    installCalls,
+    writeOverrideCalls
   }
 }

@@ -39,9 +39,22 @@ export interface FlatpakAppEntry {
   readonly installation: string
 }
 
+/**
+ * `~/.local/share/flatpak/overrides/<appId>` 권한 오버라이드 파일 — 정책 §3.2:
+ * "이것 없이 앱만 복원하면 대상 머신에서 앱이 조용히 다르게 동작한다". 파일
+ * 단위 동기화(dotfiles의 파일 스토어 메커니즘 재사용 — 새 코드 없이 같은
+ * copy+backup 유틸을 그대로 부른다).
+ */
+export interface FlatpakOverrideEntry {
+  readonly appId: string
+  /** manifestDir 기준 상대 스토어 경로 (예: "packages/flatpak/overrides/<appId>"). */
+  readonly storeFile: string
+}
+
 export interface FlatpakSection {
   readonly remote?: readonly FlatpakRemoteEntry[]
   readonly app?: readonly FlatpakAppEntry[]
+  readonly overrides?: readonly FlatpakOverrideEntry[]
 }
 
 export interface PackagesManifest {
@@ -72,6 +85,8 @@ export interface FlatpakCaptureReport {
   readonly apps: number
   readonly addedRemotes: number
   readonly addedApps: number
+  readonly overridesCaptured: number
+  readonly overridesAdded: number
 }
 
 export interface PackagesCaptureReport {
@@ -101,6 +116,10 @@ export interface FlatpakDiffReport {
   readonly toAddRemotes: readonly FlatpakRemoteEntry[]
   readonly toInstall: readonly FlatpakAppEntry[]
   readonly uncaptured: readonly string[]
+  /** manifest엔 있는데 라이브 시스템엔 override 파일 자체가 없는 appId. */
+  readonly overridesMissing: readonly string[]
+  /** 라이브 override 파일 내용이 스토어와 다른 appId. */
+  readonly overridesChanged: readonly string[]
 }
 
 export interface PackagesDiffReport {

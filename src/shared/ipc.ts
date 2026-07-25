@@ -173,7 +173,7 @@ export interface PackagesCaptureReport {
 // engine:listSyncItems / engine:toggleIgnore ("동기화 항목" 화면 — P2a 결정 ⑤)
 // ---------------------------------------------------------------------------
 
-export type SyncItemCapability = 'dotfiles' | 'apt' | 'snap' | 'flatpak'
+export type SyncItemCapability = 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage'
 
 export interface SyncItemDto {
   readonly key: string
@@ -187,6 +187,8 @@ export interface SyncItemGroupDto {
   readonly capability: SyncItemCapability
   readonly title: string
   readonly items: readonly SyncItemDto[]
+  /** P2c: snap처럼 동기화 plan/apply에서 빠지고 INV-1 중복 검출용으로만 조회되는 그룹. */
+  readonly detectionOnly?: boolean
 }
 
 export interface ToggleIgnoreRequest {

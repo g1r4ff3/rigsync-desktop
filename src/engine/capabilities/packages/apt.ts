@@ -11,6 +11,7 @@ import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import type { PlanAction } from '../../plan'
+import { aptBaselineExists, readAptBaseline, writeAptBaseline } from './aptBaseline'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import type { AptProvider } from './providerTypes'
 import type { AptCaptureReport, AptDiffReport, AptSection, AptSourceEntry } from './types'
@@ -69,7 +70,24 @@ export async function captureApt(
     }
   }
 
-  const manual = provider.manualInstalled()
+  const manualAll = provider.manualInstalled()
+  const notes: string[] = []
+
+  // 첫 capture -- 지금 상태 전체를 "배포판 기본분" 기준선으로 스냅샷한다
+  // (정책 §8-B 답). 이후부터는 이 기준선과의 차집합만 사용자가 추가한
+  // 패키지로 본다.
+  let baseline = readAptBaseline(ctx)
+  if (!aptBaselineExists(ctx)) {
+    if (!options.dryRun) {
+      writeAptBaseline(ctx, manualAll)
+    }
+    baseline = new Set(manualAll)
+    notes.push(
+      `apt baseline 스냅샷: 배포판 기본분 ${manualAll.length}개 기록 -- 다음 capture부터 차집합만 후보`
+    )
+  }
+  const manual = manualAll.filter((p) => !baseline.has(p))
+
   const existing = readCommonPackages(ctx).apt ?? {}
   const existingPackages = existing.packages ?? []
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
@@ -87,7 +105,6 @@ export async function captureApt(
   const captured: AptSourceEntry[] = []
   let nSources = 0
   let nKeyrings = 0
-  const notes: string[] = []
 
   for (const file of provider.listSourceFiles()) {
     if (ignoreSources.has(file.name)) continue
@@ -138,7 +155,7 @@ export async function captureApt(
 
   return {
     skipped: false,
-    manualInstalled: manual.length,
+    manualInstalled: manualAll.length,
     packagesInManifest: newPackages.length,
     packagesAdded: newPackages.filter((p) => !existingPackages.includes(p)).length,
     sourcesCaptured: nSources,
@@ -158,7 +175,8 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
     }
   }
 
-  const manual = new Set(provider.manualInstalled())
+  const baseline = readAptBaseline(ctx)
+  const manual = new Set(provider.manualInstalled().filter((p) => !baseline.has(p)))
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
   const ignoreSources = readIgnoreSet(ctx, 'apt', 'sources')

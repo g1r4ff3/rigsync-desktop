@@ -10,6 +10,7 @@
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import type { SyncItemGroup } from '../../syncItems'
+import { readAptBaseline } from './aptBaseline'
 import { readEffectivePackages } from './io'
 import type { PackageProviders } from './providerTypes'
 
@@ -22,8 +23,13 @@ export async function buildPackageSyncGroups(
 
   if (providers.apt.isAvailable()) {
     const ignore = readIgnoreSet(ctx, 'apt', 'packages')
+    const baseline = readAptBaseline(ctx)
     const managedSet = new Set(manifest.apt?.packages ?? [])
-    const liveSet = new Set(providers.apt.manualInstalled())
+    // baseline(배포판 기본분)은 managed가 아닌 이상 후보 목록에서도 뺀다 --
+    // 안 그러면 158개짜리 배포판 기본 패키지가 전부 "미관리 후보"로 보인다.
+    const liveSet = new Set(
+      providers.apt.manualInstalled().filter((p) => managedSet.has(p) || !baseline.has(p))
+    )
     const names = [...new Set([...managedSet, ...liveSet])].sort()
     if (names.length > 0) {
       groups.push({
@@ -47,7 +53,8 @@ export async function buildPackageSyncGroups(
     if (names.length > 0) {
       groups.push({
         capability: 'snap',
-        title: 'snap',
+        title: 'snap (검출 전용 — 동기화 대상 아님)',
+        detectionOnly: true,
         items: names.map((name) => ({
           key: name,
           label: name,

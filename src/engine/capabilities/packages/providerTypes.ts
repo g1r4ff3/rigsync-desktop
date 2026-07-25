@@ -52,6 +52,12 @@ export interface FlatpakCommandResult {
   readonly output: string
 }
 
+export interface FlatpakOverrideFile {
+  /** 파일명 = flatpak app ID (예: "org.gimp.GIMP"). */
+  readonly appId: string
+  readonly content: string
+}
+
 export interface FlatpakProvider {
   isAvailable(): boolean
   remotes(): FlatpakRemoteRow[]
@@ -63,6 +69,21 @@ export interface FlatpakProvider {
   addRemoteUser(name: string, url: string): FlatpakCommandResult
   /** `flatpak install --user -y <origin> <application>`. */
   installAppUser(origin: string, application: string): FlatpakCommandResult
+  /**
+   * `~/.local/share/flatpak/overrides/*` 각 파일의 appId(파일명)+내용 —
+   * 정책 §3.2 "권한 오버라이드는 반드시 함께 동기화" (P2c 결정 ④). apt의
+   * `listSourceFiles`와 같은 역할: 라이브 시스템 조회를 provider 뒤로 격리한다.
+   */
+  listOverrideFiles(): FlatpakOverrideFile[]
+  overrideFileExists(appId: string): boolean
+  readOverrideFileBytes(appId: string): Buffer | null
+  /**
+   * 라이브 override 파일을 덮어쓴다(호출 전 백업은 호출자 책임). 이 메서드
+   * 뒤로 격리하는 이유는 apt/keyring 쪽과 달리 override 복원은 unprivileged라
+   * plan의 `run()`이 테스트에서도 실제로 호출되기 때문 — 그 경로가 raw
+   * `fs`/`os.homedir()`를 직접 쓰면 테스트가 개발자의 진짜 홈을 건드리게 된다.
+   */
+  writeOverrideFile(appId: string, content: Buffer): FlatpakCommandResult
 }
 
 export interface PackageProviders {

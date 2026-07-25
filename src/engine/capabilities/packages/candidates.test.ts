@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
 import { buildPackageSyncGroups } from './candidates'
 import { captureApt } from './apt'
+import { writeAptBaseline } from './aptBaseline'
 import { makeFakeAptProvider, makeFakeFlatpakProvider, makeFakeSnapProvider } from './testHelpers'
 
 // 신규 테스트 (구 repo엔 이 화면이 없었음) — P2a 결정 ⑤ "동기화 항목" 화면의
@@ -19,6 +20,7 @@ describe('buildPackageSyncGroups', () => {
   })
 
   it('groups managed + unmanaged items per provider, marking ignored ones (not hiding them)', async () => {
+    writeAptBaseline(fixture.ctx, []) // P2c: baseline 없으면 첫 capture가 스냅샷만 하고 끝난다
     const aptProvider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, aptProvider, { dryRun: false }) // "git" becomes managed
 

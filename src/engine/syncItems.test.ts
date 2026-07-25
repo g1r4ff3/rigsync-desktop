@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { captureApt } from './capabilities/packages/apt'
+import { writeAptBaseline } from './capabilities/packages/aptBaseline'
 import {
   makeFakeAptProvider,
   makeFakeFlatpakProvider,
@@ -21,6 +22,7 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
   })
 
   it('combines dotfiles + package groups, dotfiles first', async () => {
+    writeAptBaseline(fixture.ctx, []) // P2c: baseline 없으면 첫 capture가 스냅샷만 하고 끝난다
     const aptProvider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, aptProvider, { dryRun: false })
 
