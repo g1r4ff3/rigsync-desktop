@@ -5,8 +5,11 @@
  * `getMainWindow` 콜백으로 늦게 묶는다(P1 확정 결정 ⑤·⑥).
  *
  * P2a: packages capability(apt/snap/flatpak)가 추가되면서 `engine:apply`는
- * dotfiles + packages 두 capability의 plan을 합쳐 하나의 PlanExecutor로
- * 실행한다 — privileged 액션(apt/snap)은 executor가 알아서 skipped 처리한다.
+ * dotfiles + packages 두 capability의 plan을 합쳐 실행한다.
+ * P2b: 그 실행은 이제 `ApplyRunner`(src/engine/elevation)가 맡는다 — 비특권
+ * 액션은 기존 PlanExecutor로, 특권 액션(apt/snap install 등)은 pkexec 스크립트
+ * 하나로 묶어 실행한다. main은 정말 "배선만" 한다(결정 ① — 스크립트 생성·파싱은
+ * 순수 엔진 코드, pkexec spawn은 `linuxElevationExec`).
  */
 import { ipcMain, type BrowserWindow } from 'electron'
 import { captureDotfiles } from '../engine/capabilities/dotfiles/capture'
@@ -16,8 +19,9 @@ import { capturePackages } from '../engine/capabilities/packages/capture'
 import { diffPackages } from '../engine/capabilities/packages/diff'
 import { planPackages } from '../engine/capabilities/packages/plan'
 import { resolveContext, type RigsyncContext } from '../engine/context'
-import { linuxPackageProviders } from '../engine/providers/linux'
-import { PlanExecutor } from '../engine/plan'
+import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
+import { linuxElevationExec, linuxPackageProviders } from '../engine/providers/linux'
+import type { PlanAction } from '../engine/plan'
 import { listSyncItemGroups, toggleSyncItemIgnore } from '../engine/syncItems'
 import {
   IPC_CHANNELS,
@@ -52,6 +56,17 @@ function getContext(): RigsyncContext {
 function runTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-')
 }
+
+async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<PlanAction[]> {
+  const dotfilesDiff = await diffDotfiles(ctx)
+  const packagesDiff = await diffPackages(ctx, providers)
+  return [...planDotfiles(ctx, dotfilesDiff, runTs), ...planPackages(ctx, providers, packagesDiff)]
+}
+
+// 현재 진행 중인 apply의 ApplyRunner -- engine:cancelApply가 신호를 보낼
+// 대상. invoke 하나가 한 번에 하나씩만 진행된다는 전제(동시에 두 Apply
+// 클릭을 허용하지 않는 건 UI 쪽 책임)로 단순하게 모듈 변수 하나로 둔다.
+let currentApplyRunner: ApplyRunner | null = null
 
 export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC_CHANNELS.engineGetStatus, async (): Promise<EngineStatus> => {
@@ -97,31 +112,42 @@ export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): vo
     IPC_CHANNELS.engineApply,
     async (_event, request: ApplyRequest): Promise<ApplyResponse> => {
       const ctx = getContext()
-      const dotfilesDiff = await diffDotfiles(ctx)
-      const packagesDiff = await diffPackages(ctx, providers)
-      const runTs = runTimestamp()
-      const plan = [
-        ...planDotfiles(ctx, dotfilesDiff, runTs),
-        ...planPackages(ctx, providers, packagesDiff)
-      ]
+      const plan = await buildCombinedPlan(ctx, runTimestamp())
 
       const send = (event: PlanEvent): void => {
         getMainWindow()?.webContents.send(IPC_CHANNELS.enginePlanEvent, event)
       }
 
-      const executor = new PlanExecutor()
-      executor.on('action_start', (payload) => send({ type: 'action_start', ...payload }))
-      executor.on('action_done', (payload) => send({ type: 'action_done', ...payload }))
+      const runner = new ApplyRunner()
+      currentApplyRunner = runner
+      runner.on('action_start', (payload) => send({ type: 'action_start', ...payload }))
+      runner.on('action_done', (payload) => send({ type: 'action_done', ...payload }))
       let summary: PlanSummaryDto = { ok: 0, failed: 0, skipped: 0, cancelled: 0 }
-      executor.on('summary', (payload) => {
+      runner.on('summary', (payload) => {
         summary = payload
         send({ type: 'summary', summary: payload })
       })
 
-      const results = await executor.execute(plan, { confirm: request.confirm })
-      return { results, summary }
+      try {
+        const results = await runner.run(plan, {
+          confirm: request.confirm,
+          elevationExec: linuxElevationExec
+        })
+        // 확인 다이얼로그(dry-run 프리뷰)에서만 스크립트 전문을 보여준다 —
+        // 실행 후 응답엔 필요 없다(불변식 ⑥은 "실행 전 노출"이 핵심).
+        const sudoScriptPreview = request.confirm
+          ? undefined
+          : (buildSudoScriptPreview(plan) ?? undefined)
+        return { results, summary, sudoScriptPreview }
+      } finally {
+        currentApplyRunner = null
+      }
     }
   )
+
+  ipcMain.handle(IPC_CHANNELS.engineCancelApply, async (): Promise<void> => {
+    currentApplyRunner?.cancel()
+  })
 }
 
 /** 온보딩 위저드(P4) 완료 후 config.toml이 새로 쓰였을 때 캐시를 갱신하기 위한 훅. */

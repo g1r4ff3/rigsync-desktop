@@ -19,6 +19,8 @@ export const IPC_CHANNELS = {
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
+  /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
+  engineCancelApply: 'engine:cancelApply',
   /** main -> renderer 단방향 push (invoke 아님) — PlanExecutor 진행 이벤트 중계. */
   enginePlanEvent: 'engine:planEvent'
 } as const
@@ -223,6 +225,12 @@ export interface PlanSummaryDto {
 export interface ApplyResponse {
   readonly results: readonly PlanActionResultDto[]
   readonly summary: PlanSummaryDto
+  /**
+   * plan에 privileged(sudo/pkexec) 액션이 있을 때만 채워지는 스크립트 전문
+   * (P2b 결정 ⑤ — 불변식 ⑥). Apply 확인 다이얼로그가 monospace로 그대로
+   * 노출해야 한다. privileged 액션이 없으면 undefined.
+   */
+  readonly sudoScriptPreview?: string
 }
 
 export interface PlanEventActionStart {

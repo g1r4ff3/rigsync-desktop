@@ -27,11 +27,16 @@ export interface PlanAction {
    */
   readonly alwaysRun?: boolean
   /**
-   * true면 권한 상승(sudo/pkexec)이 필요한 액션이다. P2a 확정 결정 ②: 권한
-   * 상승 통합(P2b) 전까지 executor는 이 액션을 **절대 실행하지 않는다** —
-   * confirm 여부·dry-run 여부와 무관하게 항상 `skipped`로 보고하고, `commands`
-   * (실행될 명령 전문)는 그대로 UI에 노출해 사용자가 수동으로 실행할 수 있게
-   * 한다(불변식 ⑥은 여전히 지킨다 — 다만 "누가 실행하느냐"만 사람으로 넘어간다).
+   * true면 권한 상승(sudo/pkexec)이 필요한 액션이다. `PlanExecutor`는 이
+   * 액션을 **절대 직접 실행하지 않는다** — confirm·dry-run과 무관하게 항상
+   * `skipped`로 보고한다(안전한 기본값·안전망). 실제 실행 경로는
+   * `src/engine/elevation/`의 `ApplyRunner`가 담당한다: plan에서 privileged
+   * 액션만 뽑아 pkexec 스크립트 하나로 묶어 실행하고, 그 결과를 이
+   * PlanExecutor가 처리한 나머지 액션들과 같은 `action_start`/`action_done`
+   * 이벤트 스트림에 합류시킨다(P2b 결정 ①·④). 이 필드/스킵 동작 자체는 P2a에서
+   * 생긴 안전선이고 지금도 유효하다 — "누가 실행하느냐"가 executor에서
+   * ApplyRunner로 옮겨졌을 뿐, PlanExecutor에 직접 넘겨진 privileged 액션은
+   * 여전히 실행되지 않는다.
    */
   readonly privileged?: boolean
   run(): Promise<{ ok: boolean; detail: string }>
@@ -47,9 +52,19 @@ export interface PlanActionResult {
   readonly detail?: string
 }
 
+/** 실행 중 취소 신호 — 명령들 "사이"에서만 확인한다(협조적 소프트 취소). */
+export interface CancelToken {
+  isCancelled(): boolean
+}
+
 export interface ExecuteOptions {
   /** false(기본)면 dry-run — alwaysRun이 아닌 액션은 전혀 실행되지 않는다 (불변식 ①). */
   readonly confirm: boolean
+  /**
+   * P2b 확정 결정 ③: 취소는 명령 사이마다 체크한다 — 이미 실행 중이던 액션은
+   * 항상 끝까지 마치고, 아직 시작 안 한 액션만 `not-run`으로 보고된다.
+   */
+  readonly cancelToken?: CancelToken
 }
 
 export interface ActionStartEvent {
@@ -88,10 +103,27 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     let ok = 0
     let failed = 0
     let skipped = 0
-    const cancelled = 0 // 소프트 취소는 P1 범위 밖 — 자리만 예약해둔다.
+    let cancelled = 0
 
     for (let index = 0; index < plan.length; index++) {
       const action = plan[index]
+
+      if (options.cancelToken?.isCancelled() && !action.alwaysRun) {
+        // 소프트 취소: 이전 반복의 await가 끝난 뒤에만 여기 도달하므로, 지금
+        // 막 실행을 건너뛰는 액션은 아직 시작조차 안 한 것들뿐이다.
+        const detail = '사용자 중단으로 실행되지 않음'
+        this.emit('action_start', { index, total, desc: action.summary })
+        results.push({
+          capability: action.capability,
+          summary: action.summary,
+          commands: action.commands,
+          status: 'not-run',
+          detail
+        })
+        cancelled += 1
+        this.emit('action_done', { index, ok: false, error: detail })
+        continue
+      }
 
       if (action.privileged) {
         // 권한 상승 통합(P2b) 전까지 절대 실행하지 않는다 — confirm·dry-run

@@ -34,6 +34,8 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineToggleIgnore, request),
   apply: (request: ApplyRequest): Promise<ApplyResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
+  /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */
+  cancelApply: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.engineCancelApply),
   /** `engine:planEvent` push 구독. 반환값을 호출하면 구독을 해제한다. */
   onPlanEvent: (callback: (event: PlanEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: PlanEvent): void =>

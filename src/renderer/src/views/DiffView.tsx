@@ -132,7 +132,10 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   }
 
   // Apply 흐름 2단계: 사용자가 다이얼로그에서 확인을 누르면 실제로 실행하고,
-  // engine:planEvent 구독으로 행마다 실시간 진행을 표시한다.
+  // engine:planEvent 구독으로 행마다 실시간 진행을 표시한다. privileged
+  // 액션은 pkexec 1회 인증으로 스크립트 하나가 실행되고(P2b), 그 진행도 같은
+  // 이벤트 스트림에 합류한다 — UI는 privileged/unprivileged를 구분하지 않고
+  // 행 상태로만 본다.
   async function confirmApply(): Promise<void> {
     setApplying(true)
     setLive({})
@@ -152,6 +155,16 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     } finally {
       unsubscribe()
       setApplying(false)
+    }
+  }
+
+  // 실행 중 취소 (P2b 결정 ③) — 명령 사이에서 협조적으로 멈춘다: 이미 실행
+  // 중인 명령/액션은 끝까지 마치고, 그 뒤로는 not-run으로 보고된다.
+  async function cancelApply(): Promise<void> {
+    try {
+      await window.api.engine.cancelApply()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -259,11 +272,23 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           <DialogHeader>
             <DialogTitle>Apply 계획 확인</DialogTitle>
             <DialogDescription>
-              아래 각 항목이 확인을 누르면 그대로 실행할 내용입니다 (덮어쓰기 전 자동 백업됨).
-              <code className="text-amber-500"> skipped</code>로 표시된 항목은 권한 상승(sudo)이
-              필요해 아직 자동 실행되지 않습니다 — 표시된 명령을 직접 실행하세요.
+              일반 작업은 바로 실행되고, 관리자 권한이 필요한 작업은 아래 스크립트 하나로 묶여
+              시스템 인증(polkit) 1회로 실행됩니다 (덮어쓰기 전 자동 백업됨).
+              <code className="text-amber-500"> skipped</code>로 표시되면 pkexec가 없거나 인증이
+              거부된 것 — 표시된 명령을 터미널에서 직접 실행하세요.
             </DialogDescription>
           </DialogHeader>
+
+          {preview?.sudoScriptPreview && (
+            <div className="rounded border border-amber-900 bg-neutral-950 p-2">
+              <p className="mb-1 font-mono text-xs text-amber-500">
+                관리자 권한 스크립트 (polkit 1회 인증으로 실행)
+              </p>
+              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-neutral-300">
+                {preview.sudoScriptPreview}
+              </pre>
+            </div>
+          )}
 
           <ul className="space-y-3 font-mono text-xs">
             {preview?.results.map((action, index) => {
@@ -292,6 +317,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           </ul>
 
           <DialogFooter>
+            {applying && (
+              <Button variant="secondary" onClick={cancelApply}>
+                취소
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => setDialogOpen(false)} disabled={applying}>
               닫기
             </Button>

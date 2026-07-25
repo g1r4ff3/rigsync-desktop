@@ -5,8 +5,10 @@
  */
 import type { CapabilityName } from '../../capabilities'
 import type { PackageProviders } from '../../capabilities/packages/providerTypes'
+import type { ElevationExec } from '../../elevation/execTypes'
 import { LinuxAptProvider } from './apt'
 import { LinuxFlatpakProvider } from './flatpak'
+import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
 
 export interface Provider {
@@ -39,4 +41,7 @@ export const linuxPackageProviders: PackageProviders = {
   flatpak: new LinuxFlatpakProvider()
 }
 
-export { LinuxAptProvider, LinuxFlatpakProvider, LinuxSnapProvider }
+/** dev(실제 머신)에서 pkexec를 실제로 spawn하는 ElevationExec 구현. */
+export const linuxElevationExec: ElevationExec = new LinuxPkexecExec()
+
+export { LinuxAptProvider, LinuxFlatpakProvider, LinuxPkexecExec, LinuxSnapProvider }
