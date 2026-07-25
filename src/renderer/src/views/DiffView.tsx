@@ -11,7 +11,15 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { buttonCopy, emptyStateCopy, helpCopy, sectionCopy } from '../copy'
+import {
+  buttonCopy,
+  diffSummaryCopy,
+  dotfilesStateCopy,
+  dotfilesToLinkExplainCopy,
+  emptyStateCopy,
+  helpCopy,
+  sectionCopy
+} from '../copy'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusIcon, StatusText } from '../status'
 import { planActionStatusKind, type StatusKind } from '../statusKind'
@@ -47,9 +55,13 @@ function statusLabel(
 
 function hasDotfilesDrift(dotfiles: DotfilesDiffReport | null): boolean {
   if (!dotfiles) return false
+  // R5: missingHome이 빠져 있으면 홈에서 파일이 통째로 사라진 경우가 "기준과
+  // 일치"로 잘못 보고된다 — 나머지 세 상태와 동급으로 합산한다(renderer 전용
+  // 수정, engine의 DiffReport 필드는 그대로).
   return (
     dotfiles.toLink.length > 0 ||
     dotfiles.contentChanged.length > 0 ||
+    dotfiles.missingHome.length > 0 ||
     dotfiles.invalidStore.length > 0
   )
 }
@@ -106,12 +118,15 @@ function DriftSection({
   description,
   loading,
   empty,
+  matchedLabel = '기준과 일치',
   children
 }: {
   readonly title: string
   readonly description: string
   readonly loading: boolean
   readonly empty: boolean
+  /** R5: reference 화면에서는 "기준과 일치"가 자기지시적이라 어색해 role별로 바꿔 넣는다. */
+  readonly matchedLabel?: string
   readonly children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -121,7 +136,7 @@ function DriftSection({
       {loading ? (
         <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
       ) : empty ? (
-        <StatusText kind="ok">기준과 일치</StatusText>
+        <StatusText kind="ok">{matchedLabel}</StatusText>
       ) : (
         <ul className="space-y-1">{children}</ul>
       )}
@@ -139,6 +154,38 @@ function DriftRow({
   return (
     <li className="flex items-center gap-1.5 font-mono text-xs">
       <StatusIcon kind={kind} />
+      <span
+        className={
+          kind === 'error'
+            ? 'text-status-error'
+            : kind === 'warn'
+              ? 'text-status-warn'
+              : 'text-muted-foreground'
+        }
+      >
+        {children}
+      </span>
+    </li>
+  )
+}
+
+/**
+ * R5: dotfiles 항목 전용 행 — DriftRow와 달리 문장 전체를 monospace로 묶지
+ * 않는다("경로·명령 자체는 monospace 원문 유지"라는 계약에 맞춰, 사람이 읽는
+ * 설명은 보통 글꼴로, 홈 경로만 별도 <span className="font-mono">로 감싼다 —
+ * 호출부 책임). 다른 capability(Packages/AppImage/...)의 `[apt to-install]`류
+ * 태그는 이번 라운드 스코프 밖이라 DriftRow를 그대로 쓴다.
+ */
+function DotfilesDriftRow({
+  kind,
+  children
+}: {
+  readonly kind: StatusKind
+  readonly children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <li className="flex items-start gap-1.5 text-xs">
+      <StatusIcon kind={kind} className="mt-0.5" />
       <span
         className={
           kind === 'error'
@@ -179,6 +226,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [live, setLive] = useState<Record<number, RowLiveState>>({})
   const [finalResults, setFinalResults] = useState<readonly PlanActionResultDto[] | null>(null)
   const [applying, setApplying] = useState(false)
+
+  // R5: reference는 그 자체가 기준이라 "기준과 다른 점" 프레이밍이 성립하지
+  // 않는다 — role에 따라 요약 문구 전체를 갈아 끼운다(copy.ts diffSummaryCopy).
+  const isReference = status?.role === 'reference'
+  const summary = isReference ? diffSummaryCopy.reference : diffSummaryCopy.follower
 
   async function refreshDiff(): Promise<void> {
     // P4: follower는 diff를 보기 전에 fetch+ff-pull을 먼저 시도한다(reference는
@@ -307,6 +359,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           count: dotfilesDiff
             ? dotfilesDiff.toLink.length +
               dotfilesDiff.contentChanged.length +
+              dotfilesDiff.missingHome.length +
               dotfilesDiff.invalidStore.length
             : null
         },
@@ -528,7 +581,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       <section className="mb-3 rounded-lg border border-border bg-card p-4">
         {/* R4-2 #2: 화면별 "?" 헬프는 App.tsx 탭 바 우측 끝 하나로 통일했다 —
             여기 있던 인스턴스는 그 통일 위치와 중복이라 제거. */}
-        <h2 className="text-xs font-medium text-muted-foreground">이 머신이 기준과 다른 점</h2>
+        <h2 className="text-xs font-medium text-muted-foreground">{summary.heading}</h2>
         <div className="mt-1.5 flex items-center gap-2">
           <StatusIcon
             kind={totalDrift === null ? 'muted' : totalDrift === 0 ? 'ok' : 'warn'}
@@ -541,15 +594,15 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
             {totalDrift === null
               ? emptyStateCopy.loading
               : totalDrift === 0
-                ? '기준과 일치'
-                : '건 — Apply로 맞출 수 있습니다'}
+                ? summary.matched
+                : summary.drift}
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {driftCounts.map((c) => (
             <span
               key={c.key}
-              title={`${c.label}: ${c.count === null ? emptyStateCopy.loading : c.count === 0 ? '기준과 일치' : `${c.count}건 드리프트`}`}
+              title={`${c.label}: ${c.count === null ? emptyStateCopy.loading : c.count === 0 ? summary.matched : `${c.count}${summary.chipUnit}`}`}
               className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
             >
               <StatusIcon
@@ -639,7 +692,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       {matchedCapabilities.length > 0 && (
         <section className="mb-4 rounded-md border border-border bg-card/50 p-2.5">
           <p className="mb-1.5 text-xs text-muted-foreground">
-            기준과 일치 ({matchedCapabilities.length})
+            {summary.matched} ({matchedCapabilities.length})
           </p>
           <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
             {matchedCapabilities.map((c) => (
@@ -660,27 +713,40 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           title="Dotfiles"
           description={sectionCopy.dotfiles}
           loading={!dotfilesDiff}
+          matchedLabel={summary.matched}
           empty={
             !!dotfilesDiff &&
             dotfilesDiff.toLink.length === 0 &&
             dotfilesDiff.contentChanged.length === 0 &&
+            dotfilesDiff.missingHome.length === 0 &&
             dotfilesDiff.invalidStore.length === 0
           }
         >
+          {/* R5: [to-link]는 raw 상태 태그라 reference에서 Capture 직후에도
+              "벌써 어긋났다"로 오독됐다 — 사람이 읽는 문장 + 그 아래 한 줄
+              설명으로 바꾼다(경로만 monospace로 남긴다). */}
+          {dotfilesDiff && dotfilesDiff.toLink.length > 0 && (
+            <li className="mb-1 text-[11px] text-muted-foreground">{dotfilesToLinkExplainCopy}</li>
+          )}
           {dotfilesDiff?.toLink.map((home) => (
-            <DriftRow key={`link-${home}`} kind="warn">
-              [to-link] {home}
-            </DriftRow>
+            <DotfilesDriftRow key={`link-${home}`} kind="warn">
+              {dotfilesStateCopy.toLink} — <span className="font-mono">{home}</span>
+            </DotfilesDriftRow>
           ))}
           {dotfilesDiff?.contentChanged.map((item) => (
-            <DriftRow key={`changed-${item}`} kind="warn">
-              [content-changed] {item}
-            </DriftRow>
+            <DotfilesDriftRow key={`changed-${item}`} kind="warn">
+              {dotfilesStateCopy.contentChanged} — <span className="font-mono">{item}</span>
+            </DotfilesDriftRow>
+          ))}
+          {dotfilesDiff?.missingHome.map((home) => (
+            <DotfilesDriftRow key={`missing-${home}`} kind="error">
+              {dotfilesStateCopy.missingHome} — <span className="font-mono">{home}</span>
+            </DotfilesDriftRow>
           ))}
           {dotfilesDiff?.invalidStore.map((home) => (
-            <DriftRow key={`invalid-${home}`} kind="error">
-              [invalid-store] {home}
-            </DriftRow>
+            <DotfilesDriftRow key={`invalid-${home}`} kind="error">
+              {dotfilesStateCopy.invalidStore} — <span className="font-mono">{home}</span>
+            </DotfilesDriftRow>
           ))}
         </DriftSection>
       )}

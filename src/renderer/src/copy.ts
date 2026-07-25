@@ -6,10 +6,35 @@
  */
 
 export const tabCopy = {
-  diff: { label: 'Differences', subtitle: '이 머신이 기준과 다른 점' },
+  diff: { label: 'Differences', subtitle: '이 머신과 manifest를 비교' },
   items: { label: 'Candidates', subtitle: '동기화할 항목 선택' },
   doctor: { label: 'Doctor', subtitle: '수동 점검 체크리스트' },
   settings: { label: 'Settings', subtitle: '머신 이름·역할·저장 위치' }
+} as const
+
+/**
+ * R5: Differences 요약 카드의 role별 프레이밍 — Explanability 계약 "real-world
+ * match" 위반 수정. reference 머신은 그 자체가 기준이라 "이 머신이 기준과
+ * 다른 점"이라는 문구가 성립하지 않는다(자신과 자신을 비교하는 꼴). reference의
+ * Differences는 실제로는 "Capture로 manifest에는 기록됐지만 아직 이 머신에
+ * 반영(심링크 전환·설치 등)은 안 된 항목"을 보여준다 — Apply가 그 반영을
+ * 수행한다. follower는 기존 프레이밍("기준과 다름")이 여전히 맞다(단방향
+ * 배포 대상이므로 실제로 기준 대비 차이를 보고하는 게 맞음).
+ */
+export const diffSummaryCopy = {
+  reference: {
+    heading: '아직 이 머신에 반영되지 않은 항목',
+    drift: '건 — Apply로 반영할 수 있습니다',
+    matched: '모두 반영됨',
+    /** capability별 칩 툴팁의 짧은 단위 표현. */
+    chipUnit: '건 미반영'
+  },
+  follower: {
+    heading: '이 머신이 기준과 다른 점',
+    drift: '건 — Apply로 맞출 수 있습니다',
+    matched: '기준과 일치',
+    chipUnit: '건 드리프트'
+  }
 } as const
 
 export const buttonCopy = {
@@ -45,11 +70,31 @@ export const sectionCopy = {
   reclassifications: 'manifest에 기록된 설치 방식과 실제 설치 방식이 다른 항목'
 } as const
 
+/**
+ * R5: dotfiles 세부 항목의 내부 상태 태그(`toLink`/`contentChanged`/
+ * `missingHome`/`invalidStore`)를 사람이 읽는 문장으로 바꾼다 — 이전에는
+ * `[to-link]` 같은 raw 태그가 그대로 노출돼(예: reference 머신에서 방금
+ * Capture한 직후에도 "[to-link] ~/.zshrc"가 떠 "왜 벌써 어긋났지?"로 오독됐다)
+ * Explanability 계약(real-world match)을 어겼다. 경로 자체는 여전히 monospace로
+ * 별도 표시하고(DiffView가 처리), 여기는 상태를 설명하는 문장만 담당한다.
+ */
+export const dotfilesStateCopy = {
+  toLink: '스토어로 연결 필요 (최초 1회 — Apply가 백업 후 심링크로 전환)',
+  contentChanged: '스토어와 내용이 다름 (Apply로 갱신)',
+  missingHome: '홈에 파일이 없음 (Apply로 생성)',
+  invalidStore: '스토어 경로가 잘못됨 — manifest 확인 필요'
+} as const
+
+/** dotfiles의 to-link 상태가 왜 생기는지 요약 카드/섹션에 붙이는 한 줄 설명. */
+export const dotfilesToLinkExplainCopy =
+  'Capture는 홈 파일을 스토어로 복사만 합니다 — 홈 파일을 스토어 심링크로 바꾸는 것은 Apply의 몫입니다.'
+
 export const helpCopy = {
   diff: [
     'Differences는 이 머신의 실제 상태와 manifest(선언된 기준)를 비교합니다.',
-    'reference 머신은 Capture로 현재 상태를 manifest에 기록하고 자동으로 commit+push합니다.',
-    'follower 머신은 저작할 수 없고 pull로 받은 manifest를 Apply로 반영만 합니다(단방향 배포).',
+    'reference 머신은 Capture로 현재 상태를 manifest에 기록하고 자동으로 commit+push합니다 — 그래서 reference의 요약은 "기준과 다른 점"이 아니라 "아직 이 머신에 반영되지 않은 항목"으로 표시됩니다.',
+    'follower 머신은 저작할 수 없고 pull로 받은 manifest를 Apply로 반영만 합니다(단방향 배포) — follower의 요약은 실제로 기준과 다른 점을 보여줍니다.',
+    'dotfiles는 Capture 직후에도 "스토어로 연결 필요"로 남을 수 있습니다 — Capture는 홈 파일을 스토어로 복사만 하고, 홈 파일을 스토어 심링크로 바꾸는 것은 Apply의 몫이기 때문입니다(최초 1회만 있는 정상 상태 — 이후엔 심링크라 홈을 고치면 스토어도 곧바로 바뀝니다).',
     'INV-1(중복 설치 경고)은 같은 앱이 apt/flatpak/snap/AppImage 중 둘 이상에 설치된 경우를 잡아냅니다.',
     '계층 재분류 감지는 manifest가 기록한 설치 방식과 실제 설치 방식이 어긋난 경우를 보여줍니다.'
   ].join(' '),
@@ -84,6 +129,22 @@ export const helpCopy = {
     '관리자 권한이 필요한 항목은 한 번의 시스템 인증(polkit)으로 스크립트 하나가 실행됩니다.',
     '실행 전에는 무엇이든 취소할 수 있고, 실행 중에도 남은 항목은 취소할 수 있습니다(이미 시작된 항목은 끝까지 완료).'
   ].join(' ')
+} as const
+
+/**
+ * R5 라운드5 — Doctor 재설계. 이전엔 탭 바로 아래 "Recheck" 버튼만 덜렁 있어
+ * (열자마자 이미 점검이 실행되는데) "무엇을 다시 하는지" 알 수 없었다.
+ * 요약(통과/경고/실패 건수)과 "마지막 점검 시각"을 먼저 보여주고 그 옆에
+ * Recheck을 두어 "이 시각 이후로 다시 점검"이라는 뜻이 스스로 드러나게 한다.
+ */
+export const doctorCopy = {
+  summaryOk: '통과',
+  summaryWarn: '경고',
+  summaryError: '실패',
+  lastChecked: '마지막 점검',
+  lastCheckedNever: '아직 점검 전',
+  actionPrefix: '조치',
+  allPassed: '통과 — 펼쳐서 세부 항목 보기'
 } as const
 
 export const emptyStateCopy = {
