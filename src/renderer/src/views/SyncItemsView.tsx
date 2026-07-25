@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { HelpPopover } from '@/components/HelpPopover'
+import { ViewToolbar } from '@/components/ViewToolbar'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { emptyStateCopy, helpCopy } from '../copy'
@@ -193,7 +194,7 @@ function SyncItemsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <ViewToolbar className="mb-0">
         <HelpPopover text={helpCopy.items} />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -206,7 +207,7 @@ function SyncItemsView(): React.JSX.Element {
           </TooltipTrigger>
           <TooltipContent>이름으로 항목 필터링(그룹 전체 토글에는 영향 없음)</TooltipContent>
         </Tooltip>
-      </div>
+      </ViewToolbar>
 
       {error && <StatusText kind="error">{error}</StatusText>}
 

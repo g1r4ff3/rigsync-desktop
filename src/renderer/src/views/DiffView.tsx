@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { HelpPopover } from '@/components/HelpPopover'
+import { ViewToolbar } from '@/components/ViewToolbar'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -291,6 +292,87 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     reposDiff
   ])
 
+  // R1b: "3초 안에 이 머신이 기준과 다른가"를 화면 맨 위 요약으로 보여주기
+  // 위한 capability별 건수. hasXDrift(boolean)와 같은 필드를 세되, 로딩 중엔
+  // null로 구분해 요약 카드가 "불러오는 중"과 "0건(일치)"을 갈라 보여준다.
+  const driftCounts = useMemo(
+    () =>
+      [
+        {
+          key: 'dotfiles',
+          label: 'Dotfiles',
+          count: dotfilesDiff
+            ? dotfilesDiff.toLink.length +
+              dotfilesDiff.contentChanged.length +
+              dotfilesDiff.invalidStore.length
+            : null
+        },
+        {
+          key: 'packages',
+          label: 'Packages',
+          count: packagesDiff
+            ? packagesDiff.apt.toInstall.length +
+              packagesDiff.apt.sourcesMissing.length +
+              packagesDiff.apt.sourcesContentChanged.length +
+              packagesDiff.flatpak.toAddRemotes.length +
+              packagesDiff.flatpak.toInstall.length
+            : null
+        },
+        {
+          key: 'appimage',
+          label: 'AppImage',
+          count: appimageDiff
+            ? appimageDiff.toInstall.length + appimageDiff.pinMismatch.length
+            : null
+        },
+        {
+          key: 'settings',
+          label: 'Settings',
+          count: settingsDiff ? settingsDiff.contentChanged.length : null
+        },
+        {
+          key: 'services',
+          label: 'Services',
+          count: servicesDiff
+            ? servicesDiff.missing.length +
+              servicesDiff.contentChanged.length +
+              servicesDiff.enabledMismatch.length
+            : null
+        },
+        {
+          key: 'scheduled',
+          label: 'Scheduled',
+          count: scheduledDiff
+            ? scheduledDiff.lineDiff.added.length + scheduledDiff.lineDiff.removed.length
+            : null
+        },
+        {
+          key: 'tools',
+          label: 'Tools',
+          count: toolsDiff ? toolsDiff.toInstall.length + (toolsDiff.nodeToInstall ? 1 : 0) : null
+        },
+        {
+          key: 'repos',
+          label: 'Repos',
+          count: reposDiff ? reposDiff.toClone.length + reposDiff.manualNoUrl.length : null
+        }
+      ] as const,
+    [
+      dotfilesDiff,
+      packagesDiff,
+      appimageDiff,
+      settingsDiff,
+      servicesDiff,
+      scheduledDiff,
+      toolsDiff,
+      reposDiff
+    ]
+  )
+  const totalDrift = driftCounts.every((c) => c.count !== null)
+    ? driftCounts.reduce((sum, c) => sum + (c.count ?? 0), 0)
+    : null
+  const activeDuplicateCount = duplicates.filter((d) => !d.ignored).length
+
   // capture-first: 전 capability를 한 번에 캡처한다 (결정 ③ — additive-only).
   async function handleCapture(): Promise<void> {
     setBusy(true)
@@ -383,40 +465,105 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
 
   return (
     <div className="h-full overflow-y-auto pr-1">
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <HelpPopover text={helpCopy.diff} />
-        <div className="flex items-start gap-3">
-          <ActionButton
-            variant="secondary"
-            label={buttonCopy.capture.label}
-            subtitle={buttonCopy.capture.subtitle}
-            disabledReason={buttonCopy.captureDisabledFollower}
-            busy={busy}
-            disabled={busy || status?.role === 'follower'}
-            onClick={handleCapture}
-          />
-          <ActionButton
-            label={buttonCopy.apply.label}
-            subtitle={buttonCopy.apply.subtitle}
-            disabledReason={buttonCopy.applyDisabledNoDrift}
-            busy={busy}
-            disabled={busy || !hasDrift}
-            onClick={openApplyPreview}
-          />
+      {/* R1b 원칙①(시각적 위계): "이 머신이 기준과 다른가"가 화면에서 가장 크고
+          먼저 읽혀야 한다 — capability별 세부 목록보다 앞, 가장 큰 글자로. */}
+      <section className="mb-3 rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center gap-1.5">
+          <HelpPopover text={helpCopy.diff} />
+          <h2 className="text-xs font-medium text-muted-foreground">이 머신이 기준과 다른 점</h2>
         </div>
-      </div>
+        <div className="mt-1.5 flex items-center gap-2">
+          <StatusIcon
+            kind={totalDrift === null ? 'muted' : totalDrift === 0 ? 'ok' : 'warn'}
+            className="size-6"
+          />
+          <span className="text-3xl leading-none font-semibold tabular-nums text-foreground">
+            {totalDrift ?? '…'}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {totalDrift === null
+              ? emptyStateCopy.loading
+              : totalDrift === 0
+                ? '기준과 일치'
+                : '건 — Apply로 맞출 수 있습니다'}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {driftCounts.map((c) => (
+            <span
+              key={c.key}
+              title={`${c.label}: ${c.count === null ? emptyStateCopy.loading : c.count === 0 ? '기준과 일치' : `${c.count}건 드리프트`}`}
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+            >
+              <StatusIcon
+                kind={c.count === null ? 'muted' : c.count > 0 ? 'warn' : 'ok'}
+                className="size-3"
+              />
+              {c.label}
+              {/* 0은 "정보 없음"이 아니라 "일치"라 체크 아이콘이 이미 말해준다 —
+                  숫자 0을 덧붙이면 시각적 잡음만 늘어난다(round 1 스크린샷에서 발견). */}
+              {c.count ? ` ${c.count}` : c.count === null ? ' …' : ''}
+            </span>
+          ))}
+          {activeDuplicateCount > 0 && (
+            <span
+              title="INV-1 중복 설치 경고"
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-status-error"
+            >
+              <StatusIcon kind="error" className="size-3" />
+              Duplicates {activeDuplicateCount}
+            </span>
+          )}
+          {reclassifications.length > 0 && (
+            <span
+              title="계층 재분류 감지"
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-status-warn"
+            >
+              <StatusIcon kind="warn" className="size-3" />
+              Reclassified {reclassifications.length}
+            </span>
+          )}
+        </div>
+      </section>
+
+      {/* R1b 원칙②(액션 배치): 액션(Capture/Apply)은 요약 바로 아래, 좌측 정렬
+          한 줄로 — 이전에는 justify-between으로 오른쪽 끝에 붙어 그 옆(왼쪽)에
+          쓸모없는 빈 띠가 생겼다(사용자 지적 사례). */}
+      <ViewToolbar>
+        <ActionButton
+          variant="secondary"
+          label={buttonCopy.capture.label}
+          subtitle={buttonCopy.capture.subtitle}
+          disabledReason={buttonCopy.captureDisabledFollower}
+          busy={busy}
+          disabled={busy || status?.role === 'follower'}
+          onClick={handleCapture}
+        />
+        <ActionButton
+          label={buttonCopy.apply.label}
+          subtitle={buttonCopy.apply.subtitle}
+          disabledReason={buttonCopy.applyDisabledNoDrift}
+          busy={busy}
+          disabled={busy || !hasDrift}
+          onClick={openApplyPreview}
+        />
+      </ViewToolbar>
 
       {status?.role === 'follower' && (
-        <StatusText kind="muted" className="mb-4">
+        <StatusText kind="muted" className="mb-3">
           이 머신은 follower입니다 — capture는 reference 전용이라 비활성화되어 있습니다.
         </StatusText>
       )}
 
       {error && (
-        <StatusText kind="error" className="mb-4">
+        <StatusText kind="error" className="mb-3">
           {error}
         </StatusText>
       )}
+
+      <h3 className="mb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        세부 항목
+      </h3>
 
       <DriftSection
         title="Dotfiles"

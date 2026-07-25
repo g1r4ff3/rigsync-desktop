@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { HelpPopover } from '@/components/HelpPopover'
+import { ViewToolbar } from '@/components/ViewToolbar'
 import { buttonCopy, emptyStateCopy, helpCopy } from '../copy'
 import { StatusText } from '../status'
 import { doctorResultKind } from '../statusKind'
@@ -60,7 +61,7 @@ function DoctorView(): React.JSX.Element {
 
   return (
     <div className="h-full space-y-5 overflow-y-auto pr-1">
-      <div className="flex items-start justify-between gap-2">
+      <ViewToolbar className="mb-0">
         <HelpPopover text={helpCopy.doctor} />
         <ActionButton
           variant="secondary"
@@ -69,7 +70,7 @@ function DoctorView(): React.JSX.Element {
           disabled={refreshing}
           onClick={() => void refresh()}
         />
-      </div>
+      </ViewToolbar>
 
       <section>
         <h2 className="text-sm font-medium text-foreground">Basic diagnostics</h2>

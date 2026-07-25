@@ -121,23 +121,31 @@ function App(): React.JSX.Element {
 
   return (
     <div className="flex min-h-screen flex-col bg-background p-6 text-foreground">
-      <header className="mb-4">
-        <h1 className="text-lg font-semibold tracking-tight">rigsync</h1>
+      {/* R1b 원칙③(정보 밀도): identity 블록을 한 줄로 압축한다 — 이전에는
+          제목/machineId·role/manifestDir가 각각 줄을 차지해 화면 상단 1/3을
+          먹었다. 경로는 화면 폭을 넘기면 잘리고 title로 전문을 제공한다. */}
+      <header className="mb-2 flex items-center gap-2 border-b border-border pb-2">
+        <span className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
+          rigsync
+        </span>
         {status ? (
-          <>
-            <p className="text-xs text-muted-foreground">
+          <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
+            <span className="shrink-0">
               {status.machineId} · {status.role}
-              {syncKind && (
-                <>
-                  {' · '}
-                  <StatusText kind={syncKind} className="inline-flex">
-                    {syncStatusLabel(syncStatus)}
-                  </StatusText>
-                </>
-              )}
-            </p>
-            <p className="font-mono text-xs text-muted-foreground">{status.manifestDir}</p>
-          </>
+            </span>
+            {syncKind && (
+              <>
+                <span className="shrink-0">·</span>
+                <StatusText kind={syncKind} className="inline-flex shrink-0">
+                  {syncStatusLabel(syncStatus)}
+                </StatusText>
+              </>
+            )}
+            <span className="shrink-0">·</span>
+            <span className="min-w-0 truncate font-mono text-[11px]" title={status.manifestDir}>
+              {status.manifestDir}
+            </span>
+          </div>
         ) : statusError ? (
           <StatusText kind="error">{statusError}</StatusText>
         ) : (
@@ -145,7 +153,7 @@ function App(): React.JSX.Element {
         )}
       </header>
 
-      <nav className="mb-4 flex gap-1 border-b border-border">
+      <nav className="mb-3 flex gap-1 border-b border-border">
         {(['diff', 'items', 'doctor', 'settings'] as const).map((id) => {
           const t = tabCopy[id]
           return (

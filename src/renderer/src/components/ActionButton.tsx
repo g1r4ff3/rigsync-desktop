@@ -1,13 +1,17 @@
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { buttonCopy } from '../copy'
-import { cn } from '@/lib/utils'
 
 /**
  * Explanability 계약 ①+② 결합 컴포넌트 — 모든 버튼이 이 하나를 통해서만
- * 렌더된다: 라벨 아래 항상 보이는 한 줄 부제(①) + 호버 시 같은(또는 비활성
- * 사유로 바뀌는) 설명 툴팁(②). 개별 화면이 매번 두 레이어를 손으로 맞추지
+ * 렌더된다: 한 줄 설명(①)은 호버 시 툴팁으로, 비활성 상태에선 같은 자리에
+ * "왜 비활성인지"로 바뀐다(②). 개별 화면이 매번 두 레이어를 손으로 맞추지
  * 않도록 여기 한 곳에서 강제한다.
+ *
+ * R1b: 이전에는 부제를 버튼 아래 항상 보이는 별도 줄로도 렌더했는데, 툴바
+ * 한 줄이 라벨+부제 두 줄로 두꺼워져 "버튼 아래 세로로 두꺼운 빈 띠"(사용자
+ * 지적 사례)의 원인 중 하나였다. 설명 자체는 사라지지 않고(여전히 이
+ * 컴포넌트가 유일한 소비처) 위치만 툴팁 하나로 합쳤다 — 정보 밀도 원칙.
  *
  * `disabled`는 흔히 "진행 중(busy)"과 "도메인 조건 미충족"이라는 서로 다른
  * 이유를 OR로 합쳐 만든다(예: `disabled={busy || !hasDrift}`). 이때
@@ -46,16 +50,19 @@ export function ActionButton({
       ? buttonCopy.busyReason
       : (disabledReason ?? subtitle)
   return (
-    <div className={cn('flex flex-col items-start gap-0.5', className)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant={variant} size={size} disabled={disabled} onClick={onClick}>
-            {label}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{tooltipText}</TooltipContent>
-      </Tooltip>
-      <span className="px-0.5 text-[10px] text-muted-foreground">{tooltipText}</span>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={variant}
+          size={size}
+          disabled={disabled}
+          onClick={onClick}
+          className={className}
+        >
+          {label}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltipText}</TooltipContent>
+    </Tooltip>
   )
 }

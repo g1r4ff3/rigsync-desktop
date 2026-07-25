@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { HelpPopover } from '@/components/HelpPopover'
+import { ViewToolbar } from '@/components/ViewToolbar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { buttonCopy, emptyStateCopy, helpCopy } from '../copy'
 import { StatusText } from '../status'
@@ -83,9 +84,9 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
 
   return (
     <div className="h-full overflow-y-auto pr-1">
-      <div className="mb-4">
+      <ViewToolbar>
         <HelpPopover text={helpCopy.settings} />
-      </div>
+      </ViewToolbar>
 
       <div className="mx-auto max-w-xl space-y-6">
         <section className="space-y-1">
