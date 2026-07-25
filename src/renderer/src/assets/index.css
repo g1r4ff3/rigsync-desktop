@@ -2,86 +2,113 @@
 @import 'tw-animate-css';
 
 /*
- * R4 디자인 패스 — CLAUDE.md "Design constraints" 계약: 다크 단일 테마,
- * 5색 고정(bg/surface/text/accent/danger), 파생 톤은 이 5색의 알파 변형만
- * (그라데이션·보라·6번째 색상 금지), radius 단일값.
+ * R1a 디자인 패스 — CLAUDE.md "Design constraints" 계약 개정(2026-07-26 사용자
+ * 지시): 5색 고정 팔레트를 폐기하고 Research Canvas
+ * (research-workbench-ui/src/index.css + tailwind.config.js)의 shadcn HSL 토큰
+ * 체계를 그대로 채택한다. light/dark 둘 다 지원하고 OS
+ * `prefers-color-scheme`를 따른다(다크 단일 테마 전제 폐기).
  *
- * 5개 원천 토큰(--rig-*)만 실제 색상값을 가진다. 그 아래 shadcn 표준 변수들은
- * 전부 이 5색을 그대로 참조하거나(할당) `color-mix()`로 alpha 섞은 값이다 —
- * 새 색상을 추가하는 게 아니라 기존 shadcn 변수 이름 체계를 유지한 채 값의
- * 원천만 5색으로 좁힌 것(컴포넌트 코드 무변경으로 계약 적용).
+ * 가져오지 않은 것 — Research Canvas의 nav glassmorphism 토큰(`--nav-glass-*`)과
+ * 모바일 전용 토큰(safe-area 등): 우리 계약의 "글래스모피즘·그라데이션·보라 금지"는
+ * 그대로 유지된다. primary는 블루(light `221.2 83.2% 53.3%` / dark
+ * `217.2 91.2% 59.8%`) — Research Canvas가 이미 보라 계열을 쓰지 않는다.
  *
- * "경고(warning)"는 별도 색이 아니라 --rig-danger의 저강도 알파 변형이다 —
- * 색만으로 구분하지 않기 위해 실제 사용처(status.tsx)에서 항상 아이콘 모양을
- * 함께 바꾼다(원 vs 삼각형 vs X, CLAUDE.md "색+형태 병행 인코딩").
+ * 토큰은 원본과 동일하게 "H S% L%" raw 트리플릿으로 저장하고(색상 함수로 감싸지
+ * 않음 — Research Canvas tailwind.config.js가 `hsl(var(--x))`로 소비하는 것과
+ * 동일한 관례), 아래 `@theme inline`에서 `hsl(var(--x))`로 감싸 실제 색상 값을
+ * 만든다. `--radius: 0.5rem`도 원본 그대로.
  */
 :root {
-  /* -- 5개 원천 토큰(유일한 실제 색상 정의) ------------------------------ */
-  --rig-bg: oklch(0.16 0 0);
-  --rig-surface: oklch(0.223 0 0);
-  --rig-text: oklch(0.94 0 0);
-  /* btop/터미널 계기판 느낌의 시안 — 보라 계열(hue 280-330) 회피. */
-  --rig-accent: oklch(0.75 0.13 200);
-  --rig-danger: oklch(0.65 0.19 25);
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
 
   --radius: 0.5rem;
+}
 
-  --background: var(--rig-bg);
-  --foreground: var(--rig-text);
-  --card: var(--rig-surface);
-  --card-foreground: var(--rig-text);
-  --popover: var(--rig-surface);
-  --popover-foreground: var(--rig-text);
-  --primary: var(--rig-accent);
-  --primary-foreground: var(--rig-bg);
-  --secondary: color-mix(in oklch, var(--rig-text) 10%, var(--rig-bg));
-  --secondary-foreground: var(--rig-text);
-  --muted: color-mix(in oklch, var(--rig-text) 6%, var(--rig-bg));
-  --muted-foreground: color-mix(in oklch, var(--rig-text) 58%, var(--rig-bg));
-  /* shadcn의 --accent는 브랜드 강조색이 아니라 hover/selected 배경 관례 —
-     여기서까지 브랜드색(시안)을 쓰면 화면 전체가 시안 범벅이 되므로 중립
-     알파 톤으로 둔다(브랜드 강조는 --primary/--rig-accent 쪽이 담당). */
-  --accent: color-mix(in oklch, var(--rig-text) 12%, var(--rig-bg));
-  --accent-foreground: var(--rig-text);
-  --destructive: var(--rig-danger);
-  --destructive-foreground: var(--rig-bg);
-  --border: color-mix(in oklch, var(--rig-text) 12%, transparent);
-  --input: color-mix(in oklch, var(--rig-text) 15%, transparent);
-  --ring: color-mix(in oklch, var(--rig-accent) 55%, transparent);
-
-  /* -- 상태 토큰 — 전 화면 공용(src/renderer/src/status.tsx가 유일 소비처) */
-  --status-ok: var(--rig-accent);
-  --status-warn: color-mix(in oklch, var(--rig-danger) 65%, var(--rig-text) 10%);
-  --status-error: var(--rig-danger);
-  --status-muted: var(--muted-foreground);
-  --status-running: var(--rig-accent);
+/*
+ * OS 설정을 따른다(수동 토글 없음 — 계약 지시 "OS 설정을 따른다"). `.dark`
+ * 클래스 전략이 아니라 media 전략인 이유: 컴포넌트 코드가 `dark:` 유틸리티
+ * 클래스를 전혀 쓰지 않고 전부 `bg-background`/`text-foreground` 같은 시맨틱
+ * 토큰 클래스만 쓰므로, 토큰 값 자체가 media query로 갈아끼워지는 편이
+ * 컴포넌트 변경 없이 두 모드를 지원하는 가장 단순한 경로다.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 217.2 91.2% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 217.2 91.2% 8%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 220 13% 46%;
+    --ring: 217.2 91.2% 59.8%;
+  }
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-status-ok: var(--status-ok);
-  --color-status-warn: var(--status-warn);
-  --color-status-error: var(--status-error);
-  --color-status-muted: var(--status-muted);
-  --color-status-running: var(--status-running);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  /*
+   * 상태 토큰 — 전 화면 공용(src/renderer/src/status.tsx가 유일 소비처).
+   * 5색 고정 계약이 폐기됐으므로 이제 새 색을 추가하지 않고 위 표준 토큰
+   * (primary/destructive/muted-foreground)을 재사용해 매핑한다 — "warn"은
+   * 여전히 별색이 아니라 destructive와 foreground를 섞은 저채도 변형이고,
+   * 아이콘 모양(삼각형 vs X)으로 error와 구분한다(색+형태 병행 인코딩 유지).
+   */
+  --color-status-ok: hsl(var(--primary));
+  --color-status-warn: color-mix(
+    in oklch,
+    hsl(var(--destructive)) 55%,
+    hsl(var(--foreground)) 15%
+  );
+  --color-status-error: hsl(var(--destructive));
+  --color-status-muted: hsl(var(--muted-foreground));
+  --color-status-running: hsl(var(--primary));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -98,31 +125,31 @@ body {
 
 /*
  * 네이티브 checkbox/radio(OnboardingView·SettingsView·Candidates 그룹 토글)는
- * 브라우저 기본값이 OS 파란색이라 그대로 두면 5색 팔레트가 깨진다 — 전부
- * --rig-accent로 통일한다(색상을 늘리는 게 아니라 브라우저 기본 파랑을
- * 우리 accent로 대체하는 것).
+ * 브라우저 기본값이 OS 파란색이라 그대로 두면 팔레트가 깨진다 — 전부
+ * primary로 통일한다(우연히도 이번 팔레트의 primary도 블루라 시각적으로는
+ * 거의 그대로지만, 라이트/다크 전환 시에도 같은 토큰을 따라가게 하기 위함).
  */
 input[type='checkbox'],
 input[type='radio'] {
-  accent-color: var(--rig-accent);
+  accent-color: hsl(var(--primary));
 }
 
 /*
- * 네이티브 스크롤바(Electron=Chromium)도 OS 기본 밝은 회색 트랙/썸이라 다크
- * 대시보드 팔레트에서 튄다(Apply 다이얼로그 스크린샷에서 실제 확인) — 5색
- * 원천(surface/text)의 알파 변형만 써서 다른 UI 요소와 동일한 규칙을 따른다.
+ * 네이티브 스크롤바(Electron=Chromium)도 OS 기본값이라 라이트/다크 어느
+ * 쪽에서도 튈 수 있다 — surface/text 토큰(card/muted-foreground)의 알파
+ * 변형만 써서 다른 UI 요소와 동일한 규칙을 따른다.
  */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--rig-surface);
+  background: hsl(var(--card));
 }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in oklch, var(--rig-text) 25%, var(--rig-surface));
+  background: color-mix(in oklch, hsl(var(--muted-foreground)) 45%, hsl(var(--card)));
   border-radius: var(--radius);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklch, var(--rig-text) 38%, var(--rig-surface));
+  background: color-mix(in oklch, hsl(var(--muted-foreground)) 65%, hsl(var(--card)));
 }

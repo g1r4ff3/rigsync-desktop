@@ -30,8 +30,12 @@ rigsync는 랜딩페이지가 아니라 **계기판**이다. 사용자는 렌더
 참조 미학: Linear의 밀도 + btop의 정보 표현. 3-OS 동일 렌더링 — OS 네이티브룩 추종 안 함.
 
 - Font: UI 전역 system-ui, 경로/명령/패키지명은 monospace
-- Palette: 5색 고정 (bg / surface / text / accent / danger)
-- Radius: 단일값 하나. 다른 값 금지
+- Palette: Research Canvas(`research-workbench-ui`)의 shadcn HSL 토큰 체계 채택
+  (2026-07-26 사용자 지시로 5색 고정 조항 폐기). background/foreground/card/popover/
+  primary/secondary/muted/accent/destructive/border/input/ring 토큰을 그대로 쓰고,
+  light/dark 둘 다 지원하며 OS `prefers-color-scheme`을 따른다(수동 토글 없음).
+  primary는 블루. nav glassmorphism 토큰·모바일 전용 토큰은 가져오지 않는다.
+- Radius: 단일값 하나(`--radius: 0.5rem`). 다른 값 금지
 - Density: 머신 상태가 스크롤 없이 한 화면에
 - 상태는 색+형태로 인코딩 (색만으로 구분 금지)
 - 컴포넌트는 shadcn/ui에서 가져온다 — 비슷한 걸 손으로 깎지 않는다 (shadcn MCP 사용)

@@ -5,8 +5,9 @@
  * 규칙 — 컴포넌트 파일은 컴포넌트만 export해야 Fast Refresh가 안전하다).
  *
  * 새 상태를 추가하고 싶으면 여기 5종(`StatusKind`) 중 하나로 매핑하고 절대
- * 새 색상을 만들지 않는다(5색 고정 계약 — "warn"은 새 색이 아니라 danger의
- * 저채도 알파 변형이고, 아이콘 모양(삼각형)으로 error(X)와 구분한다).
+ * 새 색상을 만들지 않는다(R1a 팔레트 채택 이후에도 유지 — "warn"은 새 색이
+ * 아니라 destructive(danger)의 저채도 알파 변형이고, 아이콘 모양(삼각형)으로
+ * error(X)와 구분한다).
  */
 export type StatusKind = 'ok' | 'warn' | 'error' | 'muted' | 'running'
 

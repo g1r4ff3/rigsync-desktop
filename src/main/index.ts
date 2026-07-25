@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Notification } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeTheme, Notification } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -24,6 +24,20 @@ if (screenshotDir) {
   app.commandLine.appendSwitch('disable-gpu')
   app.commandLine.appendSwitch('disable-software-rasterizer')
   app.commandLine.appendSwitch('disable-gpu-compositing')
+}
+
+/**
+ * R1a 검증 보조 — `RIGSYNC_SCREENSHOT_THEME=light|dark`가 있으면 강제로 그
+ * 테마의 `prefers-color-scheme`로 렌더한다(OS 설정과 무관하게 두 테마를 모두
+ * 스크린샷 루프로 검증하기 위한 dev 전용 스위치 — screenshotDir 하네스와 짝을
+ * 이룬다). `nativeTheme.themeSource`는 Electron이 renderer의
+ * `prefers-color-scheme` media query에 그대로 반영하는 공식 API라 CSS를
+ * 건드리지 않고 강제할 수 있다. 값이 없으면(보통 실행) 'system'과 동일하게
+ * OS를 따른다 — 평상시 동작에는 관여하지 않는다.
+ */
+const screenshotTheme = process.env.RIGSYNC_SCREENSHOT_THEME
+if (screenshotTheme === 'light' || screenshotTheme === 'dark') {
+  nativeTheme.themeSource = screenshotTheme
 }
 
 /**
