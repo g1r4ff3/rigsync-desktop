@@ -88,7 +88,8 @@ electron-vite + React + TS + Tailwind + shadcn/ui, 패키징 electron-builder(+ 
 P0  스캐폴드 + 디자인 계약     electron-vite 프로젝트, CLAUDE.md 계약 (이 repo에 이미 있음), CI(테스트)
 P1  walking skeleton          dotfiles capability 하나로 capture → diff → apply를 앱에서 끝까지 관통
                               (dry-run·백업·denylist 포함 — 안전선은 스켈레톤부터)
-P2  capability 확장           packages → settings → services/scheduled → tools/repos/appimage
+P2  capability 확장           P2a packages(apt/snap/flatpak)+ignore+항목화면 → P2b 권한상승(pkexec)
+                              → P2c 3계층 정책 구현(§7) → P2d settings/services/scheduled/tools/repos/doctor
                               각 capability마다 구 tests/에서 행동 케이스 채굴 → Vitest로
 P3  상주                      트레이, 스케줄 drift 체크, OS 알림
 P4  온보딩 + 패키징           위저드, electron-builder, 자동 업데이트
@@ -105,3 +106,37 @@ P1이 관통하면 이후 P2~P4는 상당 부분 병렬 가능. P5는 독립 트
   (코드 복사 금지 — 검증된 apply 경로의 신뢰를 새 코드가 다시 버는 가장 싼 길).
 - 두 머신 함정 승계: bare python3 문제는 소멸하지만, **hostname 둘 다 "cglab"** 문제는 그대로 —
   machine-id는 온보딩 위저드가 관리.
+
+## 7. 패키지 관리 3계층 정책 (2026-07-25 채택)
+
+정책 원문: `docs/package-policy.md`. 앱을 호출 방식으로 T1(apt)/T2(Flatpak)/T3(AppImage+Gear Lever)로
+분류하고 선언적 매니페스트만 동기화한다. 채택에 따른 구현 변경:
+
+- **snap은 동기화 대상에서 제외** (정책 §7 비목표) — 단 provider의 capture/diff 코드는
+  **INV-1 중복 설치 검출 전용**으로 유지 (같은 앱의 apt/flatpak/snap/appimage 중복 → 경고만).
+  중복 판별은 v1 보수적 휴리스틱(소문자 이름 포함 매칭) + ignore로 끌 수 있게.
+- **flatpak provider 확장**: remotes 동기화 + **권한 오버라이드 파일**(`~/.local/share/flatpak/overrides/`)
+  동기화 (파일 단위 — dotfiles 메커니즘 재사용).
+- **apt baseline 필터**: `apt-mark showmanual`(실측 158개)에서 배포판 기본분을 걸러내기 위해
+  **첫 capture 시 baseline 스냅샷**을 머신 로컬에 저장, 이후 baseline과의 diff만 후보로 (§8-B 답).
+- **T3 = Gear Lever 통합** — §8-A 검증 완료 (2026-07-25, 이 머신 실측):
+  - 설치: user flatpak 4.6.2 (최소 요구 충족). user flathub remote 별도 필요했음.
+  - READ: `--list-installed --json` (**`--json`은 --help에 없는 숨은 플래그**). 스키마 실측:
+    `{schema_version:1, installed:[{name, path, desktop_id, current_version, available_version,
+    download_size, manager, embedded_source, running}]}`. **함정: `name`이 버전 포함 문자열**
+    ("tev (2.13.1)") — 매니페스트 키는 `desktop_id` 사용. **좌표(repo)는 JSON에 없음** —
+    `~/.var/app/it.mijorus.gearlever/config/gearlever.conf`(INI, `[app.<hash>.update_manager]` 섹션의
+    `repo`/`repo_filename`/`manager`)를 **읽기 전용으로 파싱**해 삼중항을 완성한다.
+  - WRITE: 좌표→최신 asset URL 해석(GitHub API 등, fetch 주입 가능하게)→다운로드→
+    `--integrate <path> --yes`(비대화식 플래그 존재)→`--set-update-source <path> --manager <모델명>
+    KEY=value…` (**CLI 존재 확인** — 정책 §3.3 fallback 4단계 불필요). GithubUpdater 필수 키:
+    `repo`, `repo_filename`, `allow_prereleases`. 모델명: StaticFileUpdater/GithubUpdater/
+    GitlabUpdater/CodebergUpdater/FTPUpdater/ForgejoUpdater. 설정 파일 직접 쓰기 금지 — write는 CLI로만.
+  - 선행 조건(doctor): libfuse2t64(24.04 실측 설치됨), AppImageLauncher 부재 확인(충돌 경고),
+    Gear Lever ≥4.6.2.
+- **profiles 계층**: 오버레이를 `common → profile → host` 3단으로 (머신은 config에서 profile 지정).
+- **발산 정책 vs 단방향 모델 해소**: 계층 재분류 감지(매니페스트 T2 ↔ 머신 T1 등)는 모든 머신에서
+  하되, **follower에선 보고만**("reference에서 갱신" 안내), 매니페스트 갱신 제안 UI는 reference에서만.
+- **업데이트는 비목표** — 최신성은 topgrade 담당, 이 앱은 "무엇이 있어야 하는가"만.
+  `topgrade.toml`은 dotfiles 항목으로 처리 (새 capability 아님).
+- 매니페스트는 TOML 유지 (정책 문서의 YAML은 예시).
