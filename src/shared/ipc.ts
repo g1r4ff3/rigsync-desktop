@@ -12,8 +12,12 @@
 export const IPC_CHANNELS = {
   enginePing: 'engine:ping',
   engineGetStatus: 'engine:getStatus',
-  engineDiff: 'engine:diff',
+  engineDiffDotfiles: 'engine:diffDotfiles',
   engineCaptureDotfiles: 'engine:captureDotfiles',
+  engineDiffPackages: 'engine:diffPackages',
+  engineCapturePackages: 'engine:capturePackages',
+  engineListSyncItems: 'engine:listSyncItems',
+  engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
   /** main -> renderer 단방향 push (invoke 아님) — PlanExecutor 진행 이벤트 중계. */
   enginePlanEvent: 'engine:planEvent'
@@ -46,7 +50,7 @@ export interface EngineStatus {
 }
 
 // ---------------------------------------------------------------------------
-// engine:diff (P1 = dotfiles capability 하나뿐)
+// engine:diffDotfiles
 // ---------------------------------------------------------------------------
 
 export interface DotfilesDiffReport {
@@ -75,11 +79,122 @@ export interface DotfilesCaptureReport {
   readonly missingHome: number
   readonly skippedBrokenSymlink: number
   readonly skippedInvalidStore: number
+  readonly ignored: number
   readonly notes: readonly string[]
 }
 
 // ---------------------------------------------------------------------------
-// engine:apply (+ engine:planEvent 중계)
+// engine:diffPackages / engine:capturePackages (P2a — apt/snap/flatpak)
+// ---------------------------------------------------------------------------
+
+export interface AptDiffReportDto {
+  readonly skipped: boolean
+  readonly toInstall: readonly string[]
+  /** 설치는 돼 있지만 manifest엔 없는 것 — "동기화 항목" 화면에서 다룬다(불변식 ⑤). */
+  readonly uncaptured: readonly string[]
+  readonly sourcesMissing: readonly string[]
+  readonly sourcesContentChanged: readonly string[]
+}
+
+export interface SnapEntryDto {
+  readonly name: string
+  readonly classic: boolean
+}
+
+export interface SnapDiffReportDto {
+  readonly skipped: boolean
+  readonly toInstall: readonly SnapEntryDto[]
+  readonly uncaptured: readonly string[]
+}
+
+export interface FlatpakRemoteEntryDto {
+  readonly name: string
+  readonly url: string
+}
+
+export interface FlatpakAppEntryDto {
+  readonly application: string
+  readonly origin: string
+  readonly installation: string
+}
+
+export interface FlatpakDiffReportDto {
+  readonly skipped: boolean
+  readonly toAddRemotes: readonly FlatpakRemoteEntryDto[]
+  readonly toInstall: readonly FlatpakAppEntryDto[]
+  readonly uncaptured: readonly string[]
+}
+
+export interface PackagesDiffReport {
+  readonly capability: 'packages'
+  readonly apt: AptDiffReportDto
+  readonly snap: SnapDiffReportDto
+  readonly flatpak: FlatpakDiffReportDto
+}
+
+export interface CapturePackagesRequest {
+  readonly dryRun: boolean
+}
+
+export interface AptCaptureReportDto {
+  readonly skipped: boolean
+  readonly manualInstalled: number
+  readonly packagesInManifest: number
+  readonly packagesAdded: number
+  readonly sourcesCaptured: number
+  readonly keyringsCaptured: number
+  readonly notes: readonly string[]
+}
+
+export interface SnapCaptureReportDto {
+  readonly skipped: boolean
+  readonly captured: number
+  readonly added: number
+}
+
+export interface FlatpakCaptureReportDto {
+  readonly skipped: boolean
+  readonly remotes: number
+  readonly apps: number
+  readonly addedRemotes: number
+  readonly addedApps: number
+}
+
+export interface PackagesCaptureReport {
+  readonly capability: 'packages'
+  readonly apt: AptCaptureReportDto
+  readonly snap: SnapCaptureReportDto
+  readonly flatpak: FlatpakCaptureReportDto
+}
+
+// ---------------------------------------------------------------------------
+// engine:listSyncItems / engine:toggleIgnore ("동기화 항목" 화면 — P2a 결정 ⑤)
+// ---------------------------------------------------------------------------
+
+export type SyncItemCapability = 'dotfiles' | 'apt' | 'snap' | 'flatpak'
+
+export interface SyncItemDto {
+  readonly key: string
+  readonly label: string
+  /** manifest(effective)에 있으면 true. */
+  readonly managed: boolean
+  readonly ignored: boolean
+}
+
+export interface SyncItemGroupDto {
+  readonly capability: SyncItemCapability
+  readonly title: string
+  readonly items: readonly SyncItemDto[]
+}
+
+export interface ToggleIgnoreRequest {
+  readonly capability: SyncItemCapability
+  readonly key: string
+  readonly ignored: boolean
+}
+
+// ---------------------------------------------------------------------------
+// engine:apply (+ engine:planEvent 중계) — dotfiles+packages 플랜을 합쳐 실행한다.
 // ---------------------------------------------------------------------------
 
 export interface ApplyRequest {
