@@ -29,7 +29,8 @@ describe('readIgnoreSet', () => {
         'rigsync-desktop',
         'apt-baseline.txt'
       ),
-      settings: {}
+      settings: {},
+      autostartEnabled: false
     }
   })
 

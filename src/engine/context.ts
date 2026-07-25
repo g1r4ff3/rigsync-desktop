@@ -18,7 +18,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { parse as parseToml } from 'smol-toml'
+import { parse as parseToml, stringify as stringifyToml, type TomlTable } from 'smol-toml'
 
 export type Role = 'reference' | 'follower'
 
@@ -72,6 +72,8 @@ export interface RigsyncContext {
   readonly aptBaselinePath: string
   /** P2d: 사용자 조정 설정 묶음 (없으면 모든 capability가 빈 배열/기본값으로 취급). */
   readonly settings: RigsyncSettings
+  /** P4: 로그인 자동 시작(XDG autostart) 활성 여부 — 온보딩 위저드/트레이 메뉴가 토글. */
+  readonly autostartEnabled: boolean
 }
 
 export interface ResolvedContext {
@@ -80,11 +82,11 @@ export interface ResolvedContext {
   readonly firstRun: boolean
 }
 
-function defaultConfigPath(homeDir: string): string {
+export function defaultConfigPath(homeDir: string): string {
   return path.join(homeDir, '.config', 'rigsync-desktop', 'config.toml')
 }
 
-function defaultManifestDir(homeDir: string): string {
+export function defaultManifestDir(homeDir: string): string {
   return path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'manifest')
 }
 
@@ -100,7 +102,8 @@ function devDefaultContext(homeDir: string): RigsyncContext {
     homeDir,
     backupRoot: path.join(homeDir, '.rigsync-backup'),
     aptBaselinePath: defaultAptBaselinePath(homeDir),
-    settings: {}
+    settings: {},
+    autostartEnabled: false
   }
 }
 
@@ -152,9 +155,53 @@ export function resolveContext(
       : defaultAptBaselinePath(homeDir)
   const profile = typeof raw.profile === 'string' && raw.profile ? raw.profile : undefined
   const settings = readSettings(raw)
+  const autostartEnabled = raw.autostartEnabled === true
 
   return {
-    ctx: { machineId, role, manifestDir, homeDir, backupRoot, aptBaselinePath, profile, settings },
+    ctx: {
+      machineId,
+      role,
+      manifestDir,
+      homeDir,
+      backupRoot,
+      aptBaselinePath,
+      profile,
+      settings,
+      autostartEnabled
+    },
     firstRun: false
   }
+}
+
+// --------------------------------------------------------------------------
+// 온보딩 위저드(P4) — config.toml 쓰기
+// --------------------------------------------------------------------------
+
+export interface OnboardingConfig {
+  readonly machineId: string
+  readonly role: Role
+  readonly manifestDir: string
+  readonly profile?: string
+  readonly autostartEnabled: boolean
+}
+
+/**
+ * 온보딩 위저드 완료 시 config.toml을 쓰는 유일한 통로. `resolveContext()`가
+ * 읽는 필드와 1:1 대응한다 — 필드를 추가하면 여기와 `resolveContext` 양쪽을
+ * 같이 고친다.
+ */
+export function writeConfigFile(
+  homeDir: string,
+  config: OnboardingConfig,
+  configPath: string = defaultConfigPath(homeDir)
+): void {
+  const doc: Record<string, unknown> = {
+    machineId: config.machineId,
+    role: config.role,
+    manifestDir: config.manifestDir,
+    autostartEnabled: config.autostartEnabled,
+    ...(config.profile ? { profile: config.profile } : {})
+  }
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
+  fs.writeFileSync(configPath, stringifyToml(doc as unknown as TomlTable))
 }
