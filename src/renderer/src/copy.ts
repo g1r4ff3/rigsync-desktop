@@ -55,7 +55,7 @@ export const helpCopy = {
   ].join(' '),
   items: [
     'Candidates는 관리 대상(manifest에 있음)과 미관리 후보(설치는 됐지만 기록 안 됨)를 한 목록에 보여줍니다.',
-    '스위치를 켜면 그 항목을 ignore 처리해 다음 Capture부터 완전히 빼고, diff/Apply 대상에서도 제외합니다.',
+    '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 그 항목을 ignore 처리해 다음 Capture부터 완전히 빼고, diff/Apply 대상에서도 제외합니다.',
     '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다.',
     'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님).'
   ].join(' '),
@@ -90,7 +90,8 @@ export const emptyStateCopy = {
   noDrift: '기준과 일치 — 지금은 실행할 Apply 항목이 없습니다.',
   noCandidates: '동기화 대상 항목이 없습니다. Differences 탭에서 먼저 Capture를 실행하세요.',
   noSearchResults: '검색 결과 없음 — 검색어를 지우면 전체 목록이 다시 보입니다.',
-  noChecks: '표시할 점검 항목이 없습니다.',
+  noChecks:
+    '사용자 정의 점검이 없습니다 — manifest의 checks.toml에 점검 항목(파일 존재·명령 존재 등)을 추가하면 여기 표시됩니다.',
   loading: '불러오는 중…'
 } as const
 

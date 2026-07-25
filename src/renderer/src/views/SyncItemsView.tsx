@@ -266,14 +266,19 @@ function SyncItemsView(): React.JSX.Element {
                         )}
                       </span>
                       <Switch
-                        checked={row.ignored}
+                        // 스크린샷 자기검수에서 발견: 그룹 체크박스는 켜짐=all-synced(포함)인데
+                        // 이 스위치가 켜짐=ignored(제외)라 같은 화면에서 극성이 반대였다
+                        // ("그룹 체크됨 + 항목 전부 꺼짐"이 둘 다 '동기화 대상'을 뜻하는 시각
+                        // 모순). 엔진 쪽 ignore 의미는 그대로 두고 UI 표시만 반전한다 —
+                        // 켜짐 = 동기화 대상에 포함(그룹 체크박스와 같은 극성).
+                        checked={!row.ignored}
                         disabled={pendingKeys[row.key]}
-                        onCheckedChange={(checked) => toggle(row.capability, row.itemKey, checked)}
-                        aria-label={`${row.label} ignore 토글`}
+                        onCheckedChange={(checked) => toggle(row.capability, row.itemKey, !checked)}
+                        aria-label={`${row.label} 동기화 포함 토글`}
                         title={
                           row.ignored
-                            ? '무시됨 — 클릭하면 동기화 대상으로'
-                            : '동기화 대상 — 클릭하면 무시'
+                            ? '무시됨 — 클릭하면 동기화 대상에 포함'
+                            : '동기화 대상에 포함됨 — 클릭하면 무시(제외)'
                         }
                       />
                     </>
