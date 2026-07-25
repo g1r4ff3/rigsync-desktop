@@ -41,8 +41,12 @@ import { planSettings } from '../engine/capabilities/settings/plan'
 import { captureTools } from '../engine/capabilities/tools/capture'
 import { diffTools } from '../engine/capabilities/tools/diff'
 import { planTools } from '../engine/capabilities/tools/plan'
-import { resolveContext, type RigsyncContext } from '../engine/context'
+import { resolveContext, writeConfigFile, type RigsyncContext } from '../engine/context'
+import { setAutostart } from '../engine/autostart'
 import { orderCombinedPlan } from './planOrder'
+import { autoSyncAfterWrite, getLastSyncStatus, triggerSync } from './gitSync'
+import { completeOnboarding, expandTilde } from './onboarding'
+import { migrateLegacyManifest } from '../engine/migration/legacy'
 import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
@@ -57,6 +61,8 @@ import {
   linuxElevationExec,
   linuxGearLeverProvider,
   linuxGitProvider,
+  linuxGitTransportProvider,
+  linuxNvidiaCheckProvider,
   linuxPackageProviders,
   linuxSystemdUserProvider,
   linuxToolsProvider,
@@ -74,6 +80,8 @@ import {
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
+  type CompleteOnboardingRequest,
+  type CompleteOnboardingResponse,
   type DoctorReportDto,
   type DriftSummaryDto,
   type DotfilesCaptureReport,
@@ -85,6 +93,8 @@ import {
   type PackagesDiffReport,
   type PlanEvent,
   type PlanSummaryDto,
+  type PreviewLegacyMigrationRequest,
+  type LegacyMigrationSummaryDto,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
@@ -92,9 +102,11 @@ import {
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
+  type SetAutostartRequest,
   type SettingsCaptureReportDto,
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
+  type SyncStatusDto,
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto
@@ -111,6 +123,8 @@ const cronProvider = linuxCronProvider
 const toolsProvider = linuxToolsProvider
 const gitProvider = linuxGitProvider
 const doctorSystemProvider = linuxDoctorSystemProvider
+const nvidiaCheckProvider = linuxNvidiaCheckProvider
+const gitTransportProvider = linuxGitTransportProvider
 
 // config.toml은 온보딩 위저드(P4) 전에는 없는 게 정상이라 dev 기본값으로
 // 뜬다 — 앱 프로세스 생애주기 동안 한 번만 해석한다(전역 상태처럼 보이지만
@@ -132,6 +146,19 @@ export function getEngineContext(): RigsyncContext {
 
 function runTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-')
+}
+
+/**
+ * manifest 쓰기 경로(capture·ignore 토글) 뒤에 자동 commit+push를 붙인다
+ * (코디네이터 지시 "reference: manifest 변경 후 자동 commit+push"). dry-run이면
+ * 아무것도 쓰지 않았으니 동기화도 트리거하지 않는다. fire-and-forget이라 이
+ * 핸들러의 응답을 블로킹하지 않는다 -- push 실패는 engine:getSyncStatus로
+ * 표면화된다.
+ */
+async function withAutoSync<T>(dryRun: boolean, run: () => Promise<T>): Promise<T> {
+  const result = await run()
+  if (!dryRun) autoSyncAfterWrite(getContext(), gitTransportProvider)
+  return result
 }
 
 async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<PlanAction[]> {
@@ -177,15 +204,32 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
 // 클릭을 허용하지 않는 건 UI 쪽 책임)로 단순하게 모듈 변수 하나로 둔다.
 let currentApplyRunner: ApplyRunner | null = null
 
+export interface RegisterEngineIpcDeps {
+  /** P3: 스케줄러 인스턴스는 index.ts가 소유한다 — ipc.ts는 조회 콜백만 받는다. */
+  readonly getLastDriftCheck?: () => DriftSummaryDto | null
+  /** P4: 온보딩 완료(config.toml 신규 작성) 후 index.ts가 스케줄러를 재생성하도록 알린다. */
+  readonly onConfigChanged?: () => void
+  /** P4: autostart .desktop의 Exec= 값 — 패키징 형태에 따라 index.ts가 결정해 넘긴다. */
+  readonly getExecPath?: () => string
+}
+
 export function registerEngineIpc(
   getMainWindow: () => BrowserWindow | null,
-  // P3: 스케줄러 인스턴스는 index.ts가 소유한다(트레이도 같이 참조해야 하므로
-  // main/scheduler.ts를 여기서 새로 만들지 않는다) — ipc.ts는 조회 콜백만 받는다.
-  getLastDriftCheck: () => DriftSummaryDto | null = () => null
+  deps: RegisterEngineIpcDeps = {}
 ): void {
+  const getLastDriftCheck = deps.getLastDriftCheck ?? ((): DriftSummaryDto | null => null)
+  const onConfigChanged = deps.onConfigChanged ?? ((): void => {})
+  const getExecPath = deps.getExecPath ?? ((): string => process.execPath)
+
   ipcMain.handle(IPC_CHANNELS.engineGetStatus, async (): Promise<EngineStatus> => {
     const { ctx, firstRun } = resolved
-    return { machineId: ctx.machineId, role: ctx.role, manifestDir: ctx.manifestDir, firstRun }
+    return {
+      machineId: ctx.machineId,
+      role: ctx.role,
+      manifestDir: ctx.manifestDir,
+      firstRun,
+      autostartEnabled: ctx.autostartEnabled
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.engineDiffDotfiles, async (): Promise<DotfilesDiffReport> => {
@@ -195,7 +239,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureDotfiles,
     async (_event, request: CaptureDotfilesRequest): Promise<DotfilesCaptureReport> => {
-      return captureDotfiles(getContext(), { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureDotfiles(getContext(), { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -206,7 +252,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCapturePackages,
     async (_event, request: CapturePackagesRequest): Promise<PackagesCaptureReport> => {
-      return capturePackages(getContext(), providers, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        capturePackages(getContext(), providers, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -217,7 +265,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureAppimage,
     async (_event, request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> => {
-      return captureAppimage(getContext(), gearLeverProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureAppimage(getContext(), gearLeverProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -228,7 +278,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureSettings,
     async (_event, request: CaptureRequest): Promise<SettingsCaptureReportDto> => {
-      return captureSettings(getContext(), dconfProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureSettings(getContext(), dconfProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -239,7 +291,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureServices,
     async (_event, request: CaptureRequest): Promise<ServicesCaptureReportDto> => {
-      return captureServices(getContext(), systemdUserProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureServices(getContext(), systemdUserProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -250,7 +304,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureScheduled,
     async (_event, request: CaptureRequest): Promise<ScheduledCaptureReportDto> => {
-      return captureScheduled(getContext(), cronProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureScheduled(getContext(), cronProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -261,7 +317,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureTools,
     async (_event, request: CaptureRequest): Promise<ToolsCaptureReportDto> => {
-      return captureTools(getContext(), toolsProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureTools(getContext(), toolsProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -272,7 +330,9 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineCaptureRepos,
     async (_event, request: CaptureRequest): Promise<ReposCaptureReportDto> => {
-      return captureRepos(getContext(), gitProvider, { dryRun: request.dryRun })
+      return withAutoSync(request.dryRun, () =>
+        captureRepos(getContext(), gitProvider, { dryRun: request.dryRun })
+      )
     }
   )
 
@@ -282,6 +342,7 @@ export function registerEngineIpc(
       doctorSystemProvider,
       gearLeverProvider,
       linuxAppimageSystemCheck,
+      nvidiaCheckProvider,
       { configConfigured: !resolved.firstRun }
     )
   })
@@ -290,11 +351,13 @@ export function registerEngineIpc(
     IPC_CHANNELS.engineIgnoreDoctorCheck,
     async (_event, request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> => {
       ignoreDoctorCheck(getContext(), request.name, request.ignored)
+      autoSyncAfterWrite(getContext(), gitTransportProvider)
       return buildDoctorReport(
         getContext(),
         doctorSystemProvider,
         gearLeverProvider,
         linuxAppimageSystemCheck,
+        nvidiaCheckProvider,
         { configConfigured: !resolved.firstRun }
       )
     }
@@ -304,6 +367,70 @@ export function registerEngineIpc(
     IPC_CHANNELS.engineGetLastDriftCheck,
     async (): Promise<DriftSummaryDto | null> => {
       return getLastDriftCheck()
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.enginePreviewLegacyMigration,
+    async (_event, request: PreviewLegacyMigrationRequest): Promise<LegacyMigrationSummaryDto> => {
+      const legacyRepoPath = expandTilde(request.legacyRepoPath, getContext().homeDir)
+      return migrateLegacyManifest(getContext(), legacyRepoPath, { dryRun: true })
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCompleteOnboarding,
+    async (_event, request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> => {
+      const { migration } = await completeOnboarding(request, {
+        homeDir: getContext().homeDir,
+        execPath: getExecPath()
+      })
+      refreshEngineContext()
+      onConfigChanged()
+      const { ctx, firstRun } = resolved
+      return {
+        status: {
+          machineId: ctx.machineId,
+          role: ctx.role,
+          manifestDir: ctx.manifestDir,
+          firstRun,
+          autostartEnabled: ctx.autostartEnabled
+        },
+        migration
+      }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineGetSyncStatus, async (): Promise<SyncStatusDto> => {
+    return getLastSyncStatus(getContext(), gitTransportProvider)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.engineSyncNow, async (): Promise<SyncStatusDto> => {
+    return triggerSync(getContext(), gitTransportProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineSetAutostart,
+    async (_event, request: SetAutostartRequest): Promise<EngineStatus> => {
+      setAutostart(getContext().homeDir, request.enabled, getExecPath())
+      // config.toml에도 반영해야 다음 실행에도 유지된다.
+      const ctx = getContext()
+      writeConfigFile(ctx.homeDir, {
+        machineId: ctx.machineId,
+        role: ctx.role,
+        manifestDir: ctx.manifestDir,
+        autostartEnabled: request.enabled,
+        ...(ctx.profile ? { profile: ctx.profile } : {})
+      })
+      refreshEngineContext()
+      const { ctx: newCtx, firstRun } = resolved
+      return {
+        machineId: newCtx.machineId,
+        role: newCtx.role,
+        manifestDir: newCtx.manifestDir,
+        firstRun,
+        autostartEnabled: newCtx.autostartEnabled
+      }
     }
   )
 
@@ -335,6 +462,7 @@ export function registerEngineIpc(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
+      autoSyncAfterWrite(getContext(), gitTransportProvider)
       return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
     }
   )

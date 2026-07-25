@@ -15,6 +15,9 @@ export interface TrayDeps {
   readonly runCheckNow: () => Promise<void>
   readonly quit: () => void
   readonly getLastResult: () => DriftSummary | null
+  /** P4: 로그인 자동 시작 토글 — 온보딩 위저드 ⑤와 같은 상태를 트레이에서도. */
+  readonly isAutostartEnabled: () => boolean
+  readonly toggleAutostart: (enabled: boolean) => void
 }
 
 export interface AppTray {
@@ -49,6 +52,16 @@ export function createAppTray(deps: TrayDeps): AppTray {
         },
         { type: 'separator' },
         { label, enabled: false },
+        { type: 'separator' },
+        {
+          label: '로그인 시 자동 시작',
+          type: 'checkbox',
+          checked: deps.isAutostartEnabled(),
+          click: (item) => {
+            deps.toggleAutostart(item.checked)
+            rebuild()
+          }
+        },
         { type: 'separator' },
         { label: '종료', click: () => deps.quit() }
       ])

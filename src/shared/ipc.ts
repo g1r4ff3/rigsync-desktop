@@ -37,6 +37,12 @@ export const IPC_CHANNELS = {
   // 트레이 알림 클릭 시 main -> renderer로 "Diff 탭으로 전환" push.
   engineGetLastDriftCheck: 'engine:getLastDriftCheck',
   engineFocusDiffTab: 'engine:focusDiffTab',
+  // P4: 온보딩 위저드 + 구 manifest 마이그레이션 + git 전송 + autostart.
+  enginePreviewLegacyMigration: 'engine:previewLegacyMigration',
+  engineCompleteOnboarding: 'engine:completeOnboarding',
+  engineGetSyncStatus: 'engine:getSyncStatus',
+  engineSyncNow: 'engine:syncNow',
+  engineSetAutostart: 'engine:setAutostart',
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
@@ -70,6 +76,67 @@ export interface EngineStatus {
   readonly manifestDir: string
   /** true면 config.toml이 아직 없어 dev 기본값으로 떠 있다는 뜻 (온보딩 미완료). */
   readonly firstRun: boolean
+  readonly autostartEnabled: boolean
+}
+
+// ---------------------------------------------------------------------------
+// engine:previewLegacyMigration / engine:completeOnboarding (P4 온보딩 위저드)
+// ---------------------------------------------------------------------------
+
+export type LegacyMigrationActionDto = 'migrated' | 'reported-only' | 'skipped'
+
+export interface LegacyMigrationItemDto {
+  readonly capability: string
+  readonly action: LegacyMigrationActionDto
+  readonly detail: string
+}
+
+export interface LegacyMigrationSummaryDto {
+  readonly dryRun: boolean
+  readonly legacyRepoPath: string
+  readonly items: readonly LegacyMigrationItemDto[]
+  readonly warnings: readonly string[]
+}
+
+export interface PreviewLegacyMigrationRequest {
+  readonly legacyRepoPath: string
+}
+
+export type ManifestSourceMode = 'new' | 'existing' | 'migrate'
+
+export interface CompleteOnboardingRequest {
+  readonly machineId: string
+  readonly role: EngineRole
+  readonly manifestDir: string
+  readonly manifestSource: ManifestSourceMode
+  /** manifestSource === 'migrate'일 때만. */
+  readonly legacyRepoPath?: string
+  readonly profile?: string
+  readonly autostartEnabled: boolean
+}
+
+export interface CompleteOnboardingResponse {
+  readonly status: EngineStatus
+  /** manifestSource === 'migrate'였을 때만 채워진다. */
+  readonly migration?: LegacyMigrationSummaryDto
+}
+
+// ---------------------------------------------------------------------------
+// engine:getSyncStatus / engine:syncNow (P4 — git 전송, "git은 보이지 않는다")
+// ---------------------------------------------------------------------------
+
+export type SyncStatusDto =
+  | { readonly kind: 'local-only' }
+  | { readonly kind: 'synced' }
+  | { readonly kind: 'behind'; readonly behindBy: number }
+  | { readonly kind: 'error'; readonly message: string }
+
+// ---------------------------------------------------------------------------
+// engine:setAutostart (P4 — XDG autostart 토글)
+// ---------------------------------------------------------------------------
+
+export interface SetAutostartRequest {
+  readonly enabled: boolean
 }
 
 // ---------------------------------------------------------------------------

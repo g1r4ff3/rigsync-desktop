@@ -3,12 +3,23 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { DEFAULT_DRIFT_CHECK_INTERVAL_HOURS } from '../engine/context'
+import { isAutostartEnabled, setAutostart } from '../engine/autostart'
 import type { DriftSummary } from '../engine/drift'
 import { runDriftCheck } from './driftCheck'
 import { getEngineContext, refreshEngineContext, registerEngineIpc } from './ipc'
 import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
 import { createAppTray, type AppTray } from './tray'
 import { IPC_CHANNELS } from '../shared/ipc'
+
+/**
+ * autostart .desktop의 Exec= 값 + registerEngineIpc가 요구하는 execPath.
+ * AppImage로 실행 중이면 AppImage 런타임이 `$APPIMAGE`에 마운트 전 원본
+ * 경로를 넣어준다(패키징 산출물 자기 경로 찾기의 표준 관례) — 아니면(dev,
+ * 또는 다른 패키징) Electron 실행파일 경로로 fallback.
+ */
+function resolveExecPath(): string {
+  return process.env.APPIMAGE || process.execPath
+}
 
 let mainWindow: BrowserWindow | null = null
 let scheduler: DriftCheckScheduler | null = null
@@ -116,20 +127,25 @@ app.whenReady().then(() => {
 
   // 한 번만 등록 -- ipcMain.handle은 같은 채널 재등록 시 던진다. 창은
   // (macOS activate로) 다시 만들어질 수 있어 참조를 콜백으로 늦게 묶는다.
-  registerEngineIpc(
-    () => mainWindow,
-    () => scheduler?.getLastResult() ?? null
-  )
+  registerEngineIpc(() => mainWindow, {
+    getLastDriftCheck: () => scheduler?.getLastResult() ?? null,
+    onConfigChanged: refreshSchedulerAfterOnboarding,
+    getExecPath: resolveExecPath
+  })
 
   createWindow()
 
-  // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". 아이콘은
-  // placeholder(design pass 예정, trayIcon.ts 주석 참조).
+  // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". P4: 자동 시작
+  // 체크박스도 여기 추가(온보딩 ⑤와 같은 토글). 아이콘은 placeholder(design
+  // pass 예정, trayIcon.ts 주석 참조).
   tray = createAppTray({
     showWindow: showMainWindow,
     runCheckNow: () => scheduler?.runNow() ?? Promise.resolve(),
     quit: () => app.quit(),
-    getLastResult: () => scheduler?.getLastResult() ?? null
+    getLastResult: () => scheduler?.getLastResult() ?? null,
+    isAutostartEnabled: () => isAutostartEnabled(getEngineContext().homeDir),
+    toggleAutostart: (enabled) =>
+      setAutostart(getEngineContext().homeDir, enabled, resolveExecPath())
   })
 
   scheduler.start()

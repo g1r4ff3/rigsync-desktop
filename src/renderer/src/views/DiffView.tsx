@@ -119,6 +119,12 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [applying, setApplying] = useState(false)
 
   async function refreshDiff(): Promise<void> {
+    // P4: follower는 diff를 보기 전에 fetch+ff-pull을 먼저 시도한다(reference는
+    // syncNow가 commit+push라 여기서 부르면 안 됨 -- role로 가른다). 실패해도
+    // 로컬 기준으로 diff는 계속 보여준다(상태바가 오류를 표면화).
+    if (status?.role === 'follower') {
+      await window.api.engine.syncNow().catch(() => {})
+    }
     const [
       dotfiles,
       packages,
@@ -155,44 +161,55 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   }
 
   useEffect(() => {
-    Promise.all([
-      window.api.engine.diffDotfiles(),
-      window.api.engine.diffPackages(),
-      window.api.engine.diffAppimage(),
-      window.api.engine.diffSettings(),
-      window.api.engine.diffServices(),
-      window.api.engine.diffScheduled(),
-      window.api.engine.diffTools(),
-      window.api.engine.diffRepos(),
-      window.api.engine.detectDuplicates(),
-      window.api.engine.detectReclassifications()
-    ]).then(
-      ([
-        dotfiles,
-        packages,
-        appimage,
-        settings,
-        services,
-        scheduled,
-        tools,
-        repos,
-        dupes,
-        reclass
-      ]) => {
-        setDotfilesDiff(dotfiles)
-        setPackagesDiff(packages)
-        setAppimageDiff(appimage)
-        setSettingsDiff(settings)
-        setServicesDiff(services)
-        setScheduledDiff(scheduled)
-        setToolsDiff(tools)
-        setReposDiff(repos)
-        setDuplicates(dupes)
-        setReclassifications(reclass)
-      },
-      (err: unknown) => setError(err instanceof Error ? err.message : String(err))
-    )
-  }, [])
+    // P4: follower는 초기 로드 때도 pull을 먼저 시도한다 (refreshDiff와 동일한
+    // 판단 -- 인라인하는 이유는 기존 react-hooks/set-state-in-effect 회피 패턴 유지).
+    const presync =
+      status?.role === 'follower' ? window.api.engine.syncNow().catch(() => {}) : Promise.resolve()
+    presync
+      .then(() =>
+        Promise.all([
+          window.api.engine.diffDotfiles(),
+          window.api.engine.diffPackages(),
+          window.api.engine.diffAppimage(),
+          window.api.engine.diffSettings(),
+          window.api.engine.diffServices(),
+          window.api.engine.diffScheduled(),
+          window.api.engine.diffTools(),
+          window.api.engine.diffRepos(),
+          window.api.engine.detectDuplicates(),
+          window.api.engine.detectReclassifications()
+        ])
+      )
+      .then(
+        ([
+          dotfiles,
+          packages,
+          appimage,
+          settings,
+          services,
+          scheduled,
+          tools,
+          repos,
+          dupes,
+          reclass
+        ]) => {
+          setDotfilesDiff(dotfiles)
+          setPackagesDiff(packages)
+          setAppimageDiff(appimage)
+          setSettingsDiff(settings)
+          setServicesDiff(services)
+          setScheduledDiff(scheduled)
+          setToolsDiff(tools)
+          setReposDiff(repos)
+          setDuplicates(dupes)
+          setReclassifications(reclass)
+        },
+        (err: unknown) => setError(err instanceof Error ? err.message : String(err))
+      )
+    // status가 null -> 실제 EngineStatus로 바뀌는 순간 follower 여부를 다시
+    // 반영해 한 번 더 부른다(마운트 시 status가 아직 로딩 중일 수 있어서) --
+    // 약간의 중복 조회는 있지만 안전한 read-only 호출이라 감수한다.
+  }, [status])
 
   const hasDrift = useMemo(() => {
     const dotfilesDrift = dotfilesDiff

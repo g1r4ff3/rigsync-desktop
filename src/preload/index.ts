@@ -10,6 +10,8 @@ import {
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
+  type CompleteOnboardingRequest,
+  type CompleteOnboardingResponse,
   type DoctorReportDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
@@ -17,9 +19,11 @@ import {
   type DuplicateWarningDto,
   type EngineStatus,
   type IgnoreDoctorCheckRequest,
+  type LegacyMigrationSummaryDto,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
+  type PreviewLegacyMigrationRequest,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
@@ -27,9 +31,11 @@ import {
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
+  type SetAutostartRequest,
   type SettingsCaptureReportDto,
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
+  type SyncStatusDto,
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto
@@ -81,6 +87,16 @@ const engineApi = {
     ipcRenderer.on(IPC_CHANNELS.engineFocusDiffTab, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.engineFocusDiffTab, listener)
   },
+  previewLegacyMigration: (
+    request: PreviewLegacyMigrationRequest
+  ): Promise<LegacyMigrationSummaryDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.enginePreviewLegacyMigration, request),
+  completeOnboarding: (request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCompleteOnboarding, request),
+  getSyncStatus: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineGetSyncStatus),
+  syncNow: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineSyncNow),
+  setAutostart: (request: SetAutostartRequest): Promise<EngineStatus> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineSetAutostart, request),
   detectDuplicates: (): Promise<DuplicateWarningDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDetectDuplicates),
   detectReclassifications: (): Promise<ReclassificationEventDto[]> =>

@@ -26,10 +26,12 @@ import {
   linuxCronProvider,
   linuxDconfProvider,
   linuxGearLeverProvider,
+  linuxGitTransportProvider,
   linuxPackageProviders,
   linuxSystemdUserProvider,
   linuxToolsProvider
 } from '../engine/providers/linux'
+import { triggerSync } from './gitSync'
 
 /** 전 capability를 read-only diff만으로 조회해 drift 항목 목록을 조립한다. */
 export async function buildDriftInput(ctx: RigsyncContext): Promise<DriftInput> {
@@ -79,8 +81,19 @@ export async function buildDriftInput(ctx: RigsyncContext): Promise<DriftInput> 
   }
 }
 
-/** `buildDriftInput` + `summarizeDrift`를 한데 묶은, 스케줄러가 직접 주입하는 엔트리포인트. */
+/**
+ * `buildDriftInput` + `summarizeDrift`를 한데 묶은, 스케줄러가 직접 주입하는
+ * 엔트리포인트. follower면 diff를 읽기 전에 fetch+ff-pull을 먼저 시도한다
+ * (코디네이터 지시) — **실패해도 절대 여기서 멈추지 않는다**: 로컬 기준으로
+ * drift 체크를 계속 진행하고, 실패 자체는 `triggerSync`가 이미
+ * `getLastSyncStatus()`용 상태로 남겨(main/gitSync.ts) 상태바에 표면화된다.
+ */
 export async function runDriftCheck(ctx: RigsyncContext): Promise<DriftSummary> {
+  if (ctx.role === 'follower') {
+    await triggerSync(ctx, linuxGitTransportProvider).catch(() => {
+      // 의도적으로 무시 -- 실패해도 로컬 기준으로 계속 진행한다.
+    })
+  }
   const input = await buildDriftInput(ctx)
   return summarizeDrift(input, new Date().toISOString())
 }
