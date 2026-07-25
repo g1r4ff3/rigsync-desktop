@@ -12,6 +12,9 @@
  * 순수 엔진 코드, pkexec spawn은 `linuxElevationExec`).
  * P2c: T3 appimage(Gear Lever)도 diff/capture/apply에 합류. INV-1 중복 검출과
  * 정책 §5 재분류 감지는 조회 전용 엔드포인트로 노출한다.
+ * P2d: settings(dconf)/services(systemd --user)/scheduled(cron)/tools(nvm)/
+ * repos(git)가 합류해 구 CLI와 레이어 패리티가 된다. doctor는 새 조회 전용
+ * 엔드포인트(checks 레이어 + 기본 진단 + appimage preflight 통합).
  */
 import { ipcMain, type BrowserWindow } from 'electron'
 import { captureAppimage } from '../engine/capabilities/appimage/capture'
@@ -23,16 +26,40 @@ import { planDotfiles } from '../engine/capabilities/dotfiles/plan'
 import { capturePackages } from '../engine/capabilities/packages/capture'
 import { diffPackages } from '../engine/capabilities/packages/diff'
 import { planPackages } from '../engine/capabilities/packages/plan'
+import { captureRepos } from '../engine/capabilities/repos/capture'
+import { diffRepos } from '../engine/capabilities/repos/diff'
+import { planRepos } from '../engine/capabilities/repos/plan'
+import { captureScheduled } from '../engine/capabilities/scheduled/capture'
+import { diffScheduled } from '../engine/capabilities/scheduled/diff'
+import { planScheduled } from '../engine/capabilities/scheduled/plan'
+import { captureServices } from '../engine/capabilities/services/capture'
+import { diffServices } from '../engine/capabilities/services/diff'
+import { planServices } from '../engine/capabilities/services/plan'
+import { captureSettings } from '../engine/capabilities/settings/capture'
+import { diffSettings } from '../engine/capabilities/settings/diff'
+import { planSettings } from '../engine/capabilities/settings/plan'
+import { captureTools } from '../engine/capabilities/tools/capture'
+import { diffTools } from '../engine/capabilities/tools/diff'
+import { planTools } from '../engine/capabilities/tools/plan'
 import { resolveContext, type RigsyncContext } from '../engine/context'
+import { buildDoctorReport } from '../engine/doctor/report'
+import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
 import { detectDuplicates } from '../engine/duplicates'
 import type { PlanAction } from '../engine/plan'
 import {
   linuxAssetResolver,
+  linuxCronProvider,
+  linuxDconfProvider,
+  linuxDoctorSystemProvider,
   linuxDownloader,
   linuxElevationExec,
   linuxGearLeverProvider,
-  linuxPackageProviders
+  linuxGitProvider,
+  linuxPackageProviders,
+  linuxSystemdUserProvider,
+  linuxToolsProvider,
+  linuxAppimageSystemCheck
 } from '../engine/providers/linux'
 import { detectReclassifications } from '../engine/reclassification'
 import { listSyncItemGroups, toggleSyncItemIgnore } from '../engine/syncItems'
@@ -45,17 +72,30 @@ import {
   type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
+  type CaptureRequest,
+  type DoctorReportDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DuplicateWarningDto,
   type EngineStatus,
+  type IgnoreDoctorCheckRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
   type PlanSummaryDto,
   type ReclassificationEventDto,
+  type ReposCaptureReportDto,
+  type ReposDiffReportDto,
+  type ScheduledCaptureReportDto,
+  type ScheduledDiffReportDto,
+  type ServicesCaptureReportDto,
+  type ServicesDiffReportDto,
+  type SettingsCaptureReportDto,
+  type SettingsDiffReportDto,
   type SyncItemGroupDto,
-  type ToggleIgnoreRequest
+  type ToggleIgnoreRequest,
+  type ToolsCaptureReportDto,
+  type ToolsDiffReportDto
 } from '../shared/ipc'
 
 // packages/appimage capability의 provider 묶음 -- v1은 Linux 고정 (FORWARD.md
@@ -63,6 +103,12 @@ import {
 // 분기한다.
 const providers = linuxPackageProviders
 const gearLeverProvider = linuxGearLeverProvider
+const dconfProvider = linuxDconfProvider
+const systemdUserProvider = linuxSystemdUserProvider
+const cronProvider = linuxCronProvider
+const toolsProvider = linuxToolsProvider
+const gitProvider = linuxGitProvider
+const doctorSystemProvider = linuxDoctorSystemProvider
 
 // config.toml은 온보딩 위저드(P4) 전에는 없는 게 정상이라 dev 기본값으로
 // 뜬다 — 앱 프로세스 생애주기 동안 한 번만 해석한다(전역 상태처럼 보이지만
@@ -78,13 +124,34 @@ function runTimestamp(): string {
 }
 
 async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<PlanAction[]> {
-  const dotfilesDiff = await diffDotfiles(ctx)
-  const packagesDiff = await diffPackages(ctx, providers)
-  const appimageDiff = await diffAppimage(ctx, gearLeverProvider)
+  const [
+    dotfilesDiff,
+    packagesDiff,
+    appimageDiff,
+    settingsDiff,
+    servicesDiff,
+    scheduledDiff,
+    toolsDiff,
+    reposDiff
+  ] = await Promise.all([
+    diffDotfiles(ctx),
+    diffPackages(ctx, providers),
+    diffAppimage(ctx, gearLeverProvider),
+    diffSettings(ctx, dconfProvider),
+    diffServices(ctx, systemdUserProvider),
+    diffScheduled(ctx, cronProvider),
+    diffTools(ctx, toolsProvider),
+    diffRepos(ctx)
+  ])
   return [
     ...planDotfiles(ctx, dotfilesDiff, runTs),
     ...planPackages(ctx, providers, packagesDiff, runTs),
-    ...planAppimage(ctx, gearLeverProvider, linuxAssetResolver, linuxDownloader, appimageDiff)
+    ...planAppimage(ctx, gearLeverProvider, linuxAssetResolver, linuxDownloader, appimageDiff),
+    ...planSettings(ctx, dconfProvider, settingsDiff),
+    ...planServices(ctx, systemdUserProvider, servicesDiff, runTs),
+    ...planScheduled(ctx, cronProvider, scheduledDiff, runTs),
+    ...planTools(ctx, toolsProvider, toolsDiff),
+    ...planRepos(ctx, gitProvider, reposDiff)
   ]
 }
 
@@ -132,6 +199,85 @@ export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): vo
     }
   )
 
+  ipcMain.handle(IPC_CHANNELS.engineDiffSettings, async (): Promise<SettingsDiffReportDto> => {
+    return diffSettings(getContext(), dconfProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureSettings,
+    async (_event, request: CaptureRequest): Promise<SettingsCaptureReportDto> => {
+      return captureSettings(getContext(), dconfProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDiffServices, async (): Promise<ServicesDiffReportDto> => {
+    return diffServices(getContext(), systemdUserProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureServices,
+    async (_event, request: CaptureRequest): Promise<ServicesCaptureReportDto> => {
+      return captureServices(getContext(), systemdUserProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDiffScheduled, async (): Promise<ScheduledDiffReportDto> => {
+    return diffScheduled(getContext(), cronProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureScheduled,
+    async (_event, request: CaptureRequest): Promise<ScheduledCaptureReportDto> => {
+      return captureScheduled(getContext(), cronProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDiffTools, async (): Promise<ToolsDiffReportDto> => {
+    return diffTools(getContext(), toolsProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureTools,
+    async (_event, request: CaptureRequest): Promise<ToolsCaptureReportDto> => {
+      return captureTools(getContext(), toolsProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDiffRepos, async (): Promise<ReposDiffReportDto> => {
+    return diffRepos(getContext())
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureRepos,
+    async (_event, request: CaptureRequest): Promise<ReposCaptureReportDto> => {
+      return captureRepos(getContext(), gitProvider, { dryRun: request.dryRun })
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineGetDoctorReport, async (): Promise<DoctorReportDto> => {
+    return buildDoctorReport(
+      getContext(),
+      doctorSystemProvider,
+      gearLeverProvider,
+      linuxAppimageSystemCheck,
+      { configConfigured: !resolved.firstRun }
+    )
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineIgnoreDoctorCheck,
+    async (_event, request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> => {
+      ignoreDoctorCheck(getContext(), request.name, request.ignored)
+      return buildDoctorReport(
+        getContext(),
+        doctorSystemProvider,
+        gearLeverProvider,
+        linuxAppimageSystemCheck,
+        { configConfigured: !resolved.firstRun }
+      )
+    }
+  )
+
   ipcMain.handle(IPC_CHANNELS.engineDetectDuplicates, async (): Promise<DuplicateWarningDto[]> => {
     return detectDuplicates(getContext(), providers, gearLeverProvider)
   })
@@ -153,14 +299,14 @@ export function registerEngineIpc(getMainWindow: () => BrowserWindow | null): vo
   )
 
   ipcMain.handle(IPC_CHANNELS.engineListSyncItems, async (): Promise<SyncItemGroupDto[]> => {
-    return listSyncItemGroups(getContext(), providers, gearLeverProvider)
+    return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
   })
 
   ipcMain.handle(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
-      return listSyncItemGroups(getContext(), providers, gearLeverProvider)
+      return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
     }
   )
 

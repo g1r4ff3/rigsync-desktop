@@ -20,6 +20,19 @@ export const IPC_CHANNELS = {
   engineCaptureAppimage: 'engine:captureAppimage',
   engineDetectDuplicates: 'engine:detectDuplicates',
   engineDetectReclassifications: 'engine:detectReclassifications',
+  // P2d: settings/services/scheduled/tools/repos — 구 CLI 레이어 패리티.
+  engineDiffSettings: 'engine:diffSettings',
+  engineCaptureSettings: 'engine:captureSettings',
+  engineDiffServices: 'engine:diffServices',
+  engineCaptureServices: 'engine:captureServices',
+  engineDiffScheduled: 'engine:diffScheduled',
+  engineCaptureScheduled: 'engine:captureScheduled',
+  engineDiffTools: 'engine:diffTools',
+  engineCaptureTools: 'engine:captureTools',
+  engineDiffRepos: 'engine:diffRepos',
+  engineCaptureRepos: 'engine:captureRepos',
+  engineGetDoctorReport: 'engine:getDoctorReport',
+  engineIgnoreDoctorCheck: 'engine:ignoreDoctorCheck',
   engineListSyncItems: 'engine:listSyncItems',
   engineToggleIgnore: 'engine:toggleIgnore',
   engineApply: 'engine:apply',
@@ -203,6 +216,147 @@ export interface AppimageCaptureReportDto {
 }
 
 // ---------------------------------------------------------------------------
+// engine:diffSettings / engine:captureSettings (P2d — dconf)
+// ---------------------------------------------------------------------------
+
+export interface SettingsDiffReportDto {
+  readonly skipped: boolean
+  readonly contentChanged: readonly string[]
+}
+
+export interface CaptureRequest {
+  readonly dryRun: boolean
+}
+
+export interface SettingsCaptureReportDto {
+  readonly skipped: boolean
+  readonly written: number
+  readonly skippedEmpty: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
+// engine:diffServices / engine:captureServices (P2d — systemd --user)
+// ---------------------------------------------------------------------------
+
+export interface ServicesDiffReportDto {
+  readonly missing: readonly string[]
+  readonly contentChanged: readonly string[]
+  readonly enabledMismatch: readonly string[]
+}
+
+export interface ServicesCaptureReportDto {
+  readonly captured: number
+}
+
+// ---------------------------------------------------------------------------
+// engine:diffScheduled / engine:captureScheduled (P2d — cron)
+// ---------------------------------------------------------------------------
+
+export interface ScheduledDiffReportDto {
+  readonly skipped: boolean
+  readonly contentChanged: boolean
+  readonly lineDiff: {
+    readonly added: readonly string[]
+    readonly removed: readonly string[]
+  }
+  readonly note?: string
+}
+
+export interface ScheduledCaptureReportDto {
+  readonly skipped: boolean
+  readonly captured: boolean
+  readonly lines: number
+  readonly note?: string
+}
+
+// ---------------------------------------------------------------------------
+// engine:diffTools / engine:captureTools (P2d — nvm→node→npm)
+// ---------------------------------------------------------------------------
+
+export interface ToolsDiffReportDto {
+  readonly skipped: boolean
+  readonly toInstall: readonly string[]
+  readonly nodeToInstall: string | null
+  readonly nvmMissing: boolean
+  readonly note?: string
+}
+
+export interface ToolsCaptureReportDto {
+  readonly skipped: boolean
+  readonly packagesInManifest: number
+  readonly added: number
+  readonly nodeVersion: string | null
+  readonly note?: string
+}
+
+// ---------------------------------------------------------------------------
+// engine:diffRepos / engine:captureRepos (P2d — git clone)
+// ---------------------------------------------------------------------------
+
+export interface RepoEntryDto {
+  readonly path: string
+  readonly url: string
+  readonly branch: string
+}
+
+export interface ReposDiffReportDto {
+  readonly toClone: readonly RepoEntryDto[]
+  readonly manualNoUrl: readonly string[]
+}
+
+export interface ReposCaptureReportDto {
+  readonly found: number
+  readonly captured: number
+  readonly added: number
+  readonly warnings: readonly string[]
+  readonly notes: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
+// engine:getDoctorReport / engine:ignoreDoctorCheck (P2d — 구 checks 레이어 통합)
+// ---------------------------------------------------------------------------
+
+export type DoctorCheckType = 'file' | 'apt' | 'role' | 'cmd'
+export type DoctorCheckStatus = 'pass' | 'fail'
+
+export interface DoctorCheckResultDto {
+  readonly name: string
+  readonly type: DoctorCheckType
+  readonly target: string
+  readonly result: DoctorCheckStatus
+  readonly detail: string
+  readonly hint?: string
+}
+
+export interface DoctorBasicDiagnosticsDto {
+  readonly machineId: string
+  readonly role: EngineRole
+  readonly manifestDirExists: boolean
+  readonly configConfigured: boolean
+}
+
+export interface DoctorAppimagePreflightDto {
+  readonly gearLeverInstalled: boolean
+  readonly gearLeverVersionOk: boolean | null
+  readonly libfuse2t64Installed: boolean
+  readonly appImageLauncherPresent: boolean
+  readonly warnings: readonly string[]
+}
+
+export interface DoctorReportDto {
+  readonly basic: DoctorBasicDiagnosticsDto
+  readonly checks: readonly DoctorCheckResultDto[]
+  readonly appimage: DoctorAppimagePreflightDto
+  readonly checksVisible: boolean
+  readonly exitCode: number
+}
+
+export interface IgnoreDoctorCheckRequest {
+  readonly name: string
+  readonly ignored: boolean
+}
+
+// ---------------------------------------------------------------------------
 // engine:detectDuplicates (INV-1) / engine:detectReclassifications (정책 §5)
 // ---------------------------------------------------------------------------
 
@@ -229,7 +383,8 @@ export interface ReclassificationEventDto {
 // engine:listSyncItems / engine:toggleIgnore ("동기화 항목" 화면 — P2a 결정 ⑤)
 // ---------------------------------------------------------------------------
 
-export type SyncItemCapability = 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage'
+export type SyncItemCapability =
+  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'tools' | 'repos'
 
 export interface SyncItemDto {
   readonly key: string

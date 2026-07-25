@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { EngineStatus } from '../../shared/ipc'
 import DiffView from './views/DiffView'
+import DoctorView from './views/DoctorView'
 import SyncItemsView from './views/SyncItemsView'
 
-type Tab = 'diff' | 'items'
+type Tab = 'diff' | 'items' | 'doctor'
 
 function App(): React.JSX.Element {
   const [status, setStatus] = useState<EngineStatus | null>(null)
@@ -41,7 +42,8 @@ function App(): React.JSX.Element {
         {(
           [
             { id: 'diff', label: 'Diff' },
-            { id: 'items', label: '항목' }
+            { id: 'items', label: '항목' },
+            { id: 'doctor', label: 'Doctor' }
           ] as const
         ).map((t) => (
           <button
@@ -60,7 +62,13 @@ function App(): React.JSX.Element {
       </nav>
 
       <main className="flex-1 overflow-hidden">
-        {tab === 'diff' ? <DiffView status={status} /> : <SyncItemsView />}
+        {tab === 'diff' ? (
+          <DiffView status={status} />
+        ) : tab === 'items' ? (
+          <SyncItemsView />
+        ) : (
+          <DoctorView />
+        )}
       </main>
     </div>
   )

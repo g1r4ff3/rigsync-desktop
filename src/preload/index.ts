@@ -9,16 +9,29 @@ import {
   type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
   type CapturePackagesRequest,
+  type CaptureRequest,
+  type DoctorReportDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DuplicateWarningDto,
   type EngineStatus,
+  type IgnoreDoctorCheckRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
   type ReclassificationEventDto,
+  type ReposCaptureReportDto,
+  type ReposDiffReportDto,
+  type ScheduledCaptureReportDto,
+  type ScheduledDiffReportDto,
+  type ServicesCaptureReportDto,
+  type ServicesDiffReportDto,
+  type SettingsCaptureReportDto,
+  type SettingsDiffReportDto,
   type SyncItemGroupDto,
-  type ToggleIgnoreRequest
+  type ToggleIgnoreRequest,
+  type ToolsCaptureReportDto,
+  type ToolsDiffReportDto
 } from '../shared/ipc'
 
 // renderer가 시스템에 접근하는 유일한 경로 — 전부 src/shared/ipc.ts의 타입드
@@ -37,6 +50,28 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineDiffAppimage),
   captureAppimage: (request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCaptureAppimage, request),
+  diffSettings: (): Promise<SettingsDiffReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDiffSettings),
+  captureSettings: (request: CaptureRequest): Promise<SettingsCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureSettings, request),
+  diffServices: (): Promise<ServicesDiffReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDiffServices),
+  captureServices: (request: CaptureRequest): Promise<ServicesCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureServices, request),
+  diffScheduled: (): Promise<ScheduledDiffReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDiffScheduled),
+  captureScheduled: (request: CaptureRequest): Promise<ScheduledCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureScheduled, request),
+  diffTools: (): Promise<ToolsDiffReportDto> => ipcRenderer.invoke(IPC_CHANNELS.engineDiffTools),
+  captureTools: (request: CaptureRequest): Promise<ToolsCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureTools, request),
+  diffRepos: (): Promise<ReposDiffReportDto> => ipcRenderer.invoke(IPC_CHANNELS.engineDiffRepos),
+  captureRepos: (request: CaptureRequest): Promise<ReposCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureRepos, request),
+  getDoctorReport: (): Promise<DoctorReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineGetDoctorReport),
+  ignoreDoctorCheck: (request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineIgnoreDoctorCheck, request),
   detectDuplicates: (): Promise<DuplicateWarningDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDetectDuplicates),
   detectReclassifications: (): Promise<ReclassificationEventDto[]> =>

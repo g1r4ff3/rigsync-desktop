@@ -17,7 +17,12 @@ import type {
   PackagesDiffReport,
   PlanActionResultDto,
   PlanEvent,
-  ReclassificationEventDto
+  ReclassificationEventDto,
+  ReposDiffReportDto,
+  ScheduledDiffReportDto,
+  ServicesDiffReportDto,
+  SettingsDiffReportDto,
+  ToolsDiffReportDto
 } from '../../../shared/ipc'
 
 type RowLiveState = { running?: boolean; ok?: boolean; error?: string }
@@ -60,6 +65,33 @@ function hasAppimageDrift(appimage: AppimageDiffReportDto | null): boolean {
   return appimage.toInstall.length > 0 || appimage.pinMismatch.length > 0
 }
 
+function hasSettingsDrift(settings: SettingsDiffReportDto | null): boolean {
+  return !!settings && settings.contentChanged.length > 0
+}
+
+function hasServicesDrift(services: ServicesDiffReportDto | null): boolean {
+  if (!services) return false
+  return (
+    services.missing.length > 0 ||
+    services.contentChanged.length > 0 ||
+    services.enabledMismatch.length > 0
+  )
+}
+
+function hasScheduledDrift(scheduled: ScheduledDiffReportDto | null): boolean {
+  return !!scheduled && scheduled.contentChanged
+}
+
+function hasToolsDrift(tools: ToolsDiffReportDto | null): boolean {
+  if (!tools) return false
+  return tools.toInstall.length > 0 || tools.nodeToInstall !== null
+}
+
+function hasReposDrift(repos: ReposDiffReportDto | null): boolean {
+  if (!repos) return false
+  return repos.toClone.length > 0 || repos.manualNoUrl.length > 0
+}
+
 interface DiffViewProps {
   readonly status: EngineStatus | null
 }
@@ -68,6 +100,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [dotfilesDiff, setDotfilesDiff] = useState<DotfilesDiffReport | null>(null)
   const [packagesDiff, setPackagesDiff] = useState<PackagesDiffReport | null>(null)
   const [appimageDiff, setAppimageDiff] = useState<AppimageDiffReportDto | null>(null)
+  const [settingsDiff, setSettingsDiff] = useState<SettingsDiffReportDto | null>(null)
+  const [servicesDiff, setServicesDiff] = useState<ServicesDiffReportDto | null>(null)
+  const [scheduledDiff, setScheduledDiff] = useState<ScheduledDiffReportDto | null>(null)
+  const [toolsDiff, setToolsDiff] = useState<ToolsDiffReportDto | null>(null)
+  const [reposDiff, setReposDiff] = useState<ReposDiffReportDto | null>(null)
   const [duplicates, setDuplicates] = useState<readonly DuplicateWarningDto[]>([])
   const [reclassifications, setReclassifications] = useState<readonly ReclassificationEventDto[]>(
     []
@@ -82,16 +119,37 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [applying, setApplying] = useState(false)
 
   async function refreshDiff(): Promise<void> {
-    const [dotfiles, packages, appimage, dupes, reclass] = await Promise.all([
+    const [
+      dotfiles,
+      packages,
+      appimage,
+      settings,
+      services,
+      scheduled,
+      tools,
+      repos,
+      dupes,
+      reclass
+    ] = await Promise.all([
       window.api.engine.diffDotfiles(),
       window.api.engine.diffPackages(),
       window.api.engine.diffAppimage(),
+      window.api.engine.diffSettings(),
+      window.api.engine.diffServices(),
+      window.api.engine.diffScheduled(),
+      window.api.engine.diffTools(),
+      window.api.engine.diffRepos(),
       window.api.engine.detectDuplicates(),
       window.api.engine.detectReclassifications()
     ])
     setDotfilesDiff(dotfiles)
     setPackagesDiff(packages)
     setAppimageDiff(appimage)
+    setSettingsDiff(settings)
+    setServicesDiff(services)
+    setScheduledDiff(scheduled)
+    setToolsDiff(tools)
+    setReposDiff(repos)
     setDuplicates(dupes)
     setReclassifications(reclass)
   }
@@ -101,13 +159,34 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       window.api.engine.diffDotfiles(),
       window.api.engine.diffPackages(),
       window.api.engine.diffAppimage(),
+      window.api.engine.diffSettings(),
+      window.api.engine.diffServices(),
+      window.api.engine.diffScheduled(),
+      window.api.engine.diffTools(),
+      window.api.engine.diffRepos(),
       window.api.engine.detectDuplicates(),
       window.api.engine.detectReclassifications()
     ]).then(
-      ([dotfiles, packages, appimage, dupes, reclass]) => {
+      ([
+        dotfiles,
+        packages,
+        appimage,
+        settings,
+        services,
+        scheduled,
+        tools,
+        repos,
+        dupes,
+        reclass
+      ]) => {
         setDotfilesDiff(dotfiles)
         setPackagesDiff(packages)
         setAppimageDiff(appimage)
+        setSettingsDiff(settings)
+        setServicesDiff(services)
+        setScheduledDiff(scheduled)
+        setToolsDiff(tools)
+        setReposDiff(repos)
         setDuplicates(dupes)
         setReclassifications(reclass)
       },
@@ -121,11 +200,28 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         dotfilesDiff.contentChanged.length > 0 ||
         dotfilesDiff.invalidStore.length > 0
       : false
-    return dotfilesDrift || hasPackagesDrift(packagesDiff) || hasAppimageDrift(appimageDiff)
-  }, [dotfilesDiff, packagesDiff, appimageDiff])
+    return (
+      dotfilesDrift ||
+      hasPackagesDrift(packagesDiff) ||
+      hasAppimageDrift(appimageDiff) ||
+      hasSettingsDrift(settingsDiff) ||
+      hasServicesDrift(servicesDiff) ||
+      hasScheduledDrift(scheduledDiff) ||
+      hasToolsDrift(toolsDiff) ||
+      hasReposDrift(reposDiff)
+    )
+  }, [
+    dotfilesDiff,
+    packagesDiff,
+    appimageDiff,
+    settingsDiff,
+    servicesDiff,
+    scheduledDiff,
+    toolsDiff,
+    reposDiff
+  ])
 
-  // capture-first: dotfiles + packages + appimage를 한 번에 캡처한다
-  // (결정 ③ — additive-only).
+  // capture-first: 전 capability를 한 번에 캡처한다 (결정 ③ — additive-only).
   async function handleCapture(): Promise<void> {
     setBusy(true)
     setError(null)
@@ -133,7 +229,12 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       await Promise.all([
         window.api.engine.captureDotfiles({ dryRun: false }),
         window.api.engine.capturePackages({ dryRun: false }),
-        window.api.engine.captureAppimage({ dryRun: false })
+        window.api.engine.captureAppimage({ dryRun: false }),
+        window.api.engine.captureSettings({ dryRun: false }),
+        window.api.engine.captureServices({ dryRun: false }),
+        window.api.engine.captureScheduled({ dryRun: false }),
+        window.api.engine.captureTools({ dryRun: false }),
+        window.api.engine.captureRepos({ dryRun: false })
       ])
       await refreshDiff()
     } catch (err) {
@@ -318,6 +419,114 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           <p className="mt-1 font-mono text-xs text-neutral-500">
             미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
           </p>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">settings (dconf)</h2>
+        {!settingsDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasSettingsDrift(settingsDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {settingsDiff.contentChanged.map((p) => (
+              <li key={`settings-${p}`} className="text-amber-400">
+                [content-changed] {p}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">services (systemd --user)</h2>
+        {!servicesDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasServicesDrift(servicesDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {servicesDiff.missing.map((name) => (
+              <li key={`svc-missing-${name}`} className="text-red-400">
+                [missing] {name}
+              </li>
+            ))}
+            {servicesDiff.contentChanged.map((name) => (
+              <li key={`svc-changed-${name}`} className="text-amber-400">
+                [content-changed] {name}
+              </li>
+            ))}
+            {servicesDiff.enabledMismatch.map((name) => (
+              <li key={`svc-enabled-${name}`} className="text-amber-400">
+                [enabled mismatch] {name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">scheduled (cron)</h2>
+        {!scheduledDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasScheduledDrift(scheduledDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {scheduledDiff.lineDiff.added.map((line) => (
+              <li key={`cron-add-${line}`} className="text-amber-400">
+                [+] {line}
+              </li>
+            ))}
+            {scheduledDiff.lineDiff.removed.map((line) => (
+              <li key={`cron-remove-${line}`} className="text-red-400">
+                [-] {line}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">tools (nvm/node/npm)</h2>
+        {!toolsDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasToolsDrift(toolsDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {toolsDiff.nodeToInstall && (
+              <li className="text-amber-400">[node to-install] {toolsDiff.nodeToInstall}</li>
+            )}
+            {toolsDiff.toInstall.map((pkg) => (
+              <li key={`tools-install-${pkg}`} className="text-amber-400">
+                [npm -g to-install] {pkg}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">repos (git)</h2>
+        {!reposDiff ? (
+          <p className="font-mono text-xs text-neutral-500">로딩 중…</p>
+        ) : !hasReposDrift(reposDiff) ? (
+          <p className="font-mono text-xs text-neutral-500">drift 없음 — manifest와 일치합니다.</p>
+        ) : (
+          <ul className="space-y-1 font-mono text-xs">
+            {reposDiff.toClone.map((r) => (
+              <li key={`repos-clone-${r.path}`} className="text-amber-400">
+                [to-clone] {r.path} ({r.url})
+              </li>
+            ))}
+            {reposDiff.manualNoUrl.map((p) => (
+              <li key={`repos-manual-${p}`} className="text-neutral-500">
+                [manual, no url] {p}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
