@@ -104,8 +104,12 @@ function App(): React.JSX.Element {
         return
       }
       setForceOnboarding(false)
-      if (route === 'apply-dialog') {
-        setTab('diff')
+      if (
+        route === 'apply-dialog' ||
+        route === 'items-delete-confirm' ||
+        route === 'items-bulk-delete'
+      ) {
+        setTab(route === 'apply-dialog' ? 'diff' : 'items')
         setTimeout(() => {
           window.dispatchEvent(new CustomEvent(SCREENSHOT_GOTO_EVENT, { detail: route }))
         }, 300)

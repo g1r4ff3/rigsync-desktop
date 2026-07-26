@@ -41,7 +41,13 @@ const SCREENSHOT_STEPS: readonly ScreenshotStep[] = [
   // 실사용 결함 수정 검증용 -- 온보딩 "저장소에서 클론" 탭이 미리 선택된 화면.
   // 06(apply-dialog) 다음에 둬 forceOnboarding이 false->true로 실제 전환되게
   // 한다(App.tsx가 이 전환에서만 OnboardingView를 다시 마운트해 preset이 먹는다).
-  { file: '07-onboarding-clone.png', route: 'onboarding-clone' }
+  { file: '07-onboarding-clone.png', route: 'onboarding-clone' },
+  // 항목 삭제(uninstall) 검증용 — 삭제 확인 다이얼로그(apt 의존성 경고 포함)와
+  // 일괄 삭제 체크리스트. planUninstall dry-run은 apply보다 훨씬 가벼워
+  // (capability 하나·항목 소수) 9000ms까지는 필요 없지만 여유를 둔다. 기존
+  // 01~07 파일명은 그대로 두고 새 화면이라 08/09로 이어 붙인다.
+  { file: '08-candidates-delete-confirm.png', route: 'items-delete-confirm', delayMs: 3000 },
+  { file: '09-candidates-bulk-delete.png', route: 'items-bulk-delete', delayMs: 1500 }
 ]
 
 export interface ScreenshotResult {
