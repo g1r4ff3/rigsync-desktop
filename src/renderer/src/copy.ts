@@ -145,6 +145,8 @@ export const sectionCopy = {
   dotfiles: '심링크/복사로 관리하는 개인 설정 파일 (예: .zshrc, .gitconfig)',
   packages: 'apt로 설치된 패키지와 서명 소스',
   appimage: 'Gear Lever로 통합 관리하는 AppImage',
+  fonts:
+    '수동 설치한 폰트 파일(예: Powerlevel10k·D2Coding) — 좌표만 동기화, 바이너리는 apply 때 다운로드',
   settings: 'dconf(GNOME 등 데스크톱 설정) 감시 경로',
   services: 'systemd --user 유닛 파일',
   scheduled: '사용자 crontab 전체',
@@ -179,6 +181,7 @@ export const helpCopy = {
     'reference 머신은 Capture로 현재 상태를 manifest에 기록하고 자동으로 commit+push합니다 — 그래서 reference의 요약은 "기준과 다른 점"이 아니라 "아직 이 머신에 반영되지 않은 항목"으로 표시됩니다.',
     'follower 머신은 저작할 수 없고 pull로 받은 manifest를 Apply로 반영만 합니다(단방향 배포) — follower의 요약은 실제로 기준과 다른 점을 보여줍니다.',
     'dotfiles는 Capture 직후에도 "스토어로 연결 필요"로 남을 수 있습니다 — Capture는 홈 파일을 스토어로 복사만 하고, 홈 파일을 스토어 심링크로 바꾸는 것은 Apply의 몫이기 때문입니다(최초 1회만 있는 정상 상태 — 이후엔 심링크라 홈을 고치면 스토어도 곧바로 바뀝니다).',
+    'Fonts는 폰트 파일 자체가 아니라 다운로드 좌표(직접 URL 또는 GitHub 릴리스)만 manifest에 담습니다 — Apply 때 이 좌표로 실제 파일을 받아 설치합니다.',
     'INV-1(중복 설치 경고)은 같은 앱이 apt/flatpak/snap/AppImage 중 둘 이상에 설치된 경우를 잡아냅니다.',
     '계층 재분류 감지는 manifest가 기록한 설치 방식과 실제 설치 방식이 어긋난 경우를 보여줍니다.'
   ].join(' '),
@@ -186,7 +189,7 @@ export const helpCopy = {
     'Candidates는 각 항목이 지금 동기화 중인지, 다음 Capture로 바뀔 예정인지를 4가지 상태로 보여줍니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(아직 manifest엔 없지만 다음 Capture가 담음)/제거 예정(지금은 있지만 ignore돼 다음 Capture가 뺌)/제외됨(ignore돼 안정적으로 빠진 상태).',
     '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 ignore 처리하지만, manifest 반영(추가/제거)은 그 자리에서 즉시 일어나지 않고 다음 Capture 때 일어납니다 — 그래서 보류 중 변경이 있으면 배너로 Capture를 안내합니다.',
     '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
-    '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
+    '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/fonts(설치된 파일 수)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
     '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다.',
     'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님). 그래서 4상태 대신 "검출됨" 하나로만 표시되고, 스위치도 비활성화되어 있습니다(눌러도 동기화 결과에 아무 영향이 없기 때문).'
   ].join(' '),
@@ -194,6 +197,7 @@ export const helpCopy = {
     'Doctor는 rigsync가 자동화하지 않는 수동 설치·설정 상태를 점검합니다.',
     '기본 진단은 machine-id/role/manifest 폴더 존재 여부를 보여줍니다.',
     'AppImage preflight는 Gear Lever 설치 여부와 버전, libfuse2t64, AppImageLauncher 충돌 가능성을 확인합니다.',
+    'Fonts 점검은 manifest에 선언됐지만 이 머신에 없는 폰트, 설치는 됐지만 소스가 알려지지 않아 재현 불가능한 폰트, fc-cache/fc-list 사용 가능 여부를 확인합니다.',
     'NVIDIA 항목은 커널 드라이버(NVRM)와 설치된 패키지 버전이 다르면 경고합니다 — 대개 재부팅하면 해소됩니다.',
     '체크리스트 항목은 hand-maintained 목록이며 "Dismiss"로 다시 보지 않을 수 있습니다.'
   ].join(' '),

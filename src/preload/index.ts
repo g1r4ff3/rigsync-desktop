@@ -8,6 +8,7 @@ import {
   type AppimageDiffReportDto,
   type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
+  type CaptureFontsRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
   type CompleteOnboardingRequest,
@@ -18,6 +19,8 @@ import {
   type DriftSummaryDto,
   type DuplicateWarningDto,
   type EngineStatus,
+  type FontsCaptureReportDto,
+  type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
@@ -59,6 +62,9 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineDiffAppimage),
   captureAppimage: (request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCaptureAppimage, request),
+  diffFonts: (): Promise<FontsDiffReportDto> => ipcRenderer.invoke(IPC_CHANNELS.engineDiffFonts),
+  captureFonts: (request: CaptureFontsRequest): Promise<FontsCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureFonts, request),
   diffSettings: (): Promise<SettingsDiffReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDiffSettings),
   captureSettings: (request: CaptureRequest): Promise<SettingsCaptureReportDto> =>

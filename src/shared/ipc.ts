@@ -18,6 +18,8 @@ export const IPC_CHANNELS = {
   engineCapturePackages: 'engine:capturePackages',
   engineDiffAppimage: 'engine:diffAppimage',
   engineCaptureAppimage: 'engine:captureAppimage',
+  engineDiffFonts: 'engine:diffFonts',
+  engineCaptureFonts: 'engine:captureFonts',
   engineDetectDuplicates: 'engine:detectDuplicates',
   engineDetectReclassifications: 'engine:detectReclassifications',
   // P2d: settings/services/scheduled/tools/repos — 구 CLI 레이어 패리티.
@@ -294,6 +296,32 @@ export interface AppimageCaptureReportDto {
 }
 
 // ---------------------------------------------------------------------------
+// engine:diffFonts / engine:captureFonts (fonts capability — 2026-07-26)
+// ---------------------------------------------------------------------------
+
+export interface FontsPinMismatchDto {
+  readonly name: string
+  readonly pinned: string
+  readonly installedVersion: string
+}
+
+export interface FontsDiffReportDto {
+  readonly toInstall: readonly string[]
+  readonly pinMismatch: readonly FontsPinMismatchDto[]
+  readonly uncaptured: readonly string[]
+}
+
+export interface CaptureFontsRequest {
+  readonly dryRun: boolean
+}
+
+export interface FontsCaptureReportDto {
+  readonly capturedCount: number
+  readonly added: number
+  readonly notes: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
 // engine:diffSettings / engine:captureSettings (P2d — dconf)
 // ---------------------------------------------------------------------------
 
@@ -430,10 +458,20 @@ export interface DoctorNvidiaCheckDto {
   readonly warning?: string
 }
 
+/** fonts capability preflight — doctor 체크 3종(미설치/소스 미지정/fc-cache·fc-list). */
+export interface DoctorFontsPreflightDto {
+  readonly missingInstalled: readonly string[]
+  readonly unresolvedInstalled: readonly string[]
+  readonly fcCacheAvailable: boolean
+  readonly fcListAvailable: boolean
+  readonly warnings: readonly string[]
+}
+
 export interface DoctorReportDto {
   readonly basic: DoctorBasicDiagnosticsDto
   readonly checks: readonly DoctorCheckResultDto[]
   readonly appimage: DoctorAppimagePreflightDto
+  readonly fonts: DoctorFontsPreflightDto
   readonly nvidia: DoctorNvidiaCheckDto
   readonly checksVisible: boolean
   readonly exitCode: number
@@ -483,7 +521,7 @@ export interface ReclassificationEventDto {
 // ---------------------------------------------------------------------------
 
 export type SyncItemCapability =
-  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'tools' | 'repos'
+  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'tools' | 'repos'
 
 /**
  * R6 R1: Candidates 4상태 모델 — managed × ignored 조합의 의미(engine

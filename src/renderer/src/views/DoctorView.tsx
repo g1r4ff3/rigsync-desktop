@@ -55,6 +55,16 @@ function appimageKinds(appimage: DoctorReportDto['appimage']): StatusKind[] {
   return kinds
 }
 
+function fontsKinds(fonts: DoctorReportDto['fonts']): StatusKind[] {
+  const kinds: StatusKind[] = [
+    fonts.fcCacheAvailable ? 'ok' : 'warn',
+    fonts.fcListAvailable ? 'ok' : 'warn'
+  ]
+  kinds.push(...fonts.missingInstalled.map((): StatusKind => 'warn'))
+  kinds.push(...fonts.unresolvedInstalled.map((): StatusKind => 'warn'))
+  return kinds
+}
+
 function nvidiaKinds(nvidia: DoctorReportDto['nvidia']): StatusKind[] {
   if (!nvidia.applicable) return []
   return [nvidia.matched ? 'ok' : 'warn']
@@ -213,15 +223,19 @@ function DoctorView(): React.JSX.Element {
 
   const basicCounts = countKinds(basicKinds(report.basic))
   const appimageCounts = countKinds(appimageKinds(report.appimage))
+  const fontsCounts = countKinds(fontsKinds(report.fonts))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const checklistCounts = report.checksVisible
     ? countKinds(checklistKinds(report.checks))
     : { ok: 0, warn: 0, error: 0 }
-  const totals = [basicCounts, appimageCounts, nvidiaCounts, checklistCounts].reduce(addCounts, {
-    ok: 0,
-    warn: 0,
-    error: 0
-  })
+  const totals = [basicCounts, appimageCounts, fontsCounts, nvidiaCounts, checklistCounts].reduce(
+    addCounts,
+    {
+      ok: 0,
+      warn: 0,
+      error: 0
+    }
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -316,6 +330,28 @@ function DoctorView(): React.JSX.Element {
             )}
           </ul>
           {report.appimage.warnings.map((w) => (
+            <DoctorActionNote key={w} kind="warn" text={w} />
+          ))}
+        </DoctorGroup>
+
+        <DoctorGroup
+          title="Fonts"
+          description="manifest 미설치·소스 미지정 폰트, fc-cache/fc-list 사용 가능 여부"
+          counts={fontsCounts}
+        >
+          <ul className="space-y-1 text-xs">
+            <li>
+              <StatusText kind={report.fonts.fcCacheAvailable ? 'ok' : 'warn'}>
+                fc-cache 사용 가능: {String(report.fonts.fcCacheAvailable)}
+              </StatusText>
+            </li>
+            <li>
+              <StatusText kind={report.fonts.fcListAvailable ? 'ok' : 'warn'}>
+                fc-list 사용 가능: {String(report.fonts.fcListAvailable)}
+              </StatusText>
+            </li>
+          </ul>
+          {report.fonts.warnings.map((w) => (
             <DoctorActionNote key={w} kind="warn" text={w} />
           ))}
         </DoctorGroup>

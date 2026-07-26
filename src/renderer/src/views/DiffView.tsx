@@ -30,6 +30,7 @@ import type {
   DotfilesDiffReport,
   DuplicateWarningDto,
   EngineStatus,
+  FontsDiffReportDto,
   PackagesDiffReport,
   PlanActionResultDto,
   PlanEvent,
@@ -84,6 +85,11 @@ function hasPackagesDrift(packages: PackagesDiffReport | null): boolean {
 function hasAppimageDrift(appimage: AppimageDiffReportDto | null): boolean {
   if (!appimage) return false
   return appimage.toInstall.length > 0 || appimage.pinMismatch.length > 0
+}
+
+function hasFontsDrift(fonts: FontsDiffReportDto | null): boolean {
+  if (!fonts) return false
+  return fonts.toInstall.length > 0 || fonts.pinMismatch.length > 0
 }
 
 function hasSettingsDrift(settings: SettingsDiffReportDto | null): boolean {
@@ -210,6 +216,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [dotfilesDiff, setDotfilesDiff] = useState<DotfilesDiffReport | null>(null)
   const [packagesDiff, setPackagesDiff] = useState<PackagesDiffReport | null>(null)
   const [appimageDiff, setAppimageDiff] = useState<AppimageDiffReportDto | null>(null)
+  const [fontsDiff, setFontsDiff] = useState<FontsDiffReportDto | null>(null)
   const [settingsDiff, setSettingsDiff] = useState<SettingsDiffReportDto | null>(null)
   const [servicesDiff, setServicesDiff] = useState<ServicesDiffReportDto | null>(null)
   const [scheduledDiff, setScheduledDiff] = useState<ScheduledDiffReportDto | null>(null)
@@ -244,6 +251,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       dotfiles,
       packages,
       appimage,
+      fonts,
       settings,
       services,
       scheduled,
@@ -255,6 +263,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       window.api.engine.diffDotfiles(),
       window.api.engine.diffPackages(),
       window.api.engine.diffAppimage(),
+      window.api.engine.diffFonts(),
       window.api.engine.diffSettings(),
       window.api.engine.diffServices(),
       window.api.engine.diffScheduled(),
@@ -266,6 +275,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     setDotfilesDiff(dotfiles)
     setPackagesDiff(packages)
     setAppimageDiff(appimage)
+    setFontsDiff(fonts)
     setSettingsDiff(settings)
     setServicesDiff(services)
     setScheduledDiff(scheduled)
@@ -286,6 +296,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           window.api.engine.diffDotfiles(),
           window.api.engine.diffPackages(),
           window.api.engine.diffAppimage(),
+          window.api.engine.diffFonts(),
           window.api.engine.diffSettings(),
           window.api.engine.diffServices(),
           window.api.engine.diffScheduled(),
@@ -300,6 +311,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           dotfiles,
           packages,
           appimage,
+          fonts,
           settings,
           services,
           scheduled,
@@ -311,6 +323,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           setDotfilesDiff(dotfiles)
           setPackagesDiff(packages)
           setAppimageDiff(appimage)
+          setFontsDiff(fonts)
           setSettingsDiff(settings)
           setServicesDiff(services)
           setScheduledDiff(scheduled)
@@ -331,6 +344,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       hasDotfilesDrift(dotfilesDiff) ||
       hasPackagesDrift(packagesDiff) ||
       hasAppimageDrift(appimageDiff) ||
+      hasFontsDrift(fontsDiff) ||
       hasSettingsDrift(settingsDiff) ||
       hasServicesDrift(servicesDiff) ||
       hasScheduledDrift(scheduledDiff) ||
@@ -341,6 +355,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     dotfilesDiff,
     packagesDiff,
     appimageDiff,
+    fontsDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -383,6 +398,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
             : null
         },
         {
+          key: 'fonts',
+          label: 'Fonts',
+          count: fontsDiff ? fontsDiff.toInstall.length + fontsDiff.pinMismatch.length : null
+        },
+        {
           key: 'settings',
           label: 'Settings',
           count: settingsDiff ? settingsDiff.contentChanged.length : null
@@ -418,6 +438,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       dotfilesDiff,
       packagesDiff,
       appimageDiff,
+      fontsDiff,
       settingsDiff,
       servicesDiff,
       scheduledDiff,
@@ -454,6 +475,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     if (appimageDiff && !hasAppimageDrift(appimageDiff)) {
       list.push({ key: 'appimage', title: 'AppImage', description: sectionCopy.appimage })
     }
+    if (fontsDiff && !hasFontsDrift(fontsDiff)) {
+      list.push({ key: 'fonts', title: 'Fonts', description: sectionCopy.fonts })
+    }
     if (settingsDiff && !hasSettingsDrift(settingsDiff)) {
       list.push({ key: 'settings', title: 'Settings (dconf)', description: sectionCopy.settings })
     }
@@ -478,6 +502,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     dotfilesDiff,
     packagesDiff,
     appimageDiff,
+    fontsDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -803,6 +828,26 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         <p className="-mt-3 text-xs text-muted-foreground">
           미지원 소스(자동 설치 안 됨): {appimageDiff.unsupportedSource.join(', ')}
         </p>
+      )}
+
+      {(!fontsDiff || hasFontsDrift(fontsDiff)) && (
+        <DriftSection
+          title="Fonts"
+          description={sectionCopy.fonts}
+          loading={!fontsDiff}
+          empty={!!fontsDiff && !hasFontsDrift(fontsDiff)}
+        >
+          {fontsDiff?.toInstall.map((name) => (
+            <DriftRow key={`fonts-install-${name}`} kind="warn">
+              [fonts to-install] {name}
+            </DriftRow>
+          ))}
+          {fontsDiff?.pinMismatch.map((m) => (
+            <DriftRow key={`fonts-pin-${m.name}`} kind="warn">
+              [fonts pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installedVersion})
+            </DriftRow>
+          ))}
+        </DriftSection>
       )}
 
       {(!settingsDiff || hasSettingsDrift(settingsDiff)) && (

@@ -23,6 +23,9 @@ import { planAppimage } from '../engine/capabilities/appimage/plan'
 import { captureDotfiles } from '../engine/capabilities/dotfiles/capture'
 import { diffDotfiles } from '../engine/capabilities/dotfiles/diff'
 import { planDotfiles } from '../engine/capabilities/dotfiles/plan'
+import { captureFonts } from '../engine/capabilities/fonts/capture'
+import { diffFonts } from '../engine/capabilities/fonts/diff'
+import { planFonts } from '../engine/capabilities/fonts/plan'
 import { capturePackages } from '../engine/capabilities/packages/capture'
 import { diffPackages } from '../engine/capabilities/packages/diff'
 import { planPackages } from '../engine/capabilities/packages/plan'
@@ -63,6 +66,9 @@ import {
   linuxDoctorSystemProvider,
   linuxDownloader,
   linuxElevationExec,
+  linuxFontAssetResolver,
+  linuxFontDownloader,
+  linuxFontsSystemProvider,
   linuxGearLeverProvider,
   linuxGitProvider,
   linuxGitTransportProvider,
@@ -70,6 +76,7 @@ import {
   linuxPackageProviders,
   linuxSystemdUserProvider,
   linuxToolsProvider,
+  linuxZipExtractor,
   linuxAppimageSystemCheck
 } from '../engine/providers/linux'
 import { detectReclassifications } from '../engine/reclassification'
@@ -87,6 +94,7 @@ import {
   type AppimageDiffReportDto,
   type CaptureAppimageRequest,
   type CaptureDotfilesRequest,
+  type CaptureFontsRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
   type CompleteOnboardingRequest,
@@ -97,6 +105,8 @@ import {
   type DotfilesDiffReport,
   type DuplicateWarningDto,
   type EngineStatus,
+  type FontsCaptureReportDto,
+  type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
@@ -176,6 +186,7 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     dotfilesDiff,
     packagesDiff,
     appimageDiff,
+    fontsDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -185,6 +196,7 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     diffDotfiles(ctx),
     diffPackages(ctx, providers),
     diffAppimage(ctx, gearLeverProvider),
+    diffFonts(ctx),
     diffSettings(ctx, dconfProvider),
     diffServices(ctx, systemdUserProvider),
     diffScheduled(ctx, cronProvider),
@@ -201,6 +213,15 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
       linuxAssetResolver,
       linuxDownloader,
       appimageDiff
+    ),
+    fonts: planFonts(
+      ctx,
+      fontsDiff,
+      linuxFontAssetResolver,
+      linuxFontDownloader,
+      linuxZipExtractor,
+      linuxFontsSystemProvider,
+      runTs
     ),
     settings: planSettings(ctx, dconfProvider, settingsDiff),
     services: planServices(ctx, systemdUserProvider, servicesDiff, runTs),
@@ -281,6 +302,19 @@ export function registerEngineIpc(
     }
   )
 
+  ipcMain.handle(IPC_CHANNELS.engineDiffFonts, async (): Promise<FontsDiffReportDto> => {
+    return diffFonts(getContext())
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureFonts,
+    async (_event, request: CaptureFontsRequest): Promise<FontsCaptureReportDto> => {
+      return withAutoSync(request.dryRun, () =>
+        captureFonts(getContext(), { dryRun: request.dryRun })
+      )
+    }
+  )
+
   ipcMain.handle(IPC_CHANNELS.engineDiffSettings, async (): Promise<SettingsDiffReportDto> => {
     return diffSettings(getContext(), dconfProvider)
   })
@@ -352,6 +386,7 @@ export function registerEngineIpc(
       doctorSystemProvider,
       gearLeverProvider,
       linuxAppimageSystemCheck,
+      linuxFontsSystemProvider,
       nvidiaCheckProvider,
       { configConfigured: !resolved.firstRun }
     )
@@ -367,6 +402,7 @@ export function registerEngineIpc(
         doctorSystemProvider,
         gearLeverProvider,
         linuxAppimageSystemCheck,
+        linuxFontsSystemProvider,
         nvidiaCheckProvider,
         { configConfigured: !resolved.firstRun }
       )
