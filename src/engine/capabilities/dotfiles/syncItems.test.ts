@@ -36,14 +36,17 @@ describe('buildDotfilesSyncGroup', () => {
       key: '~/.zshrc',
       label: '~/.zshrc',
       managed: true,
-      ignored: false
+      ignored: false,
+      // R6 R2: 잘 알려진 dotfile 사전에서 온 한 줄 설명.
+      description: 'zsh 셸 설정'
     })
     // 후보(candidate)면서 ignore도 된 항목 -- 화면엔 여전히 나타나야 한다.
     expect(byKey.get('~/.gitconfig')).toEqual({
       key: '~/.gitconfig',
       label: '~/.gitconfig',
       managed: false,
-      ignored: true
+      ignored: true,
+      description: 'git 전역 설정'
     })
   })
 })

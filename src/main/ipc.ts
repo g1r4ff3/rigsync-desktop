@@ -76,7 +76,8 @@ import { detectReclassifications } from '../engine/reclassification'
 import {
   listSyncItemGroups,
   toggleSyncItemIgnore,
-  toggleSyncItemIgnoreBulk
+  toggleSyncItemIgnoreBulk,
+  withSyncItemState
 } from '../engine/syncItems'
 import {
   IPC_CHANNELS,
@@ -499,8 +500,22 @@ export function registerEngineIpc(
     }
   )
 
+  // R6 R1: listSyncItemGroups()의 순수 결과(engine 테스트 계약)는 그대로 두고,
+  // IPC 경계에서만 withSyncItemState()로 감싸 renderer DTO에 4상태
+  // (synced/pending-add/pending-remove/excluded)를 실어 보낸다.
+  async function listSyncItemGroupsForRenderer(): Promise<SyncItemGroupDto[]> {
+    const groups = await listSyncItemGroups(
+      getContext(),
+      providers,
+      gearLeverProvider,
+      toolsProvider,
+      gitProvider
+    )
+    return [...withSyncItemState(groups)]
+  }
+
   ipcMain.handle(IPC_CHANNELS.engineListSyncItems, async (): Promise<SyncItemGroupDto[]> => {
-    return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
+    return listSyncItemGroupsForRenderer()
   })
 
   ipcMain.handle(
@@ -508,7 +523,7 @@ export function registerEngineIpc(
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
       autoSyncAfterWrite(getContext(), gitTransportProvider)
-      return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
+      return listSyncItemGroupsForRenderer()
     }
   )
 
@@ -520,7 +535,7 @@ export function registerEngineIpc(
       // 얹으면 커밋 폭탄이 되므로 절대 반복 호출하지 않는다).
       toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
       autoSyncAfterWrite(getContext(), gitTransportProvider)
-      return listSyncItemGroups(getContext(), providers, gearLeverProvider, toolsProvider)
+      return listSyncItemGroupsForRenderer()
     }
   )
 

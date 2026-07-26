@@ -11,6 +11,7 @@ import { effectiveLayer } from '../../manifest'
 import { expandHome } from '../../paths'
 import type { SyncItemGroup } from '../../syncItems'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
+import { KNOWN_DOTFILE_DESCRIPTIONS } from './knownDescriptions'
 import { SEED_DOTFILES } from './seed'
 import type { DotfileEntry } from './types'
 
@@ -34,7 +35,8 @@ export function buildDotfilesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
       key: home,
       label: home,
       managed: managedHomes.has(home),
-      ignored: ignore.has(home)
+      ignored: ignore.has(home),
+      description: KNOWN_DOTFILE_DESCRIPTIONS[home]
     }))
   }
 }

@@ -32,6 +32,8 @@ export async function buildPackageSyncGroups(
     )
     const names = [...new Set([...managedSet, ...liveSet])].sort()
     if (names.length > 0) {
+      // R6 R2: 이름 전부를 한 번에 배치 조회한다(158개도 프로세스 1회).
+      const descriptions = providers.apt.descriptions(names)
       groups.push({
         capability: 'apt',
         title: 'apt',
@@ -39,7 +41,8 @@ export async function buildPackageSyncGroups(
           key: name,
           label: name,
           managed: managedSet.has(name),
-          ignored: ignore.has(name)
+          ignored: ignore.has(name),
+          description: descriptions[name]
         }))
       })
     }
@@ -71,15 +74,25 @@ export async function buildPackageSyncGroups(
     const liveSet = new Set(providers.flatpak.apps().map((a) => a.application))
     const names = [...new Set([...managedSet, ...liveSet])].sort()
     if (names.length > 0) {
+      // R6 R2: application마다 이름+설명이 한 번의 flatpak list 호출로 나온다.
+      const details = providers.flatpak.appDetails()
       groups.push({
         capability: 'flatpak',
         title: 'flatpak',
-        items: names.map((name) => ({
-          key: name,
-          label: name,
-          managed: managedSet.has(name),
-          ignored: ignore.has(name)
-        }))
+        items: names.map((name) => {
+          const detail = details[name]
+          return {
+            key: name,
+            label: name,
+            managed: managedSet.has(name),
+            ignored: ignore.has(name),
+            description: detail
+              ? detail.description
+                ? `${detail.name} — ${detail.description}`
+                : detail.name
+              : undefined
+          }
+        })
       })
     }
   }

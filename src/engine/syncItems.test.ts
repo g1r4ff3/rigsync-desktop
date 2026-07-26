@@ -7,10 +7,122 @@ import {
   makeFakeFlatpakProvider,
   makeFakeSnapProvider
 } from './capabilities/packages/testHelpers'
+import { makeFakeGitProvider } from './capabilities/repos/testHelpers'
 import { makeFakeToolsProvider } from './capabilities/tools/testHelpers'
 import { readIgnoreSet } from './ignore'
-import { listSyncItemGroups, toggleSyncItemIgnore, toggleSyncItemIgnoreBulk } from './syncItems'
+import {
+  computeSyncItemState,
+  isPendingSyncItemState,
+  listSyncItemGroups,
+  toggleSyncItemIgnore,
+  toggleSyncItemIgnoreBulk,
+  withSyncItemState
+} from './syncItems'
 import { makeFixture, type TestFixture } from './testFixtures'
+
+// R6 R1: 4상태 모델(computeSyncItemState) — managed × ignored 조합이 "다음
+// Capture가 오면 무슨 일이 일어나는지"를 코드로 확정한 것(ignore.ts의
+// setIgnored 주석 확인 결과: ignore 토글은 manifest를 즉시 바꾸지 않고 다음
+// capture 때 반영된다). 순수 함수라 fixture 없이 표만으로 검증한다.
+describe('computeSyncItemState', () => {
+  it('managed && !ignored -> synced (지금 동기화 대상)', () => {
+    expect(computeSyncItemState({ managed: true, ignored: false })).toBe('synced')
+  })
+
+  it('!managed && !ignored -> pending-add (다음 Capture가 추가)', () => {
+    expect(computeSyncItemState({ managed: false, ignored: false })).toBe('pending-add')
+  })
+
+  it('managed && ignored -> pending-remove (다음 Capture가 제거)', () => {
+    expect(computeSyncItemState({ managed: true, ignored: true })).toBe('pending-remove')
+  })
+
+  it('!managed && ignored -> excluded (안정적으로 빠진 상태)', () => {
+    expect(computeSyncItemState({ managed: false, ignored: true })).toBe('excluded')
+  })
+})
+
+describe('isPendingSyncItemState', () => {
+  it('is true only for pending-add/pending-remove', () => {
+    expect(isPendingSyncItemState('pending-add')).toBe(true)
+    expect(isPendingSyncItemState('pending-remove')).toBe(true)
+    expect(isPendingSyncItemState('synced')).toBe(false)
+    expect(isPendingSyncItemState('excluded')).toBe(false)
+  })
+})
+
+describe('withSyncItemState', () => {
+  it('attaches state to every item without mutating managed/ignored', () => {
+    const groups = withSyncItemState([
+      {
+        capability: 'apt',
+        title: 'apt',
+        items: [
+          { key: 'a', label: 'a', managed: true, ignored: false },
+          { key: 'b', label: 'b', managed: false, ignored: false },
+          { key: 'c', label: 'c', managed: true, ignored: true },
+          { key: 'd', label: 'd', managed: false, ignored: true }
+        ]
+      }
+    ])
+    expect(groups[0].items.map((i) => i.state)).toEqual([
+      'synced',
+      'pending-add',
+      'pending-remove',
+      'excluded'
+    ])
+  })
+})
+
+// R6 R1 검증 기준: "Capture 실행 후 이 화면이 갱신되어 '추가 예정'이 '동기화
+// 중'으로 바뀌는지 실제로 확인" — 픽스처로 재현한다. 후보(uncaptured)
+// 상태였던 패키지가 실제 captureApt() 실행 한 번으로 pending-add -> synced로
+// 바뀌는 걸 엔진 레벨에서 end-to-end 증명한다(Candidates 화면은 이 결과를
+// 그대로 렌더할 뿐이라, 여기서 증명되면 화면도 옳다).
+describe('Capture flips a candidate from pending-add to synced', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('an uncaptured apt package is pending-add before Capture and synced after', async () => {
+    writeAptBaseline(fixture.ctx, []) // 첫 capture가 배포판 기본분 스냅샷만 하고 끝나지 않게.
+    const aptProvider = makeFakeAptProvider({ manual: ['ripgrep'] })
+
+    const before = await listSyncItemGroups(
+      fixture.ctx,
+      { apt: aptProvider, snap: makeFakeSnapProvider([]), flatpak: makeFakeFlatpakProvider() },
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
+    )
+    const beforeItem = before
+      .find((g) => g.capability === 'apt')!
+      .items.find((i) => i.key === 'ripgrep')
+    expect(beforeItem?.managed).toBe(false)
+    expect(computeSyncItemState(beforeItem!)).toBe('pending-add')
+
+    await captureApt(fixture.ctx, aptProvider, { dryRun: false })
+
+    const after = await listSyncItemGroups(
+      fixture.ctx,
+      { apt: aptProvider, snap: makeFakeSnapProvider([]), flatpak: makeFakeFlatpakProvider() },
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
+    )
+    const afterItem = after
+      .find((g) => g.capability === 'apt')!
+      .items.find((i) => i.key === 'ripgrep')
+    expect(afterItem?.managed).toBe(true)
+    expect(computeSyncItemState(afterItem!)).toBe('synced')
+  })
+})
 
 describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
   let fixture: TestFixture
@@ -36,7 +148,8 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
         flatpak: makeFakeFlatpakProvider()
       },
       makeFakeGearLeverProvider({ available: false }),
-      makeFakeToolsProvider({ available: false })
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
     )
 
     // dotfiles 그룹이 없으면(관리 항목·후보 둘 다 없으면) 생략되고, apt만 남는다.
@@ -92,14 +205,17 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
         flatpak: makeFakeFlatpakProvider({ available: false })
       },
       gearLever,
-      makeFakeToolsProvider({ available: false })
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
     )
     expect(groups.map((g) => g.capability)).toEqual(['appimage'])
     expect(groups[0].items[0]).toEqual({
       key: 'tev.desktop',
       label: 'tev.desktop',
       managed: false,
-      ignored: false
+      ignored: false,
+      // R6 R2: Gear Lever의 listInstalled() name(버전 포함)을 그대로 설명으로 쓴다.
+      description: 'tev (2.13.1)'
     })
   })
 
@@ -122,7 +238,8 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
         flatpak: makeFakeFlatpakProvider({ available: false })
       },
       makeFakeGearLeverProvider({ available: false }),
-      makeFakeToolsProvider({ available: true, globals: { pnpm: '10' } })
+      makeFakeToolsProvider({ available: true, globals: { pnpm: '10' } }),
+      makeFakeGitProvider()
     )
     expect(groups.map((g) => g.capability)).toEqual(['tools'])
     expect(groups[0].items[0]).toEqual({

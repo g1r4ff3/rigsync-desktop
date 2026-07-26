@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type {
+  FlatpakAppDetail,
   FlatpakAppRow,
   FlatpakCommandResult,
   FlatpakOverrideFile,
@@ -58,6 +59,20 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
           installation: parts[2].trim()
         })
       }
+    }
+    return out
+  }
+
+  appDetails(): Readonly<Record<string, FlatpakAppDetail>> {
+    if (!this.isAvailable()) return {}
+    const result = run(['flatpak', 'list', '--app', '--columns=application,name,description'])
+    if (result.code !== 0) return {}
+    const out: Record<string, FlatpakAppDetail> = {}
+    for (const line of result.stdout.split('\n')) {
+      if (!line.trim()) continue
+      const parts = line.split('\t')
+      if (parts.length < 3) continue
+      out[parts[0].trim()] = { name: parts[1].trim(), description: parts[2].trim() }
     }
     return out
   }

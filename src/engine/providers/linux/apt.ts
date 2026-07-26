@@ -55,4 +55,26 @@ export class LinuxAptProvider implements AptProvider {
       return null
     }
   }
+
+  descriptions(names: readonly string[]): Readonly<Record<string, string>> {
+    if (names.length === 0) return {}
+    // 배치 1회 호출 -- 이름마다 프로세스를 띄우지 않는다. 158개 실측 수십 ms.
+    const result = run(['apt-cache', 'show', ...names], 30_000)
+    if (result.code !== 0 && !result.stdout) return {}
+    const out: Record<string, string> = {}
+    let currentPackage: string | null = null
+    for (const line of result.stdout.split('\n')) {
+      const pkgMatch = /^Package:\s*(.+)$/.exec(line)
+      if (pkgMatch) {
+        currentPackage = pkgMatch[1].trim()
+        continue
+      }
+      // 한 패키지에 여러 버전 스탠자가 나올 수 있으니 첫 스탠자(가장 먼저
+      // 만난 Description)만 채택한다 -- 이후 같은 이름의 스탠자는 무시.
+      if (!currentPackage || currentPackage in out) continue
+      const descMatch = /^Description(?:-en)?:\s*(.*)$/.exec(line)
+      if (descMatch) out[currentPackage] = descMatch[1].trim()
+    }
+    return out
+  }
 }

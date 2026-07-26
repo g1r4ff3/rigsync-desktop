@@ -9,12 +9,17 @@ import type { SyncItemGroup } from '../../syncItems'
 import { scanGitDirsDepth1, isGitWorktree } from './capture'
 import { contractHome, expandHome } from '../../paths'
 import { REPOS_KEY_FIELDS, REPOS_LAYER } from './constants'
-import type { ReposManifest } from './types'
+import type { GitProvider } from './providerTypes'
+import type { RepoEntry, ReposManifest } from './types'
 
-export async function buildReposSyncGroup(ctx: RigsyncContext): Promise<SyncItemGroup | null> {
+export async function buildReposSyncGroup(
+  ctx: RigsyncContext,
+  gitProvider: GitProvider
+): Promise<SyncItemGroup | null> {
   const ignore = readIgnoreSet(ctx, 'repos', 'paths')
   const manifest = effectiveLayer(ctx, REPOS_LAYER, REPOS_KEY_FIELDS) as ReposManifest
-  const managedSet = new Set((manifest.repo ?? []).map((r) => r.path))
+  const managedEntries = new Map<string, RepoEntry>((manifest.repo ?? []).map((r) => [r.path, r]))
+  const managedSet = new Set(managedEntries.keys())
 
   const scanDirs = ctx.settings.repoScanDirs ?? []
   const found: string[] = []
@@ -24,14 +29,23 @@ export async function buildReposSyncGroup(ctx: RigsyncContext): Promise<SyncItem
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
+  // R6 R2: managed 항목은 이미 manifest에 remote URL이 있으니 재조회 없이 그대로
+  // 쓴다. live/후보 항목만 git으로 원격 URL을 물어본다(개수가 적어 배치가
+  // 필요 없다 -- apt처럼 수백 개가 아니다). 빈 문자열(원격 없음)은 표시할
+  // 설명이 없다는 뜻이라 undefined로 접는다.
   return {
     capability: 'repos',
     title: 'repos',
-    items: names.map((name) => ({
-      key: name,
-      label: name,
-      managed: managedSet.has(name),
-      ignored: ignore.has(name)
-    }))
+    items: names.map((name) => {
+      const url =
+        managedEntries.get(name)?.url ?? gitProvider.remoteUrl(expandHome(ctx, name)) ?? ''
+      return {
+        key: name,
+        label: name,
+        managed: managedSet.has(name),
+        ignored: ignore.has(name),
+        description: url || undefined
+      }
+    })
   }
 }

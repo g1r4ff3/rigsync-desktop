@@ -20,6 +20,7 @@ import {
   helpCopy,
   sectionCopy
 } from '../copy'
+import { captureAll } from '../captureAll'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusIcon, StatusText } from '../status'
 import { planActionStatusKind, type StatusKind } from '../statusKind'
@@ -485,20 +486,13 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   ])
 
   // capture-first: 전 capability를 한 번에 캡처한다 (결정 ③ — additive-only).
+  // R6: 실제 IPC 호출 목록은 captureAll()(renderer 공용 헬퍼)로 뺐다 —
+  // Candidates 화면의 "보류 중 변경 반영" 배너도 정확히 같은 동작이 필요하다.
   async function handleCapture(): Promise<void> {
     setBusy(true)
     setError(null)
     try {
-      await Promise.all([
-        window.api.engine.captureDotfiles({ dryRun: false }),
-        window.api.engine.capturePackages({ dryRun: false }),
-        window.api.engine.captureAppimage({ dryRun: false }),
-        window.api.engine.captureSettings({ dryRun: false }),
-        window.api.engine.captureServices({ dryRun: false }),
-        window.api.engine.captureScheduled({ dryRun: false }),
-        window.api.engine.captureTools({ dryRun: false }),
-        window.api.engine.captureRepos({ dryRun: false })
-      ])
+      await captureAll()
       await refreshDiff()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

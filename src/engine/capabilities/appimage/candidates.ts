@@ -22,7 +22,13 @@ export async function buildAppimageSyncGroup(
     (effectiveLayer(ctx, APPIMAGE_LAYER, APPIMAGE_KEY_FIELDS).app as AppimageEntry[] | undefined) ??
     []
   const managedSet = new Set(manifest.map((e) => e.name))
-  const liveSet = new Set(provider.listInstalled().map((r) => r.desktopId))
+  const installed = provider.listInstalled()
+  const liveSet = new Set(installed.map((r) => r.desktopId))
+  // R6 R2: 설명 필드가 따로 없어 Gear Lever JSON의 `name`(버전 포함, 예:
+  // "tev (2.13.1)")을 그대로 한 줄 설명으로 쓴다 -- 실제로 설치돼 있어야만
+  // (listInstalled에 잡혀야만) 알 수 있으므로, manifest엔 있지만 지금 설치가
+  // 안 된 항목은 description이 없다(추측하지 않는다).
+  const nameByDesktopId = new Map(installed.map((r) => [r.desktopId, r.name]))
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
@@ -33,7 +39,8 @@ export async function buildAppimageSyncGroup(
       key: name,
       label: name,
       managed: managedSet.has(name),
-      ignored: ignore.has(name)
+      ignored: ignore.has(name),
+      description: nameByDesktopId.get(name)
     }))
   }
 }

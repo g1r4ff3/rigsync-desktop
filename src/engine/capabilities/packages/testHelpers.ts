@@ -6,6 +6,7 @@
 import type {
   AptProvider,
   AptSourceFile,
+  FlatpakAppDetail,
   FlatpakAppRow,
   FlatpakCommandResult,
   FlatpakOverrideFile,
@@ -21,6 +22,8 @@ export interface FakeAptProviderOptions {
   readonly sourceFiles?: readonly AptSourceFile[]
   /** 절대경로 -> 내용. `fileExists`/`readFileBytes`가 여기서만 답한다. */
   readonly files?: Readonly<Record<string, string | Buffer>>
+  /** 패키지명 -> 한 줄 설명. `descriptions()`가 여기서만 답한다(기본 빈 맵). */
+  readonly descriptions?: Readonly<Record<string, string>>
 }
 
 export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): AptProvider {
@@ -32,7 +35,13 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): AptProvi
     manualInstalled: () => [...(opts.manual ?? [])],
     listSourceFiles: () => [...(opts.sourceFiles ?? [])],
     fileExists: (p) => files.has(p),
-    readFileBytes: (p) => files.get(p) ?? null
+    readFileBytes: (p) => files.get(p) ?? null,
+    descriptions: (names) => {
+      const table = opts.descriptions ?? {}
+      const out: Record<string, string> = {}
+      for (const name of names) if (table[name] !== undefined) out[name] = table[name]
+      return out
+    }
   }
 }
 
@@ -55,6 +64,8 @@ export interface FakeFlatpakProviderOptions {
   /** appId -> 라이브 override 파일 내용. `listOverrideFiles`/`overrideFileExists`/`readOverrideFileBytes`가 여기서만 답한다. */
   readonly overrideFiles?: Readonly<Record<string, string | Buffer>>
   readonly writeOverrideResult?: FlatpakCommandResult
+  /** applicationId -> {name, description}. `appDetails()`가 여기서만 답한다(기본 빈 맵). */
+  readonly details?: Readonly<Record<string, FlatpakAppDetail>>
 }
 
 export interface FakeFlatpakProvider extends FlatpakProvider {
@@ -80,6 +91,7 @@ export function makeFakeFlatpakProvider(
     isAvailable: () => opts.available ?? true,
     remotes: () => [...(opts.remotes ?? [])],
     apps: () => [...(opts.apps ?? [])],
+    appDetails: () => ({ ...(opts.details ?? {}) }),
     addRemoteUser: (name, url) => {
       addRemoteCalls.push({ name, url })
       return opts.addRemoteResult ?? { ok: true, output: '' }

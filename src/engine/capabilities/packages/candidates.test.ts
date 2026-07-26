@@ -60,4 +60,58 @@ describe('buildPackageSyncGroups', () => {
     })
     expect(groups).toEqual([])
   })
+
+  // R6 R2: apt-cache show 배치 조회 -- 이름 전부를 한 번에 넘기고, 사전에
+  // 없는 이름은 description이 undefined로 조용히 빠진다(에러로 화면을 막지 않는다).
+  it('attaches an apt description when the provider has one, omitting it otherwise', async () => {
+    const aptProvider = makeFakeAptProvider({
+      manual: ['git', 'some-unknown-pkg'],
+      descriptions: { git: 'fast, scalable, distributed revision control system' }
+    })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: aptProvider,
+      snap: makeFakeSnapProvider([]),
+      flatpak: makeFakeFlatpakProvider()
+    })
+    const byKey = new Map(groups.find((g) => g.capability === 'apt')!.items.map((i) => [i.key, i]))
+    expect(byKey.get('git')?.description).toBe(
+      'fast, scalable, distributed revision control system'
+    )
+    expect(byKey.get('some-unknown-pkg')?.description).toBeUndefined()
+  })
+
+  // R6 R2: flatpak list --columns=application,name,description은 이름+설명이
+  // 함께 나온다 -- 한 줄로 합쳐서 보여준다(설명이 없으면 이름만).
+  it('combines flatpak name+description into a one-line description', async () => {
+    const flatpak = makeFakeFlatpakProvider({
+      apps: [{ application: 'com.obsproject.Studio', origin: 'flathub', installation: 'user' }],
+      details: {
+        'com.obsproject.Studio': {
+          name: 'OBS Studio',
+          description: 'Live stream and record videos'
+        }
+      }
+    })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: makeFakeAptProvider({ available: false }),
+      snap: makeFakeSnapProvider([], false),
+      flatpak
+    })
+    const item = groups.find((g) => g.capability === 'flatpak')!.items[0]
+    expect(item.description).toBe('OBS Studio — Live stream and record videos')
+  })
+
+  it('falls back to just the flatpak name when there is no description text', async () => {
+    const flatpak = makeFakeFlatpakProvider({
+      apps: [{ application: 'it.mijorus.gearlever', origin: 'flathub', installation: 'user' }],
+      details: { 'it.mijorus.gearlever': { name: 'Gear Lever', description: '' } }
+    })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: makeFakeAptProvider({ available: false }),
+      snap: makeFakeSnapProvider([], false),
+      flatpak
+    })
+    const item = groups.find((g) => g.capability === 'flatpak')!.items[0]
+    expect(item.description).toBe('Gear Lever')
+  })
 })

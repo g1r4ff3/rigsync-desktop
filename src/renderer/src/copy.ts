@@ -37,6 +37,57 @@ export const diffSummaryCopy = {
   }
 } as const
 
+/**
+ * R6 R1: Candidates 4상태 모델(managed × ignored) — 라벨은 화면(아이콘·집계·
+ * 배지)에서, description은 항목 행의 상태 아이콘 툴팁에서 쓴다. 실제 동작
+ * 확인 결과(ignore.ts): ignore 토글은 manifest를 즉시 안 바꾸고 common
+ * ignore.toml만 갱신한다 -- 실제 반영(추가/제거)은 다음 Capture 때 일어난다.
+ */
+export const syncItemStateCopy = {
+  synced: {
+    label: '동기화 중',
+    description: '지금 manifest에 포함되어 있어 Apply 때 이 머신에 반영됩니다.'
+  },
+  'pending-add': {
+    label: '추가 예정',
+    description: '아직 manifest엔 없습니다 — 다음 Capture가 새로 추가합니다.'
+  },
+  'pending-remove': {
+    label: '제거 예정',
+    description: '지금은 manifest에 있지만 ignore 처리돼 다음 Capture가 제거합니다.'
+  },
+  excluded: {
+    label: '제외됨',
+    description: 'ignore 처리되어 있어 다음 Capture도 다시 담지 않습니다.'
+  }
+} as const
+
+/** R6 R1: Candidates 화면 상단/그룹 헤더 집계 한 줄 — 0건인 상태는 생략해 잡음을 줄인다. */
+export function formatSyncItemStateSummary(counts: {
+  readonly synced: number
+  readonly pendingAdd: number
+  readonly pendingRemove: number
+  readonly excluded: number
+}): string {
+  const parts: string[] = []
+  if (counts.synced > 0) parts.push(`${syncItemStateCopy.synced.label} ${counts.synced}`)
+  if (counts.pendingAdd > 0) {
+    parts.push(`${syncItemStateCopy['pending-add'].label} ${counts.pendingAdd}`)
+  }
+  if (counts.pendingRemove > 0) {
+    parts.push(`${syncItemStateCopy['pending-remove'].label} ${counts.pendingRemove}`)
+  }
+  if (counts.excluded > 0) parts.push(`${syncItemStateCopy.excluded.label} ${counts.excluded}`)
+  return parts.join(' · ')
+}
+
+/** R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내". */
+export const pendingChangesCopy = {
+  bannerText: (count: number): string =>
+    `보류 중인 변경 ${count}건 — 반영하려면 Capture를 실행하세요.`,
+  captureSubtitle: '보류 중인 변경을 지금 manifest에 반영합니다'
+} as const
+
 export const buttonCopy = {
   capture: { label: 'Capture', subtitle: '지금 상태를 manifest로 기록' },
   captureDisabledFollower: 'follower는 capture 불가 — reference에서만 저작합니다',
@@ -99,8 +150,10 @@ export const helpCopy = {
     '계층 재분류 감지는 manifest가 기록한 설치 방식과 실제 설치 방식이 어긋난 경우를 보여줍니다.'
   ].join(' '),
   items: [
-    'Candidates는 관리 대상(manifest에 있음)과 미관리 후보(설치는 됐지만 기록 안 됨)를 한 목록에 보여줍니다.',
-    '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 그 항목을 ignore 처리해 다음 Capture부터 완전히 빼고, diff/Apply 대상에서도 제외합니다.',
+    'Candidates는 각 항목이 지금 동기화 중인지, 다음 Capture로 바뀔 예정인지를 4가지 상태로 보여줍니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(아직 manifest엔 없지만 다음 Capture가 담음)/제거 예정(지금은 있지만 ignore돼 다음 Capture가 뺌)/제외됨(ignore돼 안정적으로 빠진 상태).',
+    '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 ignore 처리하지만, manifest 반영(추가/제거)은 그 자리에서 즉시 일어나지 않고 다음 Capture 때 일어납니다 — 그래서 보류 중 변경이 있으면 배너로 Capture를 안내합니다.',
+    '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
+    '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
     '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다.',
     'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님).'
   ].join(' '),

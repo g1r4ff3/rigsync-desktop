@@ -485,12 +485,24 @@ export interface ReclassificationEventDto {
 export type SyncItemCapability =
   'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'tools' | 'repos'
 
+/**
+ * R6 R1: Candidates 4상태 모델 — managed × ignored 조합의 의미(engine
+ * `computeSyncItemState`의 판정을 그대로 실어 보낸다. 자세한 설명은
+ * src/engine/syncItems.ts 참조):
+ * synced=지금 동기화 중, pending-add=다음 Capture가 추가, pending-remove=다음
+ * Capture가 제거, excluded=ignore돼 안정적으로 빠진 상태.
+ */
+export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded'
+
 export interface SyncItemDto {
   readonly key: string
   readonly label: string
   /** manifest(effective)에 있으면 true. */
   readonly managed: boolean
   readonly ignored: boolean
+  readonly state: SyncItemState
+  /** R6 R2: 이 항목이 무엇인지 한 줄 설명 — 출처가 없으면 undefined(추측하지 않는다). */
+  readonly description?: string
 }
 
 export interface SyncItemGroupDto {

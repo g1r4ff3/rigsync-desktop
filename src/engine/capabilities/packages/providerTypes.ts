@@ -23,6 +23,15 @@ export interface AptProvider {
   fileExists(absPath: string): boolean
   /** 임의의 절대경로 파일을 바이트로 읽는다 (없거나 못 읽으면 null). */
   readFileBytes(absPath: string): Buffer | null
+  /**
+   * R6 R2: Candidates 화면의 "이게 뭔지" 한 줄 설명 — `apt-cache show <pkg…>`
+   * 를 이름 전부에 대해 **한 번에** 배치 호출하고(패키지마다 프로세스를
+   * 띄우지 않는다), `Description-en:`의 첫 줄만 패키지당 하나씩 돌려준다.
+   * 한 패키지에 여러 버전 스탠자가 나올 수 있어 **첫 Package: 스탠자만**
+   * 채택한다. 조회 실패·미지원 패키지는 결과 맵에서 그냥 빠진다(에러로
+   * 화면을 막지 않는다).
+   */
+  descriptions(names: readonly string[]): Readonly<Record<string, string>>
 }
 
 export interface SnapListRow {
@@ -58,10 +67,22 @@ export interface FlatpakOverrideFile {
   readonly content: string
 }
 
+export interface FlatpakAppDetail {
+  readonly name: string
+  readonly description: string
+}
+
 export interface FlatpakProvider {
   isAvailable(): boolean
   remotes(): FlatpakRemoteRow[]
   apps(): FlatpakAppRow[]
+  /**
+   * R6 R2: `flatpak list --app --columns=application,name,description` —
+   * application(패키지 ID)마다 사람이 읽는 이름+한 줄 설명이 이미 나온다
+   * (apt와 달리 별도 조회 명령이 필요 없다). 조회 실패·미설치 항목은 결과
+   * 맵에서 빠진다.
+   */
+  appDetails(): Readonly<Record<string, FlatpakAppDetail>>
   /**
    * `flatpak remote-add --user --if-not-exists <name> <url>`. `--user`라
    * unprivileged로 실행 가능(P2a 결정 ②) — apt/snap과 달리 실제로 실행된다.

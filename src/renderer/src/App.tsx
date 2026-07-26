@@ -199,7 +199,7 @@ function App(): React.JSX.Element {
         {tab === 'diff' ? (
           <DiffView status={status} />
         ) : tab === 'items' ? (
-          <SyncItemsView />
+          <SyncItemsView status={status} />
         ) : tab === 'doctor' ? (
           <DoctorView />
         ) : (

@@ -1,11 +1,20 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ActionButton } from '@/components/ActionButton'
+import { CandidateStateIcon } from '@/components/CandidateStateIcon'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { emptyStateCopy } from '../copy'
-import { StatusIcon, StatusText } from '../status'
-import type { SyncItemGroupDto } from '../../../shared/ipc'
+import { captureAll } from '../captureAll'
+import {
+  buttonCopy,
+  emptyStateCopy,
+  formatSyncItemStateSummary,
+  pendingChangesCopy,
+  syncItemStateCopy
+} from '../copy'
+import { StatusText } from '../status'
+import type { EngineStatus, SyncItemGroupDto, SyncItemState } from '../../../shared/ipc'
 
 /**
  * "동기화 항목" 화면(P2a 결정 ⑤, R3부터 탭 이름은 "Candidates") — managed
@@ -21,14 +30,27 @@ import type { SyncItemGroupDto } from '../../../shared/ipc'
  * 얹으면 자동 commit+push가 항목 수만큼 쌓이는 커밋 폭탄이 된다(main/ipc.ts
  * 주석 참조).
  *
+ * R6 R1: managed(manifest 상태) 하나만으로는 "내가 고른 스위치가 실제로
+ * 반영됐는지"가 안 보였다(ignore는 즉시 manifest를 안 바꾸고 다음 Capture
+ * 때 반영 — engine `computeSyncItemState` 참조). 그래서 항목마다
+ * managed×ignored 4상태(synced/pending-add/pending-remove/excluded)를 아이콘+
+ * 라벨로 보여주고, 보류 중(pending-*)이 하나라도 있으면 배너로 Capture를
+ * 안내한다(State 층 — "다음 행동 안내").
+ *
  * R4 스코프 결정: 개별 항목 스위치(수백 개까지 가는 가상 스크롤 목록)는
  * shadcn Tooltip을 안 쓰고 네이티브 `title` 속성만 쓴다 — 행마다 Radix
- * Portal을 띄우면 가상 스크롤 성능이 떨어지고, 항목 각각의 설명이 라벨
- * 자체로 이미 자명하다(이름 그대로). 구조적 컨트롤(검색창·그룹 체크박스)에는
- * 전부 shadcn Tooltip을 붙인다.
+ * Portal을 띄우면 가상 스크롤 성능이 떨어진다. 구조적 컨트롤(검색창·그룹
+ * 체크박스·상단 배너)에는 shadcn Tooltip/ActionButton을 쓴다.
  */
 
 type GroupToggleState = 'all-synced' | 'all-ignored' | 'mixed'
+
+interface StateCounts {
+  readonly synced: number
+  readonly pendingAdd: number
+  readonly pendingRemove: number
+  readonly excluded: number
+}
 
 type Row =
   | {
@@ -40,6 +62,8 @@ type Row =
       readonly groupState: GroupToggleState
       /** 그룹 전체 항목의 key 목록(검색 필터와 무관 — 그룹 토글은 항상 전체 대상). */
       readonly allItemKeys: readonly string[]
+      /** 검색 필터와 무관하게 그룹 전체를 센 값(집계는 항상 전체 대상 — R6 R1). */
+      readonly stateCounts: StateCounts
     }
   | {
       readonly kind: 'item'
@@ -47,8 +71,9 @@ type Row =
       readonly capability: SyncItemGroupDto['capability']
       readonly itemKey: string
       readonly label: string
-      readonly managed: boolean
+      readonly description?: string
       readonly ignored: boolean
+      readonly state: SyncItemState
     }
 
 function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
@@ -57,6 +82,28 @@ function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
   if (ignoredCount === 0) return 'all-synced'
   if (ignoredCount === items.length) return 'all-ignored'
   return 'mixed'
+}
+
+function computeStateCounts(items: SyncItemGroupDto['items']): StateCounts {
+  const counts: StateCounts = { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
+  return items.reduce((acc, item) => {
+    if (item.state === 'synced') return { ...acc, synced: acc.synced + 1 }
+    if (item.state === 'pending-add') return { ...acc, pendingAdd: acc.pendingAdd + 1 }
+    if (item.state === 'pending-remove') return { ...acc, pendingRemove: acc.pendingRemove + 1 }
+    return { ...acc, excluded: acc.excluded + 1 }
+  }, counts)
+}
+
+function mergeStateCounts(groups: readonly StateCounts[]): StateCounts {
+  return groups.reduce(
+    (acc, c) => ({
+      synced: acc.synced + c.synced,
+      pendingAdd: acc.pendingAdd + c.pendingAdd,
+      pendingRemove: acc.pendingRemove + c.pendingRemove,
+      excluded: acc.excluded + c.excluded
+    }),
+    { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
+  )
 }
 
 function groupCheckboxLabel(state: GroupToggleState): string {
@@ -95,12 +142,17 @@ function GroupCheckbox({
   )
 }
 
-function SyncItemsView(): React.JSX.Element {
+interface SyncItemsViewProps {
+  readonly status: EngineStatus | null
+}
+
+function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const [groups, setGroups] = useState<SyncItemGroupDto[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
   const [pendingGroups, setPendingGroups] = useState<Record<string, boolean>>({})
+  const [captureBusy, setCaptureBusy] = useState(false)
 
   async function refresh(): Promise<void> {
     setGroups(await window.api.engine.listSyncItems())
@@ -109,6 +161,13 @@ function SyncItemsView(): React.JSX.Element {
   useEffect(() => {
     refresh().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
+
+  // R6 R1: 화면 상단 집계는 검색 필터·그룹 구분과 무관하게 전체 항목을 센다.
+  const overallCounts = useMemo<StateCounts>(
+    () => mergeStateCounts((groups ?? []).map((g) => computeStateCounts(g.items))),
+    [groups]
+  )
+  const pendingCount = overallCounts.pendingAdd + overallCounts.pendingRemove
 
   const rows = useMemo<Row[]>(() => {
     if (!groups) return []
@@ -123,9 +182,10 @@ function SyncItemsView(): React.JSX.Element {
         title: `${group.title} (${items.length})`,
         capability: group.capability,
         detectionOnly: !!group.detectionOnly,
-        // 그룹 토글은 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
+        // 그룹 토글·집계는 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
         groupState: computeGroupState(group.items),
-        allItemKeys: group.items.map((i) => i.key)
+        allItemKeys: group.items.map((i) => i.key),
+        stateCounts: computeStateCounts(group.items)
       })
       for (const item of items) {
         out.push({
@@ -134,8 +194,9 @@ function SyncItemsView(): React.JSX.Element {
           capability: group.capability,
           itemKey: item.key,
           label: item.label,
-          managed: item.managed,
-          ignored: item.ignored
+          description: item.description,
+          ignored: item.ignored,
+          state: item.state
         })
       }
     }
@@ -191,6 +252,22 @@ function SyncItemsView(): React.JSX.Element {
     }
   }
 
+  // R6 R1: 보류 중(pending-add/pending-remove)이 있을 때 Capture로 안내한다
+  // (State 층 — "다음 행동 안내"). 실제 capture-all 호출은 DiffView와 공유하는
+  // captureAll() 헬퍼 하나로 처리한다.
+  async function handleCapture(): Promise<void> {
+    setCaptureBusy(true)
+    setError(null)
+    try {
+      await captureAll()
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCaptureBusy(false)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col gap-3">
       {/* R4-2 #2: "?" 헬프는 App.tsx 탭 바 우측 끝으로 통일했다(중복 제거). */}
@@ -207,6 +284,29 @@ function SyncItemsView(): React.JSX.Element {
           <TooltipContent>이름으로 항목 필터링(그룹 전체 토글에는 영향 없음)</TooltipContent>
         </Tooltip>
       </ViewToolbar>
+
+      {groups !== null && groups.length > 0 && (
+        <p className="-mt-1 text-[11px] text-muted-foreground">
+          전체: {formatSyncItemStateSummary(overallCounts) || '해당 없음'}
+        </p>
+      )}
+
+      {/* R6 R1: 보류 중 변경이 있을 때만 배너를 띄운다(0건이면 안 보임). */}
+      {pendingCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-status-warn/40 bg-status-warn/10 px-3 py-2">
+          <StatusText kind="warn">{pendingChangesCopy.bannerText(pendingCount)}</StatusText>
+          <ActionButton
+            variant="secondary"
+            size="sm"
+            label={buttonCopy.capture.label}
+            subtitle={pendingChangesCopy.captureSubtitle}
+            disabledReason={buttonCopy.captureDisabledFollower}
+            busy={captureBusy}
+            disabled={captureBusy || status?.role === 'follower'}
+            onClick={handleCapture}
+          />
+        </div>
+      )}
 
       {error && <StatusText kind="error">{error}</StatusText>}
 
@@ -235,7 +335,7 @@ function SyncItemsView(): React.JSX.Element {
                   className={
                     row.kind === 'header'
                       ? 'flex items-center gap-2 bg-secondary px-2 text-xs font-semibold text-secondary-foreground'
-                      : 'flex items-center justify-between border-t border-border px-2 font-mono text-xs'
+                      : 'flex items-center justify-between gap-2 border-t border-border px-2 text-xs'
                   }
                 >
                   {row.kind === 'header' ? (
@@ -245,32 +345,33 @@ function SyncItemsView(): React.JSX.Element {
                         disabled={!!pendingGroups[row.capability]}
                         onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
                       />
-                      <span>{row.title}</span>
+                      <span className="font-mono">{row.title}</span>
                       {row.detectionOnly && (
                         <span className="text-status-muted">— detection-only</span>
                       )}
+                      {/* R6 R1: 그룹 헤더 집계 — 검색 필터와 무관하게 그룹 전체 값,
+                          0건인 상태는 생략해 158행짜리 그룹에서도 잡음을 줄인다. */}
+                      <span className="ml-auto shrink-0 truncate font-mono text-[10px] font-normal text-muted-foreground">
+                        {formatSyncItemStateSummary(row.stateCounts)}
+                      </span>
                     </>
                   ) : (
                     <>
-                      {/* R4-2 #4: 예전엔 미관리 항목마다 "(candidate)" 텍스트를 반복해
-                          붙였는데, 이미 색(muted vs foreground)으로도 같은 정보를
-                          중복 전달하고 있어 "반복되는 상수"로 읽혔다(158행 전부가
-                          미관리인 화면에서 특히). 색만으로 구분하면 안 되므로
-                          (Design constraints) 텍스트 라벨을 지우는 대신 아이콘 형태
-                          (check vs 빈 원)로 바꿔 managed/unmanaged를 계속 색+형태
-                          두 채널로 인코딩한다 — 노이즈 없이. */}
+                      {/* R6 R1: managed/unmanaged 아이콘 하나였던 것을 4상태
+                          아이콘+라벨로 넓힌다 — "내가 고른 스위치가 실제로 manifest에
+                          반영됐는지"를 상태 이름으로 직접 말해준다(색+형태 병행:
+                          pending-add/remove는 같은 warn 색이지만 +/− 모양으로 구분). */}
                       <span
-                        className="flex min-w-0 items-center gap-1.5"
-                        title={
-                          row.managed
-                            ? '관리 중 — manifest에 기록됨'
-                            : '미관리 후보 — 아직 manifest에 없음'
-                        }
+                        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+                        title={`${syncItemStateCopy[row.state].label} — ${syncItemStateCopy[row.state].description}`}
                       >
-                        <StatusIcon kind={row.managed ? 'ok' : 'muted'} className="size-3" />
-                        <span className={row.managed ? 'text-foreground' : 'text-muted-foreground'}>
-                          {row.label}
-                        </span>
+                        <CandidateStateIcon state={row.state} />
+                        <span className="shrink-0 font-mono text-foreground">{row.label}</span>
+                        {row.description && (
+                          <span className="truncate text-muted-foreground" title={row.description}>
+                            — {row.description}
+                          </span>
+                        )}
                       </span>
                       <Switch
                         // 스크린샷 자기검수에서 발견: 그룹 체크박스는 켜짐=all-synced(포함)인데
