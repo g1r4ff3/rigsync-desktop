@@ -21,6 +21,9 @@ import { is } from '@electron-toolkit/utils'
 import { captureAppimage } from '../engine/capabilities/appimage/capture'
 import { diffAppimage } from '../engine/capabilities/appimage/diff'
 import { planAppimage } from '../engine/capabilities/appimage/plan'
+import { captureBinaries } from '../engine/capabilities/binaries/capture'
+import { diffBinaries } from '../engine/capabilities/binaries/diff'
+import { planBinaries } from '../engine/capabilities/binaries/plan'
 import { captureDotfiles } from '../engine/capabilities/dotfiles/capture'
 import { diffDotfiles } from '../engine/capabilities/dotfiles/diff'
 import { planDotfiles } from '../engine/capabilities/dotfiles/plan'
@@ -64,6 +67,10 @@ import type { PlanAction } from '../engine/plan'
 import { cloneManifestRepo, cloneErrorGuidance } from '../engine/transport'
 import {
   linuxAssetResolver,
+  linuxBinariesSystemProvider,
+  linuxBinaryAssetResolver,
+  linuxBinaryDownloader,
+  linuxBinaryZipExtractor,
   linuxCronProvider,
   linuxDconfProvider,
   linuxDoctorSystemProvider,
@@ -78,6 +85,7 @@ import {
   linuxNvidiaCheckProvider,
   linuxPackageProviders,
   linuxSystemdUserProvider,
+  linuxTarExtractor,
   linuxToolsProvider,
   linuxZipExtractor,
   linuxAppimageSystemCheck
@@ -95,7 +103,10 @@ import {
   type ApplyResponse,
   type AppimageCaptureReportDto,
   type AppimageDiffReportDto,
+  type BinariesCaptureReportDto,
+  type BinariesDiffReportDto,
   type CaptureAppimageRequest,
+  type CaptureBinariesRequest,
   type CaptureDotfilesRequest,
   type CaptureFontsRequest,
   type CapturePackagesRequest,
@@ -194,6 +205,7 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     packagesDiff,
     appimageDiff,
     fontsDiff,
+    binariesDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -204,6 +216,7 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     diffPackages(ctx, providers),
     diffAppimage(ctx, gearLeverProvider),
     diffFonts(ctx),
+    diffBinaries(ctx, linuxBinariesSystemProvider),
     diffSettings(ctx, dconfProvider),
     diffServices(ctx, systemdUserProvider),
     diffScheduled(ctx, cronProvider),
@@ -228,6 +241,15 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
       linuxFontDownloader,
       linuxZipExtractor,
       linuxFontsSystemProvider,
+      runTs
+    ),
+    binaries: planBinaries(
+      ctx,
+      binariesDiff,
+      linuxBinaryAssetResolver,
+      linuxBinaryDownloader,
+      linuxBinaryZipExtractor,
+      linuxTarExtractor,
       runTs
     ),
     settings: planSettings(ctx, dconfProvider, settingsDiff),
@@ -318,6 +340,19 @@ export function registerEngineIpc(
     async (_event, request: CaptureFontsRequest): Promise<FontsCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
         captureFonts(getContext(), { dryRun: request.dryRun })
+      )
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.engineDiffBinaries, async (): Promise<BinariesDiffReportDto> => {
+    return diffBinaries(getContext(), linuxBinariesSystemProvider)
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCaptureBinaries,
+    async (_event, request: CaptureBinariesRequest): Promise<BinariesCaptureReportDto> => {
+      return withAutoSync(request.dryRun, () =>
+        captureBinaries(getContext(), { dryRun: request.dryRun })
       )
     }
   )

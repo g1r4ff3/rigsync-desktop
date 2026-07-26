@@ -296,6 +296,39 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
     })
   })
 
+  it('toggling a binaries item writes under the "names" kind', () => {
+    toggleSyncItemIgnore(fixture.ctx, 'binaries', 'uv', true)
+    expect(readIgnoreSet(fixture.ctx, 'binaries', 'names')).toEqual(new Set(['uv']))
+  })
+
+  it('includes a binaries group when a known binary is installed', async () => {
+    const binDir = path.join(fixture.homeDir, '.local', 'bin')
+    fs.mkdirSync(binDir, { recursive: true })
+    const micromambaPath = path.join(binDir, 'micromamba')
+    fs.writeFileSync(micromambaPath, '#!/bin/sh\necho fake\n')
+    fs.chmodSync(micromambaPath, 0o755)
+
+    const groups = await listSyncItemGroups(
+      fixture.ctx,
+      {
+        apt: makeFakeAptProvider({ available: false }),
+        snap: makeFakeSnapProvider([], false),
+        flatpak: makeFakeFlatpakProvider({ available: false })
+      },
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
+    )
+    expect(groups.map((g) => g.capability)).toEqual(['binaries'])
+    expect(groups[0].items[0]).toEqual({
+      key: 'micromamba',
+      label: 'micromamba',
+      managed: false,
+      ignored: false,
+      description: 'micromamba 설치됨'
+    })
+  })
+
   it('toggling a tools item writes under the "packages" kind', () => {
     toggleSyncItemIgnore(fixture.ctx, 'tools', 'claude-mermaid', true)
     expect(readIgnoreSet(fixture.ctx, 'tools', 'packages')).toEqual(new Set(['claude-mermaid']))

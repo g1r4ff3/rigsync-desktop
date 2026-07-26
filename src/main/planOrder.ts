@@ -16,6 +16,7 @@ export interface PlanPartsByCapability {
   readonly packages: readonly PlanAction[]
   readonly appimage: readonly PlanAction[]
   readonly fonts: readonly PlanAction[]
+  readonly binaries: readonly PlanAction[]
   readonly settings: readonly PlanAction[]
   readonly services: readonly PlanAction[]
   readonly scheduled: readonly PlanAction[]
@@ -29,6 +30,7 @@ export function orderCombinedPlan(parts: PlanPartsByCapability): PlanAction[] {
     ...parts.packages,
     ...parts.appimage,
     ...parts.fonts,
+    ...parts.binaries,
     ...parts.settings,
     ...parts.services,
     ...parts.scheduled,

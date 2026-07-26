@@ -27,6 +27,7 @@ import { planActionStatusKind, type StatusKind } from '../statusKind'
 import type {
   ApplyResponse,
   AppimageDiffReportDto,
+  BinariesDiffReportDto,
   DotfilesDiffReport,
   DuplicateWarningDto,
   EngineStatus,
@@ -90,6 +91,11 @@ function hasAppimageDrift(appimage: AppimageDiffReportDto | null): boolean {
 function hasFontsDrift(fonts: FontsDiffReportDto | null): boolean {
   if (!fonts) return false
   return fonts.toInstall.length > 0 || fonts.pinMismatch.length > 0
+}
+
+function hasBinariesDrift(binaries: BinariesDiffReportDto | null): boolean {
+  if (!binaries) return false
+  return binaries.toInstall.length > 0 || binaries.pinMismatch.length > 0
 }
 
 function hasSettingsDrift(settings: SettingsDiffReportDto | null): boolean {
@@ -217,6 +223,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [packagesDiff, setPackagesDiff] = useState<PackagesDiffReport | null>(null)
   const [appimageDiff, setAppimageDiff] = useState<AppimageDiffReportDto | null>(null)
   const [fontsDiff, setFontsDiff] = useState<FontsDiffReportDto | null>(null)
+  const [binariesDiff, setBinariesDiff] = useState<BinariesDiffReportDto | null>(null)
   const [settingsDiff, setSettingsDiff] = useState<SettingsDiffReportDto | null>(null)
   const [servicesDiff, setServicesDiff] = useState<ServicesDiffReportDto | null>(null)
   const [scheduledDiff, setScheduledDiff] = useState<ScheduledDiffReportDto | null>(null)
@@ -252,6 +259,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       packages,
       appimage,
       fonts,
+      binaries,
       settings,
       services,
       scheduled,
@@ -264,6 +272,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       window.api.engine.diffPackages(),
       window.api.engine.diffAppimage(),
       window.api.engine.diffFonts(),
+      window.api.engine.diffBinaries(),
       window.api.engine.diffSettings(),
       window.api.engine.diffServices(),
       window.api.engine.diffScheduled(),
@@ -276,6 +285,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     setPackagesDiff(packages)
     setAppimageDiff(appimage)
     setFontsDiff(fonts)
+    setBinariesDiff(binaries)
     setSettingsDiff(settings)
     setServicesDiff(services)
     setScheduledDiff(scheduled)
@@ -297,6 +307,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           window.api.engine.diffPackages(),
           window.api.engine.diffAppimage(),
           window.api.engine.diffFonts(),
+          window.api.engine.diffBinaries(),
           window.api.engine.diffSettings(),
           window.api.engine.diffServices(),
           window.api.engine.diffScheduled(),
@@ -312,6 +323,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           packages,
           appimage,
           fonts,
+          binaries,
           settings,
           services,
           scheduled,
@@ -324,6 +336,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           setPackagesDiff(packages)
           setAppimageDiff(appimage)
           setFontsDiff(fonts)
+          setBinariesDiff(binaries)
           setSettingsDiff(settings)
           setServicesDiff(services)
           setScheduledDiff(scheduled)
@@ -345,6 +358,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       hasPackagesDrift(packagesDiff) ||
       hasAppimageDrift(appimageDiff) ||
       hasFontsDrift(fontsDiff) ||
+      hasBinariesDrift(binariesDiff) ||
       hasSettingsDrift(settingsDiff) ||
       hasServicesDrift(servicesDiff) ||
       hasScheduledDrift(scheduledDiff) ||
@@ -356,6 +370,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     packagesDiff,
     appimageDiff,
     fontsDiff,
+    binariesDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -403,6 +418,13 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           count: fontsDiff ? fontsDiff.toInstall.length + fontsDiff.pinMismatch.length : null
         },
         {
+          key: 'binaries',
+          label: 'Binaries',
+          count: binariesDiff
+            ? binariesDiff.toInstall.length + binariesDiff.pinMismatch.length
+            : null
+        },
+        {
           key: 'settings',
           label: 'Settings',
           count: settingsDiff ? settingsDiff.contentChanged.length : null
@@ -439,6 +461,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       packagesDiff,
       appimageDiff,
       fontsDiff,
+      binariesDiff,
       settingsDiff,
       servicesDiff,
       scheduledDiff,
@@ -478,6 +501,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     if (fontsDiff && !hasFontsDrift(fontsDiff)) {
       list.push({ key: 'fonts', title: 'Fonts', description: sectionCopy.fonts })
     }
+    if (binariesDiff && !hasBinariesDrift(binariesDiff)) {
+      list.push({ key: 'binaries', title: 'Binaries', description: sectionCopy.binaries })
+    }
     if (settingsDiff && !hasSettingsDrift(settingsDiff)) {
       list.push({ key: 'settings', title: 'Settings (dconf)', description: sectionCopy.settings })
     }
@@ -503,6 +529,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
     packagesDiff,
     appimageDiff,
     fontsDiff,
+    binariesDiff,
     settingsDiff,
     servicesDiff,
     scheduledDiff,
@@ -845,6 +872,26 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           {fontsDiff?.pinMismatch.map((m) => (
             <DriftRow key={`fonts-pin-${m.name}`} kind="warn">
               [fonts pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installedVersion})
+            </DriftRow>
+          ))}
+        </DriftSection>
+      )}
+
+      {(!binariesDiff || hasBinariesDrift(binariesDiff)) && (
+        <DriftSection
+          title="Binaries"
+          description={sectionCopy.binaries}
+          loading={!binariesDiff}
+          empty={!!binariesDiff && !hasBinariesDrift(binariesDiff)}
+        >
+          {binariesDiff?.toInstall.map((name) => (
+            <DriftRow key={`binaries-install-${name}`} kind="warn">
+              [binaries to-install] {name}
+            </DriftRow>
+          ))}
+          {binariesDiff?.pinMismatch.map((m) => (
+            <DriftRow key={`binaries-pin-${m.name}`} kind="warn">
+              [binaries pin mismatch] {m.name} (고정 {m.pinned} ≠ 설치됨 {m.installedVersion})
             </DriftRow>
           ))}
         </DriftSection>

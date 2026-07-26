@@ -45,6 +45,8 @@ export const IPC_CHANNELS = {
   engineCaptureAppimage: 'engine:captureAppimage',
   engineDiffFonts: 'engine:diffFonts',
   engineCaptureFonts: 'engine:captureFonts',
+  engineDiffBinaries: 'engine:diffBinaries',
+  engineCaptureBinaries: 'engine:captureBinaries',
   engineDetectDuplicates: 'engine:detectDuplicates',
   engineDetectReclassifications: 'engine:detectReclassifications',
   // P2d: settings/services/scheduled/tools/repos — 구 CLI 레이어 패리티.
@@ -409,6 +411,32 @@ export interface FontsCaptureReportDto {
 }
 
 // ---------------------------------------------------------------------------
+// engine:diffBinaries / engine:captureBinaries (binaries capability — 2026-07-26)
+// ---------------------------------------------------------------------------
+
+export interface BinariesPinMismatchDto {
+  readonly name: string
+  readonly pinned: string
+  readonly installedVersion: string
+}
+
+export interface BinariesDiffReportDto {
+  readonly toInstall: readonly string[]
+  readonly pinMismatch: readonly BinariesPinMismatchDto[]
+  readonly uncaptured: readonly string[]
+}
+
+export interface CaptureBinariesRequest {
+  readonly dryRun: boolean
+}
+
+export interface BinariesCaptureReportDto {
+  readonly capturedCount: number
+  readonly added: number
+  readonly notes: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
 // engine:diffSettings / engine:captureSettings (P2d — dconf)
 // ---------------------------------------------------------------------------
 
@@ -637,7 +665,7 @@ export interface ReclassificationEventDto {
 // ---------------------------------------------------------------------------
 
 export type SyncItemCapability =
-  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'tools' | 'repos'
+  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'binaries' | 'tools' | 'repos'
 
 /**
  * R6 R1: Candidates 4상태 모델 — managed × ignored 조합의 의미(engine

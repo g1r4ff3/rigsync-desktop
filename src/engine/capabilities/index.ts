@@ -13,7 +13,8 @@ export const CAPABILITY_NAMES = [
   'tools',
   'repos',
   'appimage',
-  'fonts'
+  'fonts',
+  'binaries'
 ] as const
 
 export type CapabilityName = (typeof CAPABILITY_NAMES)[number]

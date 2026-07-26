@@ -10,6 +10,13 @@ import type {
 } from '../../capabilities/appimage/providerTypes'
 import type { CapabilityName } from '../../capabilities'
 import type {
+  BinariesSystemProvider,
+  BinaryAssetResolver,
+  BinaryDownloader,
+  BinaryZipExtractor,
+  TarExtractor
+} from '../../capabilities/binaries/providerTypes'
+import type {
   FontAssetResolver,
   FontDownloader,
   FontsSystemProvider,
@@ -26,6 +33,7 @@ import type { NvidiaCheckProvider } from '../../doctor/nvidia'
 import type { ElevationExec } from '../../elevation/execTypes'
 import type { GitTransportProvider } from '../../transport/types'
 import { LinuxAptProvider } from './apt'
+import { LinuxBinariesSystemProvider } from './binaries'
 import { LinuxCronProvider } from './cron'
 import { LinuxDconfProvider } from './dconf'
 import { LinuxDoctorSystemProvider } from './doctorSystem'
@@ -42,6 +50,7 @@ import { LinuxNvidiaCheckProvider } from './nvidia'
 import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
 import { LinuxSystemdUserProvider } from './systemdUser'
+import { LinuxTarExtractor } from './tarExtractor'
 import { LinuxToolsProvider } from './tools'
 import { AdmZipExtractor } from './zipExtractor'
 
@@ -65,7 +74,8 @@ export const linuxProvider: Provider = {
     'tools',
     'repos',
     'appimage',
-    'fonts'
+    'fonts',
+    'binaries'
   ]
 }
 
@@ -95,6 +105,19 @@ export const linuxFontAssetResolver: FontAssetResolver = new FontsGithubAssetRes
 export const linuxZipExtractor: ZipExtractor = new AdmZipExtractor()
 export const linuxFontsSystemProvider: FontsSystemProvider = new LinuxFontsSystemProvider()
 
+/**
+ * dev(실제 머신)에서 쓰는 binaries capability provider 묶음. AssetResolver·
+ * Downloader·ZipExtractor는 fonts와 shape가 동일해(와일드카드 패턴 매칭
+ * `{name, downloadUrl}` / `{ok, detail}` / `{ok, extractedPaths, detail?}`)
+ * 구조적으로 재사용한다 — appimage↔fonts가 Downloader를 공유하는 것과 같은
+ * 패턴. tar.gz/tar.bz2만 binaries capability 신규(uv 같은 소스가 필요로 함).
+ */
+export const linuxBinaryDownloader: BinaryDownloader = linuxDownloader
+export const linuxBinaryAssetResolver: BinaryAssetResolver = new FontsGithubAssetResolver()
+export const linuxBinaryZipExtractor: BinaryZipExtractor = linuxZipExtractor
+export const linuxTarExtractor: TarExtractor = new LinuxTarExtractor()
+export const linuxBinariesSystemProvider: BinariesSystemProvider = new LinuxBinariesSystemProvider()
+
 /** P2d: dev(실제 머신)에서 쓰는 settings/services/scheduled/tools/repos/doctor provider들. */
 export const linuxDconfProvider: DconfProvider = new LinuxDconfProvider()
 export const linuxSystemdUserProvider: SystemdUserProvider = new LinuxSystemdUserProvider()
@@ -114,6 +137,7 @@ export {
   FontsGithubAssetResolver,
   GithubAssetResolver,
   LinuxAptProvider,
+  LinuxBinariesSystemProvider,
   LinuxCronProvider,
   LinuxDconfProvider,
   LinuxDoctorSystemProvider,
@@ -126,5 +150,6 @@ export {
   LinuxPkexecExec,
   LinuxSnapProvider,
   LinuxSystemdUserProvider,
+  LinuxTarExtractor,
   LinuxToolsProvider
 }

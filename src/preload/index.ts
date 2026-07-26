@@ -6,7 +6,10 @@ import {
   type ApplyResponse,
   type AppimageCaptureReportDto,
   type AppimageDiffReportDto,
+  type BinariesCaptureReportDto,
+  type BinariesDiffReportDto,
   type CaptureAppimageRequest,
+  type CaptureBinariesRequest,
   type CaptureDotfilesRequest,
   type CaptureFontsRequest,
   type CapturePackagesRequest,
@@ -69,6 +72,10 @@ const engineApi = {
   diffFonts: (): Promise<FontsDiffReportDto> => ipcRenderer.invoke(IPC_CHANNELS.engineDiffFonts),
   captureFonts: (request: CaptureFontsRequest): Promise<FontsCaptureReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCaptureFonts, request),
+  diffBinaries: (): Promise<BinariesDiffReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineDiffBinaries),
+  captureBinaries: (request: CaptureBinariesRequest): Promise<BinariesCaptureReportDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCaptureBinaries, request),
   diffSettings: (): Promise<SettingsDiffReportDto> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineDiffSettings),
   captureSettings: (request: CaptureRequest): Promise<SettingsCaptureReportDto> =>
