@@ -11,6 +11,8 @@ import {
   type CaptureFontsRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
+  type CloneManifestRepoRequest,
+  type CloneManifestRepoResponse,
   type CompleteOnboardingRequest,
   type CompleteOnboardingResponse,
   type DoctorReportDto,
@@ -22,6 +24,7 @@ import {
   type FontsCaptureReportDto,
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
+  type ManifestPathCheckDto,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
@@ -43,7 +46,8 @@ import {
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
-  type UpdateConfigRequest
+  type UpdateConfigRequest,
+  type ValidateManifestPathRequest
 } from '../shared/ipc'
 
 // renderer가 시스템에 접근하는 유일한 경로 — 전부 src/shared/ipc.ts의 타입드
@@ -104,6 +108,12 @@ const engineApi = {
   },
   completeOnboarding: (request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineCompleteOnboarding, request),
+  /** 온보딩 "기존 경로 지정" 검증 -- 경고만 만들고 진행은 막지 않는다. */
+  validateManifestPath: (request: ValidateManifestPathRequest): Promise<ManifestPathCheckDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineValidateManifestPath, request),
+  /** Settings에서도 클론으로 복구할 수 있게 하는 진입점. */
+  cloneManifestRepo: (request: CloneManifestRepoRequest): Promise<CloneManifestRepoResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineCloneManifestRepo, request),
   getSyncStatus: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineGetSyncStatus),
   syncNow: (): Promise<SyncStatusDto> => ipcRenderer.invoke(IPC_CHANNELS.engineSyncNow),
   setAutostart: (request: SetAutostartRequest): Promise<EngineStatus> =>

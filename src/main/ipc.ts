@@ -59,7 +59,9 @@ import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
 import { detectDuplicates } from '../engine/duplicates'
+import { checkExistingManifestPath } from '../engine/manifestPathCheck'
 import type { PlanAction } from '../engine/plan'
+import { cloneManifestRepo, cloneErrorGuidance } from '../engine/transport'
 import {
   linuxAssetResolver,
   linuxCronProvider,
@@ -98,6 +100,8 @@ import {
   type CaptureFontsRequest,
   type CapturePackagesRequest,
   type CaptureRequest,
+  type CloneManifestRepoRequest,
+  type CloneManifestRepoResponse,
   type CompleteOnboardingRequest,
   type CompleteOnboardingResponse,
   type DoctorReportDto,
@@ -109,6 +113,7 @@ import {
   type FontsCaptureReportDto,
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
+  type ManifestPathCheckDto,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
@@ -130,7 +135,8 @@ import {
   type ToggleIgnoreRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
-  type UpdateConfigRequest
+  type UpdateConfigRequest,
+  type ValidateManifestPathRequest
 } from '../shared/ipc'
 
 // packages/appimage capability의 provider 묶음 -- v1은 Linux 고정 (FORWARD.md
@@ -389,6 +395,7 @@ export function registerEngineIpc(
       linuxAppimageSystemCheck,
       linuxFontsSystemProvider,
       nvidiaCheckProvider,
+      gitTransportProvider,
       { configConfigured: !resolved.firstRun }
     )
   })
@@ -405,6 +412,7 @@ export function registerEngineIpc(
         linuxAppimageSystemCheck,
         linuxFontsSystemProvider,
         nvidiaCheckProvider,
+        gitTransportProvider,
         { configConfigured: !resolved.firstRun }
       )
     }
@@ -423,7 +431,8 @@ export function registerEngineIpc(
       await completeOnboarding(request, {
         homeDir: getContext().homeDir,
         execPath: getExecPath(),
-        isDev: is.dev
+        isDev: is.dev,
+        gitTransportProvider
       })
       refreshEngineContext()
       onConfigChanged()
@@ -435,6 +444,49 @@ export function registerEngineIpc(
           manifestDir: ctx.manifestDir,
           firstRun,
           autostartEnabled: ctx.autostartEnabled
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineValidateManifestPath,
+    async (_event, request: ValidateManifestPathRequest): Promise<ManifestPathCheckDto> => {
+      const targetDir = expandTilde(request.manifestDir, getContext().homeDir)
+      return checkExistingManifestPath(targetDir, gitTransportProvider)
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineCloneManifestRepo,
+    async (_event, request: CloneManifestRepoRequest): Promise<CloneManifestRepoResponse> => {
+      const ctx = getContext()
+      const targetDir = expandTilde(request.manifestDir, ctx.homeDir)
+      const result = cloneManifestRepo(request.repoUrl.trim(), targetDir, gitTransportProvider)
+      if (!result.ok) {
+        return { ok: false, error: cloneErrorGuidance(result.error) }
+      }
+      writeConfigFile(ctx.homeDir, {
+        machineId: ctx.machineId,
+        role: ctx.role,
+        manifestDir: targetDir,
+        ...(ctx.profile ? { profile: ctx.profile } : {}),
+        autostartEnabled: ctx.autostartEnabled,
+        driftCheckIntervalHours: ctx.settings.driftCheckIntervalHours
+      })
+      refreshEngineContext()
+      onConfigChanged()
+      const updated = resolved.ctx
+      return {
+        ok: true,
+        config: {
+          machineId: updated.machineId,
+          role: updated.role,
+          manifestDir: updated.manifestDir,
+          ...(updated.profile ? { profile: updated.profile } : {}),
+          autostartEnabled: updated.autostartEnabled,
+          driftCheckIntervalHours:
+            updated.settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
         }
       }
     }

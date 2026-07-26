@@ -37,7 +37,11 @@ const SCREENSHOT_STEPS: readonly ScreenshotStep[] = [
   { file: '03-candidates.png', route: 'items' },
   { file: '04-doctor.png', route: 'doctor' },
   { file: '05-settings.png', route: 'settings' },
-  { file: '06-apply-dialog.png', route: 'apply-dialog', delayMs: 9000 }
+  { file: '06-apply-dialog.png', route: 'apply-dialog', delayMs: 9000 },
+  // 실사용 결함 수정 검증용 -- 온보딩 "저장소에서 클론" 탭이 미리 선택된 화면.
+  // 06(apply-dialog) 다음에 둬 forceOnboarding이 false->true로 실제 전환되게
+  // 한다(App.tsx가 이 전환에서만 OnboardingView를 다시 마운트해 preset이 먹는다).
+  { file: '07-onboarding-clone.png', route: 'onboarding-clone' }
 ]
 
 export interface ScreenshotResult {

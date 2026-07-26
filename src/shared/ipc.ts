@@ -69,6 +69,14 @@ export const IPC_CHANNELS = {
   engineGetSyncStatus: 'engine:getSyncStatus',
   engineSyncNow: 'engine:syncNow',
   engineSetAutostart: 'engine:setAutostart',
+  /**
+   * 실사용 결함 수정: 온보딩 "기존 경로 지정"이 무검증이라 follower가 빈
+   * 로컬 디렉터리를 가리켜도 조용히 정상처럼 보였다. 경고만 만들고 진행은
+   * 막지 않는다(코디네이터 지시).
+   */
+  engineValidateManifestPath: 'engine:validateManifestPath',
+  /** Settings에서도 클론으로 복구할 수 있게 하는 진입점 (온보딩과 별개). */
+  engineCloneManifestRepo: 'engine:cloneManifestRepo',
   // R1: 첫 실행 이후 설정 화면 — writeConfigFile을 재사용해 저장.
   engineGetConfig: 'engine:getConfig',
   engineUpdateConfig: 'engine:updateConfig',
@@ -93,7 +101,14 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
 
 /** engine:screenshotGoto 페이로드 — App.tsx가 이 이름으로 탭/온보딩/다이얼로그를 강제 전환한다. */
 export type ScreenshotRoute =
-  'onboarding' | 'diff' | 'items' | 'doctor' | 'settings' | 'apply-dialog'
+  | 'onboarding'
+  /** 온보딩 화면을 강제 표시하되 manifest storage 선택을 'clone'으로 미리 맞춰 보여준다. */
+  | 'onboarding-clone'
+  | 'diff'
+  | 'items'
+  | 'doctor'
+  | 'settings'
+  | 'apply-dialog'
 
 export interface EnginePingRequest {
   readonly message?: string
@@ -124,20 +139,59 @@ export interface EngineStatus {
 // engine:completeOnboarding (P4 온보딩 위저드)
 // ---------------------------------------------------------------------------
 
-/** R2: 구 rigsync 마이그레이션 옵션은 제거됐다(사용자 결정 — fresh capture로 충분). */
-export type ManifestSourceMode = 'new' | 'existing'
+/**
+ * R2: 구 rigsync 마이그레이션 옵션은 제거됐다(사용자 결정 — fresh capture로 충분).
+ * 'clone'은 실사용 결함 수정으로 추가됐다 — follower의 정상 진입 경로는
+ * 기준 저장소를 클론해 받는 것인데 그때까지 그 경로가 없었다.
+ */
+export type ManifestSourceMode = 'new' | 'existing' | 'clone'
 
 export interface CompleteOnboardingRequest {
   readonly machineId: string
   readonly role: EngineRole
   readonly manifestDir: string
   readonly manifestSource: ManifestSourceMode
+  /** manifestSource==='clone'일 때만 사용 -- 클론할 저장소 URL. */
+  readonly repoUrl?: string
   readonly profile?: string
   readonly autostartEnabled: boolean
 }
 
 export interface CompleteOnboardingResponse {
   readonly status: EngineStatus
+}
+
+// ---------------------------------------------------------------------------
+// engine:validateManifestPath (온보딩 "기존 경로 지정" 검증 — 경고만, 진행은 막지 않음)
+// ---------------------------------------------------------------------------
+
+export interface ValidateManifestPathRequest {
+  readonly manifestDir: string
+}
+
+export interface ManifestPathCheckDto {
+  readonly exists: boolean
+  readonly isGitRepo: boolean
+  readonly hasRemote: boolean
+  readonly hasManifestStructure: boolean
+  readonly warnings: readonly string[]
+}
+
+// ---------------------------------------------------------------------------
+// engine:cloneManifestRepo (Settings에서도 클론으로 복구)
+// ---------------------------------------------------------------------------
+
+export interface CloneManifestRepoRequest {
+  readonly repoUrl: string
+  readonly manifestDir: string
+}
+
+export interface CloneManifestRepoResponse {
+  readonly ok: boolean
+  /** ok===false일 때만 채워지는 사람이 읽는 실패 안내문. */
+  readonly error?: string
+  /** ok===true일 때 갱신된 config -- Settings가 다시 조회하지 않고 바로 반영. */
+  readonly config?: RigsyncConfigDto
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +569,18 @@ export interface DoctorSecretScanPreflightDto {
   readonly warnings: readonly string[]
 }
 
+/**
+ * 실사용 결함 수정: follower인데 manifest가 거의 비어 있거나(선언 0건)
+ * 원격이 연결돼 있지 않으면 경고한다 — reference의 빈 manifest(첫 capture 전)는
+ * 정상이라 `applicable`이 role==='follower'일 때만 true다.
+ */
+export interface DoctorEmptyFollowerDto {
+  readonly applicable: boolean
+  readonly declarationsTotal: number
+  readonly hasRemote: boolean
+  readonly warning?: string
+}
+
 export interface DoctorReportDto {
   readonly basic: DoctorBasicDiagnosticsDto
   readonly checks: readonly DoctorCheckResultDto[]
@@ -522,6 +588,7 @@ export interface DoctorReportDto {
   readonly fonts: DoctorFontsPreflightDto
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
+  readonly emptyFollower: DoctorEmptyFollowerDto
   readonly checksVisible: boolean
   readonly exitCode: number
 }
