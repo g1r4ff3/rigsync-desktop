@@ -199,6 +199,7 @@ export const helpCopy = {
     'AppImage preflight는 Gear Lever 설치 여부와 버전, libfuse2t64, AppImageLauncher 충돌 가능성을 확인합니다.',
     'Fonts 점검은 manifest에 선언됐지만 이 머신에 없는 폰트, 설치는 됐지만 소스가 알려지지 않아 재현 불가능한 폰트, fc-cache/fc-list 사용 가능 여부를 확인합니다.',
     'NVIDIA 항목은 커널 드라이버(NVRM)와 설치된 패키지 버전이 다르면 경고합니다 — 대개 재부팅하면 해소됩니다.',
+    'Secret scan은 manifest 저장소 전체를 다시 훑어 GitHub 토큰 등 비밀로 보이는 값이 남아있는지 확인합니다 — Capture 시점에 이미 한 번 걸러졌어야 할 것들이 어떤 경로로든 남아있는지 잡는 마지막 안전망입니다.',
     '체크리스트 항목은 hand-maintained 목록이며 "Dismiss"로 다시 보지 않을 수 있습니다.'
   ].join(' '),
   settings: [

@@ -70,6 +70,15 @@ function nvidiaKinds(nvidia: DoctorReportDto['nvidia']): StatusKind[] {
   return [nvidia.matched ? 'ok' : 'warn']
 }
 
+/**
+ * 소급 시크릿 스캔(⑥) 결과 -- 걸린 finding은 'error'로 센다(경고가 아니라
+ * manifest에 실제로 비밀이 실려 있는 상태라 denylist 위반과 같은 심각도).
+ * 없으면 빈 배열(= 전부 통과, DoctorGroup이 자동으로 접힌 카드로 보여준다).
+ */
+function secretScanKinds(secretScan: DoctorReportDto['secretScan']): StatusKind[] {
+  return secretScan.blockedFindings.map((): StatusKind => 'error')
+}
+
 function checklistKinds(checks: DoctorReportDto['checks']): StatusKind[] {
   return checks.map((c) => doctorResultKind(c.result))
 }
@@ -225,17 +234,22 @@ function DoctorView(): React.JSX.Element {
   const appimageCounts = countKinds(appimageKinds(report.appimage))
   const fontsCounts = countKinds(fontsKinds(report.fonts))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
+  const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
   const checklistCounts = report.checksVisible
     ? countKinds(checklistKinds(report.checks))
     : { ok: 0, warn: 0, error: 0 }
-  const totals = [basicCounts, appimageCounts, fontsCounts, nvidiaCounts, checklistCounts].reduce(
-    addCounts,
-    {
-      ok: 0,
-      warn: 0,
-      error: 0
-    }
-  )
+  const totals = [
+    basicCounts,
+    appimageCounts,
+    fontsCounts,
+    nvidiaCounts,
+    secretScanCounts,
+    checklistCounts
+  ].reduce(addCounts, {
+    ok: 0,
+    warn: 0,
+    error: 0
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -373,6 +387,35 @@ function DoctorView(): React.JSX.Element {
             {report.nvidia.warning && <DoctorActionNote kind="warn" text={report.nvidia.warning} />}
           </DoctorGroup>
         )}
+
+        <DoctorGroup
+          title="Secret scan"
+          description="manifest 저장소 전체 소급 스캔 -- Capture 관문을 우회해 비밀이 남아있는지 확인"
+          counts={secretScanCounts}
+        >
+          {report.secretScan.blockedFindings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              감지된 항목 없음 -- manifest 저장소에 비밀로 보이는 값이 없습니다.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {report.secretScan.blockedFindings.map((f, i) => (
+                <li
+                  key={`${f.path}:${f.line}:${f.kind}:${i}`}
+                  className="rounded border border-border p-2 text-xs"
+                >
+                  <StatusText kind="error">
+                    {f.path}:{f.line} -- {f.label}
+                  </StatusText>
+                  <div className="mt-0.5 font-mono text-muted-foreground">{f.maskedExcerpt}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {report.secretScan.warnings.map((w) => (
+            <DoctorActionNote key={w} kind="error" text={w} />
+          ))}
+        </DoctorGroup>
 
         {report.checksVisible && (
           <DoctorGroup

@@ -22,6 +22,7 @@ import { evaluateCheck } from './evaluate'
 import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
 import type { DoctorSystemProvider } from './providerTypes'
+import { checkSecretScanPreflight } from './secretScanCheck'
 import type { ChecksManifest, DoctorReport } from './types'
 
 export const CHECKS_LAYER = 'checks'
@@ -54,6 +55,7 @@ export async function buildDoctorReport(
   const fontsDiff = await diffFonts(ctx)
   const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
+  const secretScan = checkSecretScanPreflight(ctx)
 
   return {
     basic: {
@@ -66,6 +68,7 @@ export async function buildDoctorReport(
     appimage,
     fonts,
     nvidia,
+    secretScan,
     checksVisible: activeChecks.length > 0,
     exitCode
   }
