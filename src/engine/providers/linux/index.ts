@@ -9,6 +9,12 @@ import type {
   GearLeverProvider
 } from '../../capabilities/appimage/providerTypes'
 import type { CapabilityName } from '../../capabilities'
+import type {
+  FontAssetResolver,
+  FontDownloader,
+  FontsSystemProvider,
+  ZipExtractor
+} from '../../capabilities/fonts/providerTypes'
 import type { PackageProviders } from '../../capabilities/packages/providerTypes'
 import type { GitProvider } from '../../capabilities/repos/providerTypes'
 import type { CronProvider } from '../../capabilities/scheduled/providerTypes'
@@ -26,6 +32,8 @@ import { LinuxDoctorSystemProvider } from './doctorSystem'
 import { DpkgSystemCheckProvider } from './dpkgSystemCheck'
 import { FetchDownloader } from './downloader'
 import { LinuxFlatpakProvider } from './flatpak'
+import { LinuxFontsSystemProvider } from './fonts'
+import { FontsGithubAssetResolver } from './fontsGithubAssetResolver'
 import { LinuxGearLeverProvider } from './gearlever'
 import { LinuxGitProvider } from './git'
 import { LinuxGitTransportProvider } from './gitTransport'
@@ -35,6 +43,7 @@ import { LinuxPkexecExec } from './pkexec'
 import { LinuxSnapProvider } from './snap'
 import { LinuxSystemdUserProvider } from './systemdUser'
 import { LinuxToolsProvider } from './tools'
+import { AdmZipExtractor } from './zipExtractor'
 
 export interface Provider {
   readonly platform: NodeJS.Platform
@@ -55,7 +64,8 @@ export const linuxProvider: Provider = {
     'scheduled',
     'tools',
     'repos',
-    'appimage'
+    'appimage',
+    'fonts'
   ]
 }
 
@@ -75,6 +85,16 @@ export const linuxAssetResolver: AssetResolver = new GithubAssetResolver()
 export const linuxDownloader: Downloader = new FetchDownloader()
 export const linuxAppimageSystemCheck = new DpkgSystemCheckProvider()
 
+/**
+ * dev(실제 머신)에서 쓰는 fonts capability provider 묶음. Downloader는
+ * appimage와 shape가 동일해(`{ok, detail}`) 구조적으로 재사용한다 — 별도
+ * FetchDownloader 재구현 없이 타입만 fonts의 FontDownloader로 다시 적는다.
+ */
+export const linuxFontDownloader: FontDownloader = linuxDownloader
+export const linuxFontAssetResolver: FontAssetResolver = new FontsGithubAssetResolver()
+export const linuxZipExtractor: ZipExtractor = new AdmZipExtractor()
+export const linuxFontsSystemProvider: FontsSystemProvider = new LinuxFontsSystemProvider()
+
 /** P2d: dev(실제 머신)에서 쓰는 settings/services/scheduled/tools/repos/doctor provider들. */
 export const linuxDconfProvider: DconfProvider = new LinuxDconfProvider()
 export const linuxSystemdUserProvider: SystemdUserProvider = new LinuxSystemdUserProvider()
@@ -88,14 +108,17 @@ export const linuxNvidiaCheckProvider: NvidiaCheckProvider = new LinuxNvidiaChec
 export const linuxGitTransportProvider: GitTransportProvider = new LinuxGitTransportProvider()
 
 export {
+  AdmZipExtractor,
   DpkgSystemCheckProvider,
   FetchDownloader,
+  FontsGithubAssetResolver,
   GithubAssetResolver,
   LinuxAptProvider,
   LinuxCronProvider,
   LinuxDconfProvider,
   LinuxDoctorSystemProvider,
   LinuxFlatpakProvider,
+  LinuxFontsSystemProvider,
   LinuxGearLeverProvider,
   LinuxGitProvider,
   LinuxGitTransportProvider,

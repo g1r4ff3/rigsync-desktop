@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFakeGearLeverProvider } from './capabilities/appimage/testHelpers'
 import { captureApt } from './capabilities/packages/apt'
@@ -260,6 +262,37 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
       ignored: false,
       // R6 R2: Gear Lever의 listInstalled() name(버전 포함)을 그대로 설명으로 쓴다.
       description: 'tev (2.13.1)'
+    })
+  })
+
+  it('toggling a fonts item writes under the "names" kind', () => {
+    toggleSyncItemIgnore(fixture.ctx, 'fonts', 'MesloLGS NF', true)
+    expect(readIgnoreSet(fixture.ctx, 'fonts', 'names')).toEqual(new Set(['MesloLGS NF']))
+  })
+
+  it('includes a fonts group when a known font family is installed', async () => {
+    const fontsDir = path.join(fixture.homeDir, '.local', 'share', 'fonts')
+    fs.mkdirSync(fontsDir, { recursive: true })
+    fs.writeFileSync(path.join(fontsDir, 'MesloLGS NF Regular.ttf'), 'fake')
+
+    const groups = await listSyncItemGroups(
+      fixture.ctx,
+      {
+        apt: makeFakeAptProvider({ available: false }),
+        snap: makeFakeSnapProvider([], false),
+        flatpak: makeFakeFlatpakProvider({ available: false })
+      },
+      makeFakeGearLeverProvider({ available: false }),
+      makeFakeToolsProvider({ available: false }),
+      makeFakeGitProvider()
+    )
+    expect(groups.map((g) => g.capability)).toEqual(['fonts'])
+    expect(groups[0].items[0]).toEqual({
+      key: 'MesloLGS NF',
+      label: 'MesloLGS NF',
+      managed: false,
+      ignored: false,
+      description: '1개 파일 설치됨'
     })
   })
 

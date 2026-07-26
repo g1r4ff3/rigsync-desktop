@@ -7,6 +7,7 @@
 import { buildAppimageSyncGroup } from './capabilities/appimage/candidates'
 import type { GearLeverProvider } from './capabilities/appimage/providerTypes'
 import { buildDotfilesSyncGroup } from './capabilities/dotfiles/syncItems'
+import { buildFontsSyncGroup } from './capabilities/fonts/candidates'
 import { buildPackageSyncGroups } from './capabilities/packages/candidates'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
 import { buildReposSyncGroup } from './capabilities/repos/candidates'
@@ -72,7 +73,8 @@ export function isPendingSyncItemState(state: SyncItemState): boolean {
 }
 
 export interface SyncItemGroup {
-  readonly capability: 'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'tools' | 'repos'
+  readonly capability:
+    'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'tools' | 'repos'
   readonly title: string
   readonly items: readonly SyncItem[]
   /**
@@ -118,6 +120,7 @@ const IGNORE_KIND_BY_CAPABILITY: Readonly<Record<SyncItemGroup['capability'], st
   snap: 'packages',
   flatpak: 'apps',
   appimage: 'names',
+  fonts: 'names',
   tools: 'packages',
   repos: 'paths'
 }
@@ -132,12 +135,14 @@ export async function listSyncItemGroups(
   const dotfilesGroup = buildDotfilesSyncGroup(ctx)
   const packageGroups = await buildPackageSyncGroups(ctx, providers)
   const appimageGroup = await buildAppimageSyncGroup(ctx, gearLeverProvider)
+  const fontsGroup = await buildFontsSyncGroup(ctx)
   const toolsGroup = await buildToolsSyncGroup(ctx, toolsProvider)
   const reposGroup = await buildReposSyncGroup(ctx, gitProvider)
   return [
     ...(dotfilesGroup ? [dotfilesGroup] : []),
     ...packageGroups,
     ...(appimageGroup ? [appimageGroup] : []),
+    ...(fontsGroup ? [fontsGroup] : []),
     ...(toolsGroup ? [toolsGroup] : []),
     ...(reposGroup ? [reposGroup] : [])
   ]
