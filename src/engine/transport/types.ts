@@ -31,6 +31,14 @@ export interface GitTransportProvider {
   hasUncommittedChanges(dir: string): boolean
   addAllAndCommit(dir: string, message: string): GitCommandResult
   push(dir: string): GitCommandResult
+  /**
+   * `git clone <url> <targetDir>` — 온보딩 "저장소에서 클론"(follower의 정상
+   * 진입 경로)과 Settings의 복구용 클론이 공유하는 진입점. `targetDir`은
+   * 아직 없거나 있어도 비어 있어야 한다(git clone 자체의 제약 — 실패하면
+   * `ok:false`에 git의 원문 stderr가 담긴다. 분류는 `transport/clone.ts`가
+   * 이 원문 텍스트를 해석해서 한다).
+   */
+  cloneManifest(url: string, targetDir: string): GitCommandResult
 }
 
 export type SyncStatus =

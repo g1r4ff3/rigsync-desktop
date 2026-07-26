@@ -18,6 +18,8 @@ import type {
 import { checkFontsPreflight } from '../capabilities/fonts/checks'
 import { diffFonts } from '../capabilities/fonts/diff'
 import type { FontsSystemProvider } from '../capabilities/fonts/providerTypes'
+import type { GitTransportProvider } from '../transport/types'
+import { checkEmptyFollower } from './emptyFollowerCheck'
 import { evaluateCheck } from './evaluate'
 import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
@@ -39,6 +41,7 @@ export async function buildDoctorReport(
   appimageSystemCheck: AppimageSystemCheckProvider,
   fontsSystemProvider: FontsSystemProvider,
   nvidiaProvider: NvidiaCheckProvider,
+  gitTransportProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote'>,
   options: BuildDoctorReportOptions
 ): Promise<DoctorReport> {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')
@@ -56,6 +59,7 @@ export async function buildDoctorReport(
   const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
   const secretScan = checkSecretScanPreflight(ctx)
+  const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
 
   return {
     basic: {
@@ -69,6 +73,7 @@ export async function buildDoctorReport(
     fonts,
     nvidia,
     secretScan,
+    emptyFollower,
     checksVisible: activeChecks.length > 0,
     exitCode
   }

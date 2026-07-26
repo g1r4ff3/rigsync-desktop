@@ -54,4 +54,12 @@ export class LinuxGitTransportProvider implements GitTransportProvider {
     const result = git(dir, ['push'], 60_000)
     return { ok: result.code === 0, output: result.text }
   }
+
+  cloneManifest(url: string, targetDir: string): GitCommandResult {
+    // `targetDir`이 아직 없어 `git -C targetDir ...`(다른 메서드들의 공용
+    // helper)를 쓸 수 없다 -- clone 자체가 그 디렉터리를 만드는 명령이라
+    // run()을 직접 호출한다.
+    const result = run(['git', 'clone', url, targetDir], 120_000)
+    return { ok: result.code === 0, output: result.stdout + result.stderr }
+  }
 }

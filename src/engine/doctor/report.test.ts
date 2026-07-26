@@ -4,8 +4,11 @@ import { writeCommonLayer } from '../manifest'
 import { writeIgnore } from '../testFixtures'
 import { makeFakeGearLeverProvider } from '../capabilities/appimage/testHelpers'
 import { makeFakeFontsSystemProvider } from '../capabilities/fonts/testHelpers'
+import { makeFakeGitTransportProvider } from '../transport/testHelpers'
 import { buildDoctorReport, CHECKS_LAYER } from './report'
 import { makeFakeDoctorSystemProvider, makeFakeNvidiaProvider } from './testHelpers'
+
+const gitTransportProvider = makeFakeGitTransportProvider()
 
 // checksVisible 케이스 출처: 구 repo gui.py `doctor_visible`(코드 복사 아님).
 
@@ -19,6 +22,7 @@ describe('buildDoctorReport', () => {
       { isPackageInstalled: () => false },
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
+      gitTransportProvider,
       { configConfigured: true }
     )
     expect(report.checksVisible).toBe(false)
@@ -43,6 +47,7 @@ describe('buildDoctorReport', () => {
       { isPackageInstalled: () => false },
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
+      gitTransportProvider,
       { configConfigured: true }
     )
     expect(report.checks.map((c) => c.name)).toEqual(['tailscale'])
@@ -62,6 +67,7 @@ describe('buildDoctorReport', () => {
       { isPackageInstalled: () => false },
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
+      gitTransportProvider,
       { configConfigured: true }
     )
     expect(report.exitCode).toBe(1)
@@ -80,6 +86,7 @@ describe('buildDoctorReport', () => {
         nvrmVersion: '580.173.02',
         packages: [{ name: 'nvidia-driver-580', version: '580.173.02' }]
       }),
+      gitTransportProvider,
       { configConfigured: true }
     )
     expect(report.basic).toEqual({
@@ -117,10 +124,45 @@ describe('buildDoctorReport', () => {
       { isPackageInstalled: () => false },
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
+      gitTransportProvider,
       { configConfigured: true }
     )
     expect(report.fonts.missingInstalled).toEqual(['MesloLGS NF'])
     expect(report.fonts.fcCacheAvailable).toBe(true)
+    fixture.cleanup()
+  })
+
+  it('surfaces the empty-follower warning for a follower with an empty, remote-less manifest', async () => {
+    const fixture = makeFixture('follower')
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: false }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false }),
+      { configConfigured: true }
+    )
+    expect(report.emptyFollower.applicable).toBe(true)
+    expect(report.emptyFollower.warning).toBeDefined()
+    fixture.cleanup()
+  })
+
+  it('does not warn for a reference machine with an empty manifest (normal pre-first-capture state)', async () => {
+    const fixture = makeFixture('reference')
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: false }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false }),
+      { configConfigured: true }
+    )
+    expect(report.emptyFollower.applicable).toBe(false)
+    expect(report.emptyFollower.warning).toBeUndefined()
     fixture.cleanup()
   })
 })
