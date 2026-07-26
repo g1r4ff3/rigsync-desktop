@@ -27,6 +27,12 @@ describe('matchesDenylist', () => {
     expect(matchesDenylist('aws_token')).toBe(true)
   })
 
+  it('blocks anything with "secret" in the basename (실사례: secrets.zsh)', () => {
+    expect(matchesDenylist('secrets.zsh')).toBe(true)
+    expect(matchesDenylist('my-secret-config')).toBe(true)
+    expect(matchesDenylist('SECRET')).toBe(false) // 대소문자 구분 — 기존 패턴들과 동일한 정책
+  })
+
   it('blocks shell history files', () => {
     expect(matchesDenylist('.zsh_history')).toBe(true)
   })

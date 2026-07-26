@@ -3,7 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { DEFAULT_DRIFT_CHECK_INTERVAL_HOURS } from '../engine/context'
-import { isAutostartEnabled, setAutostart } from '../engine/autostart'
+import { isAutostartEnabled } from '../engine/autostart'
+import { guardedSetAutostart } from './autostartGuard'
 import type { DriftSummary } from '../engine/drift'
 import { runDriftCheck } from './driftCheck'
 import { getEngineContext, refreshEngineContext, registerEngineIpc } from './ipc'
@@ -174,7 +175,7 @@ app.whenReady().then(() => {
     getLastResult: () => scheduler?.getLastResult() ?? null,
     isAutostartEnabled: () => isAutostartEnabled(getEngineContext().homeDir),
     toggleAutostart: (enabled) =>
-      setAutostart(getEngineContext().homeDir, enabled, resolveExecPath())
+      guardedSetAutostart(getEngineContext().homeDir, enabled, resolveExecPath(), is.dev)
   })
 
   scheduler.start()

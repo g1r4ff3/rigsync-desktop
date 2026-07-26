@@ -1,19 +1,20 @@
 /**
- * 트레이 아이콘 placeholder — 단색 원형 PNG를 코드로 직접 생성해 base64로
- * 박아 넣었다(외부 에셋 파일 불필요, 디자인 투자 금지 지시 준수). 16px는
- * Windows/Linux 트레이, 22px는 더 고해상도 트레이(예: macOS @1x가 아닌
- * 환경)용 — Electron `nativeImage`가 필요에 따라 스케일한다.
+ * 트레이 아이콘 — rigsync 브랜드 글리프(reference 노드=채워진 원 + follower
+ * 노드=링, `build/icon-tray.svg`가 소스). 16px는 Windows/Linux 트레이, 22px는
+ * 더 고해상도 트레이(예: macOS @1x가 아닌 환경)용 — Electron `nativeImage`가
+ * 필요에 따라 스케일한다.
  *
- * ⚠ 디자인 패스(제품 방향에서 예고된 후속 작업)에서 실제 브랜드 아이콘으로
- * 교체될 자리표시자다. 생성 스크립트는 커밋에 없다(1회성 유틸 — 필요하면
- * 동일 방식으로 재생성: 순수 Node zlib로 RGBA raw scanline을 deflate해 PNG
- * IHDR/IDAT/IEND 청크를 직접 조립).
+ * 값은 `scripts/generate-icons.mjs`가 `build/icon-tray.svg`를 래스터화해 이
+ * 파일의 두 상수를 갱신한 결과다(이 두 export 선언 형태는 유지한 채 값만
+ * 교체 — 디자인을 바꾸려면 icon-tray.svg를 고치고 스크립트를 다시 돌린다).
+ * 앱 아이콘(`build/icon.svg`)에는 방향을 나타내는 쉐브론이 더 있지만, 16/22px
+ * 트레이 크기에서는 뭉개져 두 원만 남긴 단순화 버전을 쓴다.
  */
 export const TRAY_ICON_PNG_BASE64_16 =
-  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaUlEQVR4nGNgQAM9PdMse3qmzejpmXazp2fabyi+CRWzRFePrhmk6D8BPAOX5h1EaIbhHeTYjN0lUD+TqhmGLcm1HeEKaAiTa8BNBmg0kWvAb6oYQLEXKA5EyqKR4oRElaRMlcxEbnYGADc3MwvElpBhAAAAAElFTkSuQmCC'
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAADsOAAA7DgHMtqGDAAABCElEQVQ4jdVSTUpDQQx+1IW9hGvP8JKKfxsvIOq2C9suvIHwmswJ7KIIgnuL4MGqpRaTEUVHMvLgTaFjEVwYCENm8n1JvkxR/AvbrUK7JH9Ysp6Wzh9YvDa4M9QzJH1E1lA7kM7AyUWSuON0C1nvkWRhDqQPSDpqApcdWKsm+Gl1snwg6U2H5RxIr4HlPd6TvEWCWDlTCZ30mt0CSb9+KyKBtb2a4LOoQiuZtwotJJ3/muB4EjYSAjDBciOw7yYjOBkkIwC/bttqsiKy3JqIdn7HDRHrTQDrBFmezYHkDullnO2M9DKCc2a/D1inS/ufwlBPfgTXZl8XyO8bGTq/d3QVNtcG/7l9Ac/YQjgkZrQ3AAAAAElFTkSuQmCC'
 
 export const TRAY_ICON_PNG_BASE64_22 =
-  'iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAoklEQVR4nLWV0Q2AIAxEu4NbOJxb8HffncQxHIMxSDSYYgyCEuFI7gfoC2mPVqSyAJ0AXQBdAfWABpO3vXg21eJrUGeQ/UPxjmsBzoBuDcBcMWZ+g/of0CRfhP986ePlpZz2QpPcvfothWpVON1ithkFTVrEPDkavEqnE6oOkcH5vfJMBdNSQSsezW6cD0L70tQmRG2btEZfaKPjRlMG7xqmB87gKDHPTppsAAAAAElFTkSuQmCC'
+  'iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAACXBIWXMAADsOAAA7DgHMtqGDAAABh0lEQVQ4je2UzytEURTHnyhjR/JXSGyUOWfqWWEhorAgK3ZEsZJ675wJKwux9Xsz8c9ospGViKL8mnfOpHA1MzXNm+flTpZ86+7O+XTP93zvdZx//UY9m6YJ0/leYJ1CltEeznX8Cphae20D1m0gCZDVhI9cIuu0Y0xd7G2AZQhJl5FkMUWKhWLwgi5kvY4CwwdYT1zPJEJQJBkB0ttIMUkWWB9+glbUH5ah4OsEknxaNr4jSwZJ5oB0BUmz1TUl7zaeW4D00e5G8gbpfF/lpGMnph5Z9iJg8INZ2zFTpLuxu6mwsQQm3bH2z1cvLjXAchQGs25bgzkejCTHVeBgxhaMJHvxMdW7ENj1npprWV6Sgv5KqOuZBmA5iCyvOAbruG3ckOUDSU8hLfNIugqk59/GrWw+yTCS3nyT2zMgva/Brv2IV65nEikOBpF1CVkWgDRZeNLIQSewXFlMkxnYMo1OLepef2lF1i1gyUXTIhfg62TsJ2Sj4lSkbvHbJBlBzrVbNTp/Ul8iwF4lDXrmUQAAAABJRU5ErkJggg=='
 
 export function trayIconDataUrl(size: 16 | 22 = 22): string {
   const b64 = size === 16 ? TRAY_ICON_PNG_BASE64_16 : TRAY_ICON_PNG_BASE64_22

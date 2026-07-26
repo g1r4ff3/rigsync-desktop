@@ -37,5 +37,15 @@ export default defineConfig(
       'react-refresh/only-export-components': 'off'
     }
   },
+  {
+    // @electron-toolkit/eslint-config-ts가 이미 최상위 `*.js`/`*.mjs`에는
+    // explicit-function-return-type을 꺼주지만, 그 패턴은 서브디렉터리(예:
+    // scripts/*.mjs)까지 안 내려온다 -- 1회성 Node 유틸 스크립트라 TS 프로젝트가
+    // 아니므로 같은 취지를 여기서도 명시적으로 켠다.
+    files: ['scripts/**/*.mjs'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
   eslintConfigPrettier
 )

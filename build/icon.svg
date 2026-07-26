@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  rigsync 앱 아이콘 — 소스 오브 트루스.
+
+  모티프: reference → follower 단방향 배포 모델(FORWARD.md §0·§6 결정)을
+  최소 기하 도형으로: 왼쪽 채워진 원(reference, 저작하는 쪽) — 화살표
+  쉐브론(단방향 흐름) — 오른쪽 링 원(follower, 수신하는 쪽, 아직 안 채워진
+  상태를 링으로 표현). 3개 도형만 써서 16px 트레이 크기에서도 뭉개지지
+  않게 했다(scripts/generate-icons.mjs가 실제 축소본으로 확인).
+
+  팔레트: src/renderer/src/assets/index.css의 dark 모드 토큰과 동일한 HSL을
+  hex로 미리 계산해 박아 넣었다(SVG 래스터라이저의 hsl() 지원 여부에
+  좌우되지 않도록) — card_dark(217.2 91.2% 8%)=#021027,
+  primary_dark(217.2 91.2% 59.8%)=#3b82f6. CLAUDE.md 디자인 제약 준수:
+  그라데이션·글래스모피즘·이모지·보라 없음, 단일 radius 배경, 단색 글리프.
+-->
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="#021027" />
+
+  <!-- reference node: 채워진 원 -->
+  <circle cx="146" cy="256" r="66" fill="#3b82f6" />
+
+  <!-- 단방향 흐름 쉐브론 -->
+  <path
+    d="M 232 200 L 284 256 L 232 312"
+    fill="none"
+    stroke="#3b82f6"
+    stroke-width="42"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- follower node: 링(아직 채워지지 않은 수신측) -->
+  <circle cx="366" cy="256" r="66" fill="none" stroke="#3b82f6" stroke-width="34" />
+</svg>

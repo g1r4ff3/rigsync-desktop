@@ -15,7 +15,11 @@ export const DENYLIST_PATTERNS: readonly string[] = [
   '*token*',
   '*.key',
   'credentials*',
-  '.env*'
+  '.env*',
+  // C단계 실사례: "secrets.zsh" 같은 이름 기반 파일이 위 패턴 어디에도
+  // 안 걸려 통과했다 — "secret"을 basename 어디에 두든(접두/접미/중간)
+  // 잡히게 *token*과 같은 형태로 추가.
+  '*secret*'
 ]
 
 /**

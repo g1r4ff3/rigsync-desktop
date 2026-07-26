@@ -9,12 +9,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { defaultManifestDir, writeConfigFile } from '../engine/context'
-import { setAutostart } from '../engine/autostart'
+import { guardedSetAutostart } from './autostartGuard'
 import type { CompleteOnboardingRequest } from '../shared/ipc'
 
 export interface CompleteOnboardingDeps {
   readonly homeDir: string
   readonly execPath: string
+  /** dev 모드(`is.dev`)면 autostart 활성화를 막는다 — autostartGuard.ts 참조. */
+  readonly isDev: boolean
 }
 
 /** 위저드 텍스트 입력은 `~/...` 축약형을 그대로 받을 수 있다 -- fs는 이를 모르므로 여기서 편다. */
@@ -39,7 +41,7 @@ export async function completeOnboarding(
     ...(request.profile ? { profile: request.profile } : {})
   })
 
-  setAutostart(deps.homeDir, request.autostartEnabled, deps.execPath)
+  guardedSetAutostart(deps.homeDir, request.autostartEnabled, deps.execPath, deps.isDev)
 }
 
 /** manifestSource==='new'일 때 위저드가 제안하는 기본 manifestDir. */

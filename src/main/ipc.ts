@@ -17,6 +17,7 @@
  * 엔드포인트(checks 레이어 + 기본 진단 + appimage preflight 통합).
  */
 import { ipcMain, type BrowserWindow } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import { captureAppimage } from '../engine/capabilities/appimage/capture'
 import { diffAppimage } from '../engine/capabilities/appimage/diff'
 import { planAppimage } from '../engine/capabilities/appimage/plan'
@@ -50,7 +51,7 @@ import {
   writeConfigFile,
   type RigsyncContext
 } from '../engine/context'
-import { setAutostart } from '../engine/autostart'
+import { guardedSetAutostart } from './autostartGuard'
 import { orderCombinedPlan } from './planOrder'
 import { autoSyncAfterWrite, getLastSyncStatus, triggerSync } from './gitSync'
 import { completeOnboarding, expandTilde } from './onboarding'
@@ -421,7 +422,8 @@ export function registerEngineIpc(
     async (_event, request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> => {
       await completeOnboarding(request, {
         homeDir: getContext().homeDir,
-        execPath: getExecPath()
+        execPath: getExecPath(),
+        isDev: is.dev
       })
       refreshEngineContext()
       onConfigChanged()
@@ -449,7 +451,7 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineSetAutostart,
     async (_event, request: SetAutostartRequest): Promise<EngineStatus> => {
-      setAutostart(getContext().homeDir, request.enabled, getExecPath())
+      guardedSetAutostart(getContext().homeDir, request.enabled, getExecPath(), is.dev)
       // config.toml에도 반영해야 다음 실행에도 유지된다.
       const ctx = getContext()
       writeConfigFile(ctx.homeDir, {
@@ -497,7 +499,7 @@ export function registerEngineIpc(
         driftCheckIntervalHours: request.driftCheckIntervalHours,
         ...(request.profile ? { profile: request.profile } : {})
       })
-      setAutostart(homeDir, request.autostartEnabled, getExecPath())
+      guardedSetAutostart(homeDir, request.autostartEnabled, getExecPath(), is.dev)
       // R1: main이 캐시한 ctx를 즉시 무효화 + 스케줄러(간격)·트레이(다음 체크
       // 표시)까지 재해석되게 index.ts의 onConfigChanged를 그대로 재사용한다
       // (온보딩 완료 경로와 동일한 갱신 통로).
