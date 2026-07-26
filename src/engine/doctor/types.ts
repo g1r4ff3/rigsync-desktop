@@ -7,6 +7,7 @@
  */
 import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
+import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { NvidiaDriverCheckResult } from './nvidia'
 
 export type CheckType = 'file' | 'apt' | 'role' | 'cmd'
@@ -51,6 +52,8 @@ export interface DoctorReport {
   readonly basic: BasicDiagnostics
   readonly checks: readonly CheckResult[]
   readonly appimage: AppimagePreflightCheck
+  /** fonts capability preflight — manifest 미설치/소스 미지정/fc-cache·fc-list 가용성. */
+  readonly fonts: FontsPreflightCheck
   /** P4: NVRM 커널 모듈 vs dpkg 유저스페이스 드라이버 버전 불일치 체크. */
   readonly nvidia: NvidiaDriverCheckResult
   /**

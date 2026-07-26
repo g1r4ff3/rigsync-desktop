@@ -3,19 +3,21 @@ import { makeFixture } from '../testFixtures'
 import { writeCommonLayer } from '../manifest'
 import { writeIgnore } from '../testFixtures'
 import { makeFakeGearLeverProvider } from '../capabilities/appimage/testHelpers'
+import { makeFakeFontsSystemProvider } from '../capabilities/fonts/testHelpers'
 import { buildDoctorReport, CHECKS_LAYER } from './report'
 import { makeFakeDoctorSystemProvider, makeFakeNvidiaProvider } from './testHelpers'
 
 // checksVisible 케이스 출처: 구 repo gui.py `doctor_visible`(코드 복사 아님).
 
 describe('buildDoctorReport', () => {
-  it('checksVisible is false and checks is empty when there are no checks at all', () => {
+  it('checksVisible is false and checks is empty when there are no checks at all', async () => {
     const fixture = makeFixture('reference')
-    const report = buildDoctorReport(
+    const report = await buildDoctorReport(
       fixture.ctx,
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
@@ -25,7 +27,7 @@ describe('buildDoctorReport', () => {
     fixture.cleanup()
   })
 
-  it('ignored check names are absent from the table entirely (not shown as skipped)', () => {
+  it('ignored check names are absent from the table entirely (not shown as skipped)', async () => {
     const fixture = makeFixture('reference')
     writeCommonLayer(fixture.ctx, CHECKS_LAYER, {
       check: [
@@ -34,11 +36,12 @@ describe('buildDoctorReport', () => {
       ]
     })
     writeIgnore(fixture, { checks: { names: ['zoom'] } })
-    const report = buildDoctorReport(
+    const report = await buildDoctorReport(
       fixture.ctx,
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
@@ -47,16 +50,17 @@ describe('buildDoctorReport', () => {
     fixture.cleanup()
   })
 
-  it('exitCode is 1 when any active check fails', () => {
+  it('exitCode is 1 when any active check fails', async () => {
     const fixture = makeFixture('reference')
     writeCommonLayer(fixture.ctx, CHECKS_LAYER, {
       check: [{ name: 'zoom', type: 'file', target: '/opt/zoom' }]
     })
-    const report = buildDoctorReport(
+    const report = await buildDoctorReport(
       fixture.ctx,
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: false }),
       { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       { configConfigured: true }
     )
@@ -64,13 +68,14 @@ describe('buildDoctorReport', () => {
     fixture.cleanup()
   })
 
-  it('includes basic diagnostics and the T3 appimage preflight in the same report', () => {
+  it('includes basic diagnostics and the T3 appimage preflight in the same report', async () => {
     const fixture = makeFixture('follower')
-    const report = buildDoctorReport(
+    const report = await buildDoctorReport(
       fixture.ctx,
       makeFakeDoctorSystemProvider(),
       makeFakeGearLeverProvider({ available: true, version: '4.6.2' }),
       { isPackageInstalled: (pkg: string) => pkg === 'libfuse2t64' },
+      makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider({
         nvrmVersion: '580.173.02',
         packages: [{ name: 'nvidia-driver-580', version: '580.173.02' }]
@@ -91,6 +96,31 @@ describe('buildDoctorReport', () => {
       userspaceVersion: '580.173.02',
       matched: true
     })
+    fixture.cleanup()
+  })
+
+  it('includes the fonts preflight in the same report', async () => {
+    const fixture = makeFixture('reference')
+    writeCommonLayer(fixture.ctx, 'fonts', {
+      font: [
+        {
+          name: 'MesloLGS NF',
+          source: { kind: 'static', urls: [] },
+          files: ['MesloLGS NF Regular.ttf']
+        }
+      ]
+    })
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: false }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      { configConfigured: true }
+    )
+    expect(report.fonts.missingInstalled).toEqual(['MesloLGS NF'])
+    expect(report.fonts.fcCacheAvailable).toBe(true)
     fixture.cleanup()
   })
 })

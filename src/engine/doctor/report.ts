@@ -2,7 +2,9 @@
  * doctor 종합 리포트 — 구 repo `doctor_report`(rigsync.py:1954)의 checks 평가에
  * P2d 신규 기본 진단 + T3 appimage preflight(P2c `checkAppimagePreflight`)를
  * 얹어 한 화면분으로 묶는다(코디네이터 지시 "전 capability의 preflight/check를
- * 한 화면에 통합").
+ * 한 화면에 통합"). fonts capability 추가로 `diffFonts`(nominal async — 내부는
+ * 순수 fs 동기 로직)를 기다려야 해서 이 함수 자체도 async로 바뀌었다(호출부
+ * main/ipc.ts·테스트는 await만 붙이면 된다).
  */
 import fs from 'node:fs'
 import type { RigsyncContext } from '../context'
@@ -13,6 +15,9 @@ import type {
   AppimageSystemCheckProvider,
   GearLeverProvider
 } from '../capabilities/appimage/providerTypes'
+import { checkFontsPreflight } from '../capabilities/fonts/checks'
+import { diffFonts } from '../capabilities/fonts/diff'
+import type { FontsSystemProvider } from '../capabilities/fonts/providerTypes'
 import { evaluateCheck } from './evaluate'
 import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
@@ -26,14 +31,15 @@ export interface BuildDoctorReportOptions {
   readonly configConfigured: boolean
 }
 
-export function buildDoctorReport(
+export async function buildDoctorReport(
   ctx: RigsyncContext,
   systemProvider: DoctorSystemProvider,
   gearLeverProvider: GearLeverProvider,
   appimageSystemCheck: AppimageSystemCheckProvider,
+  fontsSystemProvider: FontsSystemProvider,
   nvidiaProvider: NvidiaCheckProvider,
   options: BuildDoctorReportOptions
-): DoctorReport {
+): Promise<DoctorReport> {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')
   const manifest = effectiveLayer(ctx, CHECKS_LAYER) as ChecksManifest
   // ignore된 check는 doctor 표에서 완전히 사라진다 -- 구 repo와 동일하게 "skip
@@ -45,6 +51,8 @@ export function buildDoctorReport(
   const exitCode = checks.some((r) => r.result === 'fail') ? 1 : 0
 
   const appimage = checkAppimagePreflight(gearLeverProvider, appimageSystemCheck)
+  const fontsDiff = await diffFonts(ctx)
+  const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
 
   return {
@@ -56,6 +64,7 @@ export function buildDoctorReport(
     },
     checks,
     appimage,
+    fonts,
     nvidia,
     checksVisible: activeChecks.length > 0,
     exitCode
