@@ -111,6 +111,19 @@ export interface SnapDiffReport {
   readonly uncaptured: readonly string[]
 }
 
+/**
+ * `apt-get remove --dry-run <요청 패키지…>`가 실제로 보고하는 제거 대상 —
+ * 안전 불변식 5의 필수 조건("함께 제거될 목록을 그대로 노출"). `extra`가
+ * 비어있지 않으면 요청보다 넓게 지워진다는 뜻이라 UI가 경고로 띄운다.
+ */
+export interface AptRemoveDependencyReport {
+  readonly requested: readonly string[]
+  /** dry-run이 REMOVED로 보고한 전체 목록(요청분 포함, 중복 제거·정렬됨). */
+  readonly willRemove: readonly string[]
+  /** willRemove 중 요청하지 않은 것 — 의존성 때문에 함께 지워지는 패키지. */
+  readonly extra: readonly string[]
+}
+
 export interface FlatpakDiffReport {
   readonly skipped: boolean
   readonly toAddRemotes: readonly FlatpakRemoteEntry[]

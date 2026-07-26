@@ -16,6 +16,7 @@ import path from 'node:path'
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import type { PlanAction } from '../../plan'
+import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { readCommonPackages, readEffectivePackages, writeCommonFlatpakSection } from './io'
 import type { FlatpakProvider } from './providerTypes'
 import type {
@@ -249,4 +250,70 @@ export function planFlatpak(
   }
 
   return actions
+}
+
+/**
+ * flatpak uninstall 계획 — 안전 불변식 5: manifest에 선언된(managed) app은
+ * 거부하고, ignore(일시중지)되지 않은 app도 거부한다. `--user` 설치라
+ * unprivileged로 실제 실행되며(install과 대칭), apt와 달리 개별 app마다
+ * 별도 액션이다(코디네이터 지시 — apt만 한 명령으로 묶는다).
+ */
+export function planFlatpakUninstall(
+  ctx: RigsyncContext,
+  provider: FlatpakProvider,
+  requestedAppIds: readonly string[]
+): CapabilityUninstallResult {
+  if (!provider.isAvailable()) {
+    return {
+      actions: [],
+      excluded: requestedAppIds.map((key) => ({
+        capability: 'flatpak',
+        key,
+        reason: 'flatpak을 찾을 수 없음(flatpak 미사용 환경)'
+      }))
+    }
+  }
+
+  const manifest = readEffectivePackages(ctx).flatpak ?? {}
+  const managedSet = new Set((manifest.app ?? []).map((a) => a.application))
+  const ignore = readIgnoreSet(ctx, 'flatpak', 'apps')
+  const installedSet = new Set(provider.apps().map((a) => a.application))
+
+  const actions: PlanAction[] = []
+  const excluded: UninstallExclusion[] = []
+
+  for (const appId of requestedAppIds) {
+    if (managedSet.has(appId)) {
+      excluded.push({
+        capability: 'flatpak',
+        key: appId,
+        reason: 'manifest에 선언된(managed) 항목은 삭제 대상이 아님 — 먼저 일시중지(ignore)하세요'
+      })
+      continue
+    }
+    if (!ignore.has(appId)) {
+      excluded.push({
+        capability: 'flatpak',
+        key: appId,
+        reason: '일시중지(ignore)되지 않은 항목은 삭제 대상이 아님'
+      })
+      continue
+    }
+    if (!installedSet.has(appId)) {
+      excluded.push({ capability: 'flatpak', key: appId, reason: '이 머신에 설치돼 있지 않음' })
+      continue
+    }
+    actions.push({
+      capability: 'packages',
+      summary: `uninstall flatpak ${appId}`,
+      commands: [`flatpak uninstall --user -y ${appId}`],
+      privileged: false,
+      run: async () => {
+        const result = provider.uninstallAppUser(appId)
+        return { ok: result.ok, detail: result.output }
+      }
+    })
+  }
+
+  return { actions, excluded }
 }

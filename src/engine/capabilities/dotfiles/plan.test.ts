@@ -6,8 +6,8 @@ import { PlanExecutor } from '../../plan'
 import { captureDotfiles } from './capture'
 import { DOTFILES_LAYER } from './constants'
 import { diffDotfiles } from './diff'
-import { planDotfiles } from './plan'
-import { makeFixture, writeHomeFile, type TestFixture } from '../../testFixtures'
+import { planDotfiles, planDotfilesUninstall } from './plan'
+import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
 
 // 케이스 출처: 구 repo tests/test_dotfiles.py
 // TestDotfilesDiffAndApplySymlink / TestDotfilesLinkFalseModeCopy /
@@ -161,6 +161,92 @@ describe('planDotfiles + PlanExecutor (dotfiles walking skeleton)', () => {
     expect(fs.lstatSync(homePath).isSymbolicLink()).toBe(false)
     expect(fs.readFileSync(homePath, 'utf-8')).toBe('content\n')
     void home
+  })
+})
+
+// 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정).
+describe('planDotfilesUninstall', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('rejects a managed (manifest-declared) home even if ignored — safety invariant 5', () => {
+    writeHomeFile(fixture, '.zshrc', 'seed\n')
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.zshrc'] } })
+
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.zshrc'], 'run-reject-managed')
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      { capability: 'dotfiles', key: '~/.zshrc', reason: expect.stringContaining('managed') }
+    ])
+  })
+
+  it('rejects a home that is not ignored (paused) yet', () => {
+    writeHomeFile(fixture, '.zshrc', 'seed\n')
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.zshrc'], 'run-not-ignored')
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('일시중지')
+  })
+
+  it('rejects a home that does not exist on this machine', () => {
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.ghostrc'] } })
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.ghostrc'], 'run-not-installed')
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  it('backs up then deletes a plain file that is ignored and unmanaged, without touching the store', async () => {
+    const homeFile = writeHomeFile(fixture, '.oldtoolrc', 'leftover config\n')
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.oldtoolrc'] } })
+
+    const runTs = 'run-delete-file'
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.oldtoolrc'], runTs)
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0].privileged).toBeFalsy()
+
+    const runResult = await result.actions[0].run()
+    expect(runResult.ok).toBe(true)
+
+    expect(fs.existsSync(homeFile)).toBe(false)
+    const backupFile = path.join(fixture.ctx.backupRoot, runTs, '.oldtoolrc')
+    expect(fs.existsSync(backupFile)).toBe(true)
+    expect(fs.readFileSync(backupFile, 'utf-8')).toBe('leftover config\n')
+  })
+
+  it('backs up then removes a symlinked home (does not follow into and delete the store target)', async () => {
+    const storeDir = path.join(fixture.manifestDir, 'dotfiles')
+    fs.mkdirSync(storeDir, { recursive: true })
+    const storeFile = path.join(storeDir, '.linkedrc')
+    fs.writeFileSync(storeFile, 'store content\n')
+    const homePath = path.join(fixture.homeDir, '.linkedrc')
+    fs.symlinkSync(storeFile, homePath)
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.linkedrc'] } })
+
+    const runTs = 'run-delete-symlink'
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.linkedrc'], runTs)
+    const runResult = await result.actions[0].run()
+    expect(runResult.ok).toBe(true)
+
+    expect(fs.existsSync(homePath)).toBe(false)
+    expect(fs.existsSync(storeFile)).toBe(true) // store는 건드리지 않는다 — manifest는 별개
+  })
+
+  it('exposes the delete command in dry-run form so the UI can show it before confirming', () => {
+    writeHomeFile(fixture, '.oldtoolrc', 'leftover\n')
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.oldtoolrc'] } })
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.oldtoolrc'], 'run-dry')
+    expect(result.actions[0].commands.some((c) => c.startsWith('backup'))).toBe(true)
+    expect(result.actions[0].commands.some((c) => c.includes('rm'))).toBe(true)
   })
 })
 

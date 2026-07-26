@@ -12,11 +12,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { isSymlink } from '../../fsUtil'
+import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import { expandHome } from '../../paths'
 import type { PlanAction } from '../../plan'
 import { doBackup } from '../../safety/backup'
 import { matchesDenylist } from '../../safety/denylist'
+import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { copyTreeMirror, resolveDotfileStorePath } from './fsTree'
 import type { DiffReport, DotfileEntry } from './types'
@@ -173,4 +175,80 @@ export function planDotfiles(ctx: RigsyncContext, diff: DiffReport, runTs: strin
   }
 
   return actions
+}
+
+/**
+ * home 경로 하나를 지우는 액션 — 불변식 ②에 따라 백업 후 삭제한다. store
+ * 파일은 건드리지 않는다(manifest는 별개 — 삭제는 시스템만 바꾼다, 안전
+ * 불변식 5). `home`이 manifest entry를 갖고 있는지 여부와 무관하게 동작한다
+ * (uninstall 대상은 항상 managed=false라 entry가 없는 게 정상 — home 경로
+ * 자체만으로 충분하다).
+ */
+function makeDotfilesUninstallAction(
+  ctx: RigsyncContext,
+  home: string,
+  homePath: string,
+  runTs: string
+): PlanAction {
+  return {
+    capability: 'dotfiles',
+    summary: `uninstall ${home}`,
+    commands: [`backup ${home}`, `rm -rf ${homePath}`],
+    privileged: false,
+    run: async () => {
+      if (!fs.existsSync(homePath) && !isSymlink(homePath)) {
+        return { ok: false, detail: `${home}: 이 머신에 없음(이미 삭제됨)` }
+      }
+      doBackup(ctx, homePath, runTs)
+      removeHomeTarget(homePath)
+      return { ok: true, detail: `삭제 완료: ${home}` }
+    }
+  }
+}
+
+/**
+ * dotfiles uninstall 계획 — 안전 불변식 5: manifest에 선언된(managed) 항목은
+ * 거부하고, ignore(일시중지)되지 않은 항목도 거부한다. 유효 대상은 항상
+ * "일시중지 + 이 머신에 설치됨"뿐이다. `homes`는 `~/...` 축약형 키
+ * (buildDotfilesSyncGroup의 SyncItem.key와 동일 표기).
+ */
+export function planDotfilesUninstall(
+  ctx: RigsyncContext,
+  homes: readonly string[],
+  runTs: string
+): CapabilityUninstallResult {
+  const manifest = effectiveLayer(ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+  const entries = (manifest.entry as DotfileEntry[] | undefined) ?? []
+  const managedHomes = new Set(entries.map((e) => e.home))
+  const ignore = readIgnoreSet(ctx, 'dotfiles', 'homes')
+
+  const actions: PlanAction[] = []
+  const excluded: UninstallExclusion[] = []
+
+  for (const home of homes) {
+    if (managedHomes.has(home)) {
+      excluded.push({
+        capability: 'dotfiles',
+        key: home,
+        reason: 'manifest에 선언된(managed) 항목은 삭제 대상이 아님 — 먼저 일시중지(ignore)하세요'
+      })
+      continue
+    }
+    if (!ignore.has(home)) {
+      excluded.push({
+        capability: 'dotfiles',
+        key: home,
+        reason: '일시중지(ignore)되지 않은 항목은 삭제 대상이 아님'
+      })
+      continue
+    }
+    const homePath = expandHome(ctx, home)
+    if (!fs.existsSync(homePath) && !isSymlink(homePath)) {
+      excluded.push({ capability: 'dotfiles', key: home, reason: '이 머신에 설치돼 있지 않음' })
+      continue
+    }
+    actions.push(makeDotfilesUninstallAction(ctx, home, homePath, runTs))
+  }
+
+  return { actions, excluded }
 }

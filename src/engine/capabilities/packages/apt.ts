@@ -11,10 +11,17 @@ import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import type { PlanAction } from '../../plan'
+import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { aptBaselineExists, readAptBaseline, writeAptBaseline } from './aptBaseline'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import type { AptProvider } from './providerTypes'
-import type { AptCaptureReport, AptDiffReport, AptSection, AptSourceEntry } from './types'
+import type {
+  AptCaptureReport,
+  AptDiffReport,
+  AptRemoveDependencyReport,
+  AptSection,
+  AptSourceEntry
+} from './types'
 
 const SIGNED_BY_DEB822 = /^Signed-By:\s*(.+)$/i
 const SIGNED_BY_ONELINE = /signed-by=([^\]\s]+)/
@@ -287,4 +294,127 @@ async function notExecutedUntilP2b(): Promise<{ ok: boolean; detail: string }> {
   throw new Error(
     'privileged apt actions are not executed until P2b (privilege elevation integration)'
   )
+}
+
+const REMOVE_HEADER = 'The following packages will be REMOVED:'
+
+/**
+ * `apt-get remove --dry-run` 원문(stdout+stderr)에서 "The following packages
+ * will be REMOVED:" 섹션만 뽑는다 — 안전 불변식 5 필수 조건("함께 제거될
+ * 목록을 그대로 노출"). apt는 이 헤더 앞에 "…are no longer required"(autoremove
+ * 후보) 섹션을 먼저 낼 수 있어 그 줄들은 건너뛰고, REMOVED 섹션 시작 뒤로는
+ * 들여쓰기된(공백으로 시작하는) 줄만 계속 읽다가 들여쓰기 없는 줄(요약 줄
+ * "0 upgraded, …")을 만나면 멈춘다 — 실기 확인(2026-07-26, `apt-get remove
+ * --dry-run curl`)한 실제 출력 포맷을 그대로 반영한다. 헤더를 못 찾으면(예:
+ * 의존성 충돌로 apt가 에러만 내는 경우) 빈 목록을 돌려준다 — 에러로 던지지
+ * 않고 "경고 없음"으로 조용히 처리한다(호출부가 요청 목록 자체를 신뢰).
+ */
+export function parseAptRemoveDryRun(
+  output: string,
+  requested: readonly string[]
+): AptRemoveDependencyReport {
+  const lines = output.split('\n')
+  const headerIdx = lines.findIndex((l) => l.trim() === REMOVE_HEADER)
+  const willRemove: string[] = []
+  if (headerIdx !== -1) {
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const line = lines[i]
+      if (!/^\s+\S/.test(line)) break
+      willRemove.push(...line.trim().split(/\s+/).filter(Boolean))
+    }
+  }
+  const requestedSet = new Set(requested)
+  const uniqueWillRemove = [...new Set(willRemove)].sort()
+  const extra = uniqueWillRemove.filter((p) => !requestedSet.has(p))
+  return { requested: [...requested], willRemove: uniqueWillRemove, extra }
+}
+
+/**
+ * privileged 제거 액션도 install과 동일하게 P2b(권한 상승 통합) 전까지
+ * PlanExecutor가 skipped 처리한다 — 방어적 자리표시자.
+ */
+async function notExecutedUntilP2bRemove(): Promise<{ ok: boolean; detail: string }> {
+  throw new Error(
+    'privileged apt remove actions are not executed until P2b (privilege elevation integration)'
+  )
+}
+
+/**
+ * apt uninstall 계획 — 안전 불변식 5: manifest에 선언된(managed) 패키지는
+ * 거부하고, ignore(일시중지)되지 않은 패키지도 거부한다. 유효 대상은
+ * 여러 개라도 **한 번의 `apt-get remove`로 묶는다**(코디네이터 지시 —
+ * 개별 호출은 인증·시간 낭비). `--auto-remove`/`purge`는 절대 붙이지 않아
+ * 범위를 넓히지 않는다. 의존성 경고(`dependencies`)는 항상 계산해서
+ * 돌려준다 — dry-run 자체는 root 없이도 안전(실기 확인, provider 주석 참조).
+ */
+export function planAptUninstall(
+  ctx: RigsyncContext,
+  provider: AptProvider,
+  requestedNames: readonly string[]
+): CapabilityUninstallResult & { readonly dependencies?: AptRemoveDependencyReport } {
+  if (!provider.isAvailable()) {
+    return {
+      actions: [],
+      excluded: requestedNames.map((key) => ({
+        capability: 'apt',
+        key,
+        reason: 'apt-mark를 찾을 수 없음(apt 미사용 환경)'
+      }))
+    }
+  }
+
+  const manifest = readEffectivePackages(ctx).apt ?? {}
+  const managedSet = new Set(manifest.packages ?? [])
+  const ignore = readIgnoreSet(ctx, 'apt', 'packages')
+  const baseline = readAptBaseline(ctx)
+  const installedSet = new Set(provider.manualInstalled())
+
+  const excluded: UninstallExclusion[] = []
+  const validNames: string[] = []
+
+  for (const name of requestedNames) {
+    if (managedSet.has(name)) {
+      excluded.push({
+        capability: 'apt',
+        key: name,
+        reason: 'manifest에 선언된(managed) 항목은 삭제 대상이 아님 — 먼저 일시중지(ignore)하세요'
+      })
+      continue
+    }
+    if (!ignore.has(name)) {
+      excluded.push({
+        capability: 'apt',
+        key: name,
+        reason: '일시중지(ignore)되지 않은 항목은 삭제 대상이 아님'
+      })
+      continue
+    }
+    if (!installedSet.has(name) || baseline.has(name)) {
+      excluded.push({
+        capability: 'apt',
+        key: name,
+        reason: '이 머신에 설치돼 있지 않음(또는 배포판 기본 패키지)'
+      })
+      continue
+    }
+    validNames.push(name)
+  }
+
+  if (validNames.length === 0) {
+    return { actions: [], excluded }
+  }
+
+  const sortedNames = [...validNames].sort()
+  const dependencies = parseAptRemoveDryRun(provider.removeDryRun(sortedNames), sortedNames)
+
+  const cmd = ['sudo', 'apt-get', 'remove', '-y', ...sortedNames]
+  const action: PlanAction = {
+    capability: 'packages',
+    summary: `remove ${sortedNames.length} apt package(s)`,
+    commands: [cmd.join(' ')],
+    privileged: true,
+    run: notExecutedUntilP2bRemove
+  }
+
+  return { actions: [action], excluded, dependencies }
 }

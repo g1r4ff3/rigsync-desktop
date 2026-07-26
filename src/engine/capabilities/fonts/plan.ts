@@ -12,9 +12,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
+import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import type { PlanAction } from '../../plan'
 import { doBackup } from '../../safety/backup'
+import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { FONTS_KEY_FIELDS, FONTS_LAYER } from './constants'
 import type {
   FontAssetResolver,
@@ -22,7 +24,7 @@ import type {
   FontsSystemProvider,
   ZipExtractor
 } from './providerTypes'
-import { fontInstallDir } from './scan'
+import { fontInstallDir, groupInstalledFontFiles, locateFontFiles } from './scan'
 import type { FontEntry, FontsDiffReport } from './types'
 
 function entriesByName(ctx: RigsyncContext): Map<string, FontEntry> {
@@ -140,4 +142,98 @@ export function planFonts(
     )
   }
   return actions
+}
+
+/**
+ * name 하나에 속한 폰트 파일들(fullPaths, fontDirs() 하위 실제 경로)을 지우는
+ * 액션 — 불변식 ②에 따라 파일마다 백업 후 삭제하고, 마지막에 `fc-cache -f`로
+ * 캐시를 갱신한다(install 경로와 대칭).
+ */
+function makeFontUninstallAction(
+  ctx: RigsyncContext,
+  name: string,
+  fullPaths: readonly string[],
+  systemProvider: FontsSystemProvider,
+  runTs: string
+): PlanAction {
+  const commands = [...fullPaths.flatMap((p) => [`backup ${p}`, `rm ${p}`]), 'fc-cache -f']
+  return {
+    capability: 'fonts',
+    summary: `uninstall ${name}`,
+    commands,
+    privileged: false,
+    run: async () => {
+      for (const p of fullPaths) {
+        if (fs.existsSync(p)) {
+          doBackup(ctx, p, runTs)
+          fs.unlinkSync(p)
+        }
+      }
+      const fcCacheResult = systemProvider.runFcCache()
+      return {
+        ok: fcCacheResult.ok,
+        detail: fcCacheResult.ok
+          ? `삭제 완료: ${name}`
+          : `삭제는 됐지만 fc-cache 실패: ${fcCacheResult.output}`
+      }
+    }
+  }
+}
+
+/**
+ * fonts uninstall 계획 — 안전 불변식 5: manifest에 선언된(managed) 항목은
+ * 거부하고, ignore(일시중지)되지 않은 항목도 거부한다. 대상 파일 경로는
+ * `groupInstalledFontFiles`(레지스트리 매칭)로 얻은 파일명을
+ * `locateFontFiles`로 fontDirs() 하위에서 실제 경로로 되찾는다.
+ */
+export function planFontsUninstall(
+  ctx: RigsyncContext,
+  requestedNames: readonly string[],
+  systemProvider: FontsSystemProvider,
+  runTs: string
+): CapabilityUninstallResult {
+  const manifest =
+    (effectiveLayer(ctx, FONTS_LAYER, FONTS_KEY_FIELDS).font as FontEntry[] | undefined) ?? []
+  const managedSet = new Set(manifest.map((e) => e.name))
+  const ignore = readIgnoreSet(ctx, 'fonts', 'names')
+  const { resolvedByName } = groupInstalledFontFiles(ctx)
+
+  const actions: PlanAction[] = []
+  const excluded: UninstallExclusion[] = []
+
+  for (const name of requestedNames) {
+    if (managedSet.has(name)) {
+      excluded.push({
+        capability: 'fonts',
+        key: name,
+        reason: 'manifest에 선언된(managed) 항목은 삭제 대상이 아님 — 먼저 일시중지(ignore)하세요'
+      })
+      continue
+    }
+    if (!ignore.has(name)) {
+      excluded.push({
+        capability: 'fonts',
+        key: name,
+        reason: '일시중지(ignore)되지 않은 항목은 삭제 대상이 아님'
+      })
+      continue
+    }
+    const files = resolvedByName.get(name)
+    if (!files || files.length === 0) {
+      excluded.push({ capability: 'fonts', key: name, reason: '이 머신에 설치돼 있지 않음' })
+      continue
+    }
+    const fullPaths = locateFontFiles(ctx, files)
+    if (fullPaths.length === 0) {
+      excluded.push({
+        capability: 'fonts',
+        key: name,
+        reason: '레지스트리엔 매칭됐지만 실제 파일 경로를 찾지 못함'
+      })
+      continue
+    }
+    actions.push(makeFontUninstallAction(ctx, name, fullPaths, systemProvider, runTs))
+  }
+
+  return { actions, excluded }
 }

@@ -2,9 +2,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
-import { captureApt, diffApt, findKeyringRef, planApt } from './apt'
+import {
+  captureApt,
+  diffApt,
+  findKeyringRef,
+  parseAptRemoveDryRun,
+  planApt,
+  planAptUninstall
+} from './apt'
 import { writeAptBaseline } from './aptBaseline'
-import { readCommonPackages, readEffectivePackages } from './io'
+import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import { makeFakeAptProvider } from './testHelpers'
 
 // 케이스 출처: 구 repo ~/repos/rigsync/rigsync.py capture_apt/diff_apt/plan_apt +
@@ -246,5 +253,184 @@ describe('apt baseline filter (first capture snapshots the distro-default set)',
 
     const diff = await diffApt(fixture.ctx, provider)
     expect(diff.uncaptured).toEqual([]) // 둘 다 baseline이라 후보로 안 뜬다
+  })
+})
+
+// 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정). REMOVE_HEADER
+// 아래 실기 출력 샘플은 이 머신에서 실제로 실행한 `apt-get remove --dry-run
+// curl`(읽기 전용 시뮬레이션, 아무것도 바꾸지 않음)의 원문을 그대로 따온다.
+describe('parseAptRemoveDryRun', () => {
+  it('extracts the REMOVED section from a real apt-get remove --dry-run transcript', () => {
+    const output = [
+      'NOTE: This is only a simulation!',
+      '      apt-get needs root privileges for real execution.',
+      '      Keep also in mind that locking is deactivated,',
+      "      so don't depend on the relevance to the real current situation!",
+      'Reading package lists...',
+      'Building dependency tree...',
+      'Reading state information...',
+      'The following packages were automatically installed and are no longer required:',
+      '  libarchive-tools libbson-1.0-0t64',
+      "Use 'apt autoremove' to remove them.",
+      'The following packages will be REMOVED:',
+      '  curl rustdesk',
+      '0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.',
+      'Remv rustdesk [1.4.3]',
+      'Remv curl [8.5.0-2ubuntu10.11]',
+      ''
+    ].join('\n')
+
+    const report = parseAptRemoveDryRun(output, ['curl'])
+    expect(report.willRemove).toEqual(['curl', 'rustdesk'])
+    expect(report.extra).toEqual(['rustdesk'])
+    expect(report.requested).toEqual(['curl'])
+  })
+
+  it('wraps across multiple indented lines for long REMOVED lists', () => {
+    const output = [
+      'The following packages will be REMOVED:',
+      '  pkgA pkgB pkgC pkgD pkgE pkgF pkgG pkgH pkgI pkgJ pkgK pkgL pkgM pkgN pkgO',
+      '  pkgP pkgQ',
+      '0 upgraded, 0 newly installed, 17 to remove, 0 not upgraded.'
+    ].join('\n')
+
+    const report = parseAptRemoveDryRun(output, ['pkgA', 'pkgP'])
+    expect(report.willRemove).toHaveLength(17)
+    expect(report.willRemove).toContain('pkgQ')
+    expect(report.extra).not.toContain('pkgA')
+    expect(report.extra).not.toContain('pkgP')
+    expect(report.extra).toContain('pkgB')
+  })
+
+  it('reports no extra when the REMOVED list matches the request exactly', () => {
+    const output = ['The following packages will be REMOVED:', '  ripgrep', '0 upgraded'].join('\n')
+    const report = parseAptRemoveDryRun(output, ['ripgrep'])
+    expect(report.willRemove).toEqual(['ripgrep'])
+    expect(report.extra).toEqual([])
+  })
+
+  it('does not mistake the "automatically installed" autoremove section for REMOVED', () => {
+    const output = [
+      'The following packages were automatically installed and are no longer required:',
+      '  autoremove-candidate',
+      "Use 'apt autoremove' to remove them.",
+      'The following packages will be REMOVED:',
+      '  ripgrep',
+      '0 upgraded'
+    ].join('\n')
+    const report = parseAptRemoveDryRun(output, ['ripgrep'])
+    expect(report.willRemove).toEqual(['ripgrep'])
+    expect(report.willRemove).not.toContain('autoremove-candidate')
+  })
+
+  it('returns an empty (non-throwing) report when apt reports an error instead of a REMOVED section', () => {
+    const output = [
+      'Some packages could not be installed. This may mean that you have',
+      'requested an impossible situation...',
+      'E: Error, pkgProblemResolver::Resolve generated breaks, this may be caused by held packages.'
+    ].join('\n')
+    const report = parseAptRemoveDryRun(output, ['python3'])
+    expect(report.willRemove).toEqual([])
+    expect(report.extra).toEqual([])
+  })
+})
+
+describe('planAptUninstall', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+    writeAptBaseline(fixture.ctx, [])
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('rejects a managed (manifest-declared) package even if ignored — safety invariant 5', async () => {
+    writeCommonAptSection(fixture.ctx, { packages: ['ripgrep'] })
+    writeIgnore(fixture, { apt: { packages: ['ripgrep'] } })
+    const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
+
+    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      {
+        capability: 'apt',
+        key: 'ripgrep',
+        reason: expect.stringContaining('managed')
+      }
+    ])
+  })
+
+  it('rejects a package that is not ignored (paused) yet', async () => {
+    const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
+    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('일시중지')
+  })
+
+  it('rejects a package that is not actually installed on this machine', async () => {
+    writeIgnore(fixture, { apt: { packages: ['ghost-package'] } })
+    const provider = makeFakeAptProvider({ manual: [] })
+    const result = planAptUninstall(fixture.ctx, provider, ['ghost-package'])
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  it('bundles multiple valid packages into a single apt-get remove command (no --auto-remove/purge)', async () => {
+    writeIgnore(fixture, { apt: { packages: ['ripgrep', 'fd-find'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['ripgrep', 'fd-find'],
+      removeDryRunOutput: [
+        'The following packages will be REMOVED:',
+        '  ripgrep fd-find',
+        '0 upgraded'
+      ].join('\n')
+    })
+
+    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep', 'fd-find'])
+
+    expect(result.actions).toHaveLength(1)
+    const action = result.actions[0]
+    expect(action.privileged).toBe(true)
+    expect(action.commands).toHaveLength(1)
+    expect(action.commands[0]).toBe('sudo apt-get remove -y fd-find ripgrep')
+    expect(action.commands[0]).not.toContain('--auto-remove')
+    expect(action.commands[0]).not.toContain('purge')
+    expect(result.excluded).toEqual([])
+    expect(result.dependencies?.willRemove).toEqual(['fd-find', 'ripgrep'])
+    expect(result.dependencies?.extra).toEqual([])
+  })
+
+  it('surfaces an apt dependency warning when removing would take more than requested', async () => {
+    writeIgnore(fixture, { apt: { packages: ['curl'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['curl'],
+      removeDryRunOutput: [
+        'The following packages will be REMOVED:',
+        '  curl rustdesk',
+        '0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.'
+      ].join('\n')
+    })
+
+    const result = planAptUninstall(fixture.ctx, provider, ['curl'])
+
+    expect(result.dependencies?.extra).toEqual(['rustdesk'])
+  })
+
+  it('a privileged remove action is never actually run by the plan executor path', async () => {
+    writeIgnore(fixture, { apt: { packages: ['ripgrep'] } })
+    const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
+    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    await expect(result.actions[0].run()).rejects.toThrow('P2b')
+  })
+
+  it('reports skipped-with-reason when apt-mark is unavailable', async () => {
+    const provider = makeFakeAptProvider({ available: false })
+    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('apt-mark')
   })
 })

@@ -62,6 +62,36 @@ export interface GroupedInstalledFonts {
   readonly definitionByFile: ReadonlyMap<string, KnownFontDefinition>
 }
 
+/**
+ * 파일명 목록(예: `groupInstalledFontFiles().resolvedByName`이 돌려주는 이름
+ * 그대로)에 대응하는 실제 전체 경로를 fontDirs() 하위(재귀)에서 찾는다.
+ * `scanInstalledFontFiles`/`walk`는 디렉터리 구조를 버리고 파일명만 돌려주므로
+ * (capture는 이름만 필요) uninstall처럼 실제로 지울 경로가 필요한 호출자를
+ * 위해 별도로 둔다 — 기존 스캔 계약(파일명만)은 건드리지 않는다.
+ */
+export function locateFontFiles(
+  ctx: Pick<RigsyncContext, 'homeDir'>,
+  filenames: readonly string[]
+): string[] {
+  const wanted = new Set(filenames)
+  const out: string[] = []
+
+  function walkForPaths(dir: string): void {
+    if (!fs.existsSync(dir)) return
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walkForPaths(full)
+      } else if (wanted.has(entry.name)) {
+        out.push(full)
+      }
+    }
+  }
+
+  for (const dir of fontDirs(ctx)) walkForPaths(dir)
+  return out
+}
+
 /** 설치된 폰트 파일을 레지스트리로 분류한다 — capture/candidates/doctor가 공유. */
 export function groupInstalledFontFiles(
   ctx: Pick<RigsyncContext, 'homeDir'>

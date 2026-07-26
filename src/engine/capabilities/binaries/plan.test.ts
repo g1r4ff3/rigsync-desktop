@@ -2,10 +2,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
 import { BINARIES_LAYER } from './constants'
 import { diffBinaries } from './diff'
-import { planBinaries } from './plan'
+import { planBinaries, planBinariesUninstall } from './plan'
 import type { TarExtractor } from './providerTypes'
 import { resolveBinariesInstallDir } from './scan'
 import {
@@ -104,7 +104,7 @@ describe('planBinaries', () => {
 
     const installed = path.join(resolveBinariesInstallDir(fixture.ctx), 'micromamba')
     expect(fs.existsSync(installed)).toBe(true)
-    // eslint-disable-next-line no-bitwise
+
     expect(fs.statSync(installed).mode & 0o777).toBe(0o755)
   })
 
@@ -151,7 +151,7 @@ describe('planBinaries', () => {
     for (const name of ['uv', 'uvx']) {
       const installed = path.join(installDir, name)
       expect(fs.existsSync(installed)).toBe(true)
-      // eslint-disable-next-line no-bitwise
+
       expect(fs.statSync(installed).mode & 0o777).toBe(0o755)
     }
   })
@@ -248,7 +248,7 @@ describe('planBinaries', () => {
     const result = await actions[0].run()
     expect(result.ok).toBe(true)
     expect(zipExtractor.calls).toHaveLength(1)
-    // eslint-disable-next-line no-bitwise
+
     expect(fs.statSync(extractedPath).mode & 0o777).toBe(0o755)
   })
 
@@ -410,5 +410,84 @@ describe('planBinaries', () => {
 
     const backupDir = path.join(fixture.homeDir, '.rigsync-backup', 'run-backup-test')
     expect(fs.existsSync(backupDir)).toBe(true)
+  })
+})
+
+// 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정).
+describe('planBinariesUninstall', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  function writeInstalledExecutable(name: string): string {
+    const installDir = resolveBinariesInstallDir(fixture.ctx)
+    fs.mkdirSync(installDir, { recursive: true })
+    const p = path.join(installDir, name)
+    fs.writeFileSync(p, '#!/bin/sh\necho hi\n')
+    fs.chmodSync(p, 0o755)
+    return p
+  }
+
+  it('rejects a managed (manifest-declared) tool even if ignored — safety invariant 5', () => {
+    writeInstalledExecutable('uv')
+    writeCommonLayer(fixture.ctx, BINARIES_LAYER, {
+      binary: [
+        {
+          name: 'uv',
+          source: {
+            kind: 'github-release',
+            coordinate: 'astral-sh/uv',
+            assetPattern: 'uv-x86_64-unknown-linux-gnu.tar.gz',
+            assetKind: 'tar.gz'
+          },
+          binaries: ['uv']
+        }
+      ]
+    })
+    writeIgnore(fixture, { binaries: { names: ['uv'] } })
+
+    const result = planBinariesUninstall(fixture.ctx, ['uv'], 'run-reject-managed')
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      { capability: 'binaries', key: 'uv', reason: expect.stringContaining('managed') }
+    ])
+  })
+
+  it('rejects a tool that is not ignored (paused) yet', () => {
+    writeInstalledExecutable('uv')
+    const result = planBinariesUninstall(fixture.ctx, ['uv'], 'run-not-ignored')
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('일시중지')
+  })
+
+  it('rejects a tool that is not installed (not recognized by the registry) on this machine', () => {
+    writeIgnore(fixture, { binaries: { names: ['uv'] } })
+    const result = planBinariesUninstall(fixture.ctx, ['uv'], 'run-not-installed')
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  it('backs up then deletes every executable belonging to an ignored+unmanaged tool', async () => {
+    const installed = writeInstalledExecutable('micromamba')
+    writeIgnore(fixture, { binaries: { names: ['micromamba'] } })
+
+    const runTs = 'run-delete-binary'
+    const result = planBinariesUninstall(fixture.ctx, ['micromamba'], runTs)
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0].privileged).toBeFalsy()
+
+    const runResult = await result.actions[0].run()
+    expect(runResult.ok).toBe(true)
+    expect(fs.existsSync(installed)).toBe(false)
+
+    const backupFile = path.join(fixture.ctx.backupRoot, runTs, '.local', 'bin', 'micromamba')
+    expect(fs.existsSync(backupFile)).toBe(true)
   })
 })

@@ -87,6 +87,11 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 
+  uninstallAppUser(application: string): FlatpakCommandResult {
+    const result = run(['flatpak', 'uninstall', '--user', '-y', application], 300_000)
+    return { ok: result.code === 0, output: result.stdout + result.stderr }
+  }
+
   listOverrideFiles(): FlatpakOverrideFile[] {
     const dir = overridesDir()
     if (!fs.existsSync(dir)) return []

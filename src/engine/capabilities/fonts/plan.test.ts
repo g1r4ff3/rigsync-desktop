@@ -1,11 +1,12 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
 import { FONTS_LAYER } from './constants'
 import { diffFonts } from './diff'
-import { planFonts } from './plan'
-import { fontInstallDir } from './scan'
+import { planFonts, planFontsUninstall } from './plan'
+import { fontDirs, fontInstallDir } from './scan'
 import {
   makeFakeFontAssetResolver,
   makeFakeFontDownloader,
@@ -220,5 +221,98 @@ describe('planFonts', () => {
     const result = await actions[0].run()
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('폰트 파일')
+  })
+})
+
+// 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정).
+describe('planFontsUninstall', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  function writeInstalledMeslo(): string[] {
+    const dir = fontDirs(fixture.ctx)[0]
+    fs.mkdirSync(dir, { recursive: true })
+    const files = ['MesloLGS NF Regular.ttf', 'MesloLGS NF Bold.ttf']
+    for (const f of files) fs.writeFileSync(path.join(dir, f), 'fake-font-bytes')
+    return files
+  }
+
+  it('rejects a managed (manifest-declared) font even if ignored — safety invariant 5', async () => {
+    writeInstalledMeslo()
+    writeCommonLayer(fixture.ctx, FONTS_LAYER, {
+      font: [
+        {
+          name: 'MesloLGS NF',
+          source: { kind: 'static', urls: [] },
+          files: ['MesloLGS NF Regular.ttf', 'MesloLGS NF Bold.ttf']
+        }
+      ]
+    })
+    writeIgnore(fixture, { fonts: { names: ['MesloLGS NF'] } })
+
+    const result = planFontsUninstall(
+      fixture.ctx,
+      ['MesloLGS NF'],
+      makeFakeFontsSystemProvider(),
+      'run-reject-managed'
+    )
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      { capability: 'fonts', key: 'MesloLGS NF', reason: expect.stringContaining('managed') }
+    ])
+  })
+
+  it('rejects a font that is not ignored (paused) yet', async () => {
+    writeInstalledMeslo()
+    const result = planFontsUninstall(
+      fixture.ctx,
+      ['MesloLGS NF'],
+      makeFakeFontsSystemProvider(),
+      'run-not-ignored'
+    )
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('일시중지')
+  })
+
+  it('rejects a font that is not installed (not recognized by the registry) on this machine', async () => {
+    writeIgnore(fixture, { fonts: { names: ['MesloLGS NF'] } })
+    const result = planFontsUninstall(
+      fixture.ctx,
+      ['MesloLGS NF'],
+      makeFakeFontsSystemProvider(),
+      'run-not-installed'
+    )
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  it('backs up then deletes every file belonging to an ignored+unmanaged font, then runs fc-cache', async () => {
+    const files = writeInstalledMeslo()
+    writeIgnore(fixture, { fonts: { names: ['MesloLGS NF'] } })
+    const systemProvider = makeFakeFontsSystemProvider()
+
+    const runTs = 'run-delete-font'
+    const result = planFontsUninstall(fixture.ctx, ['MesloLGS NF'], systemProvider, runTs)
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0].privileged).toBeFalsy()
+
+    const runResult = await result.actions[0].run()
+    expect(runResult.ok).toBe(true)
+    expect(systemProvider.runFcCacheCalls).toHaveLength(1)
+
+    const dir = fontDirs(fixture.ctx)[0]
+    for (const f of files) {
+      expect(fs.existsSync(path.join(dir, f))).toBe(false)
+    }
+    const backupDir = path.join(fixture.ctx.backupRoot, runTs)
+    expect(fs.existsSync(backupDir)).toBe(true)
   })
 })

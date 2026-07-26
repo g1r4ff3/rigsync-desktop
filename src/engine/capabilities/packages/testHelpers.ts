@@ -24,12 +24,19 @@ export interface FakeAptProviderOptions {
   readonly files?: Readonly<Record<string, string | Buffer>>
   /** 패키지명 -> 한 줄 설명. `descriptions()`가 여기서만 답한다(기본 빈 맵). */
   readonly descriptions?: Readonly<Record<string, string>>
+  /** `removeDryRun()`이 그대로 돌려줄 원문 stdout+stderr (기본 빈 문자열). */
+  readonly removeDryRunOutput?: string
 }
 
-export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): AptProvider {
+export interface FakeAptProvider extends AptProvider {
+  readonly removeDryRunCalls: string[][]
+}
+
+export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): FakeAptProvider {
   const files = new Map<string, Buffer>(
     Object.entries(opts.files ?? {}).map(([k, v]) => [k, Buffer.isBuffer(v) ? v : Buffer.from(v)])
   )
+  const removeDryRunCalls: string[][] = []
   return {
     isAvailable: () => opts.available ?? true,
     manualInstalled: () => [...(opts.manual ?? [])],
@@ -41,7 +48,12 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): AptProvi
       const out: Record<string, string> = {}
       for (const name of names) if (table[name] !== undefined) out[name] = table[name]
       return out
-    }
+    },
+    removeDryRun: (names) => {
+      removeDryRunCalls.push([...names])
+      return opts.removeDryRunOutput ?? ''
+    },
+    removeDryRunCalls
   }
 }
 
@@ -64,6 +76,7 @@ export interface FakeFlatpakProviderOptions {
   /** appId -> 라이브 override 파일 내용. `listOverrideFiles`/`overrideFileExists`/`readOverrideFileBytes`가 여기서만 답한다. */
   readonly overrideFiles?: Readonly<Record<string, string | Buffer>>
   readonly writeOverrideResult?: FlatpakCommandResult
+  readonly uninstallResult?: FlatpakCommandResult
   /** applicationId -> {name, description}. `appDetails()`가 여기서만 답한다(기본 빈 맵). */
   readonly details?: Readonly<Record<string, FlatpakAppDetail>>
 }
@@ -72,6 +85,7 @@ export interface FakeFlatpakProvider extends FlatpakProvider {
   readonly addRemoteCalls: Array<{ name: string; url: string }>
   readonly installCalls: Array<{ origin: string; application: string }>
   readonly writeOverrideCalls: Array<{ appId: string; content: Buffer }>
+  readonly uninstallCalls: string[]
 }
 
 export function makeFakeFlatpakProvider(
@@ -80,6 +94,7 @@ export function makeFakeFlatpakProvider(
   const addRemoteCalls: Array<{ name: string; url: string }> = []
   const installCalls: Array<{ origin: string; application: string }> = []
   const writeOverrideCalls: Array<{ appId: string; content: Buffer }> = []
+  const uninstallCalls: string[] = []
   const overrideFiles = new Map<string, Buffer>(
     Object.entries(opts.overrideFiles ?? {}).map(([k, v]) => [
       k,
@@ -112,8 +127,13 @@ export function makeFakeFlatpakProvider(
       overrideFiles.set(appId, content)
       return opts.writeOverrideResult ?? { ok: true, output: '' }
     },
+    uninstallAppUser: (application) => {
+      uninstallCalls.push(application)
+      return opts.uninstallResult ?? { ok: true, output: '' }
+    },
     addRemoteCalls,
     installCalls,
-    writeOverrideCalls
+    writeOverrideCalls,
+    uninstallCalls
   }
 }

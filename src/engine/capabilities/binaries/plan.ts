@@ -11,9 +11,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
+import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import type { PlanAction } from '../../plan'
 import { doBackup } from '../../safety/backup'
+import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { BINARIES_KEY_FIELDS, BINARIES_LAYER } from './constants'
 import type {
   BinaryAssetResolver,
@@ -21,7 +23,11 @@ import type {
   BinaryZipExtractor,
   TarExtractor
 } from './providerTypes'
-import { resolveBinariesInstallDir } from './scan'
+import {
+  defaultBinariesInstallDir,
+  groupInstalledBinaries,
+  resolveBinariesInstallDir
+} from './scan'
 import type { BinariesDiffReport, BinaryEntry } from './types'
 
 function entriesByName(ctx: RigsyncContext): Map<string, BinaryEntry> {
@@ -140,4 +146,87 @@ export function planBinaries(
     )
   }
   return actions
+}
+
+/**
+ * name 하나의 실행파일들(files, installDir 기준 파일명)을 지우는 액션 —
+ * 불변식 ②에 따라 파일마다 백업 후 삭제한다.
+ */
+function makeBinaryUninstallAction(
+  ctx: RigsyncContext,
+  name: string,
+  installDir: string,
+  files: readonly string[],
+  runTs: string
+): PlanAction {
+  const paths = files.map((f) => path.join(installDir, f))
+  const commands = paths.flatMap((p) => [`backup ${p}`, `rm ${p}`])
+  return {
+    capability: 'binaries',
+    summary: `uninstall ${name}`,
+    commands,
+    privileged: false,
+    run: async () => {
+      for (const p of paths) {
+        if (fs.existsSync(p)) {
+          doBackup(ctx, p, runTs)
+          fs.unlinkSync(p)
+        }
+      }
+      return { ok: true, detail: `삭제 완료: ${name} (${files.join(', ')})` }
+    }
+  }
+}
+
+/**
+ * binaries uninstall 계획 — 안전 불변식 5: manifest에 선언된(managed) 항목은
+ * 거부하고, ignore(일시중지)되지 않은 항목도 거부한다. 유효 대상(managed=false)
+ * 은 manifest entry의 installDir를 알 수 없으므로 항상 기본 설치 디렉터리
+ * (`~/.local/bin`)를 스캔한다 — 이 계약이 성립하는 이유: managed=false인
+ * 이상 이 이름은 애초에 커스텀 installDir을 선언한 manifest entry를 가진
+ * 적이 없거나(늘 기본값 사용) 이미 capture로 제거됐다(그 경우도 재설치 때는
+ * 기본 경로만 쓰인다 — fonts capability와 동일 원칙).
+ */
+export function planBinariesUninstall(
+  ctx: RigsyncContext,
+  requestedNames: readonly string[],
+  runTs: string
+): CapabilityUninstallResult {
+  const manifest =
+    (effectiveLayer(ctx, BINARIES_LAYER, BINARIES_KEY_FIELDS).binary as
+      BinaryEntry[] | undefined) ?? []
+  const managedSet = new Set(manifest.map((e) => e.name))
+  const ignore = readIgnoreSet(ctx, 'binaries', 'names')
+  const installDir = defaultBinariesInstallDir(ctx)
+  const { resolvedByName } = groupInstalledBinaries(ctx, installDir)
+
+  const actions: PlanAction[] = []
+  const excluded: UninstallExclusion[] = []
+
+  for (const name of requestedNames) {
+    if (managedSet.has(name)) {
+      excluded.push({
+        capability: 'binaries',
+        key: name,
+        reason: 'manifest에 선언된(managed) 항목은 삭제 대상이 아님 — 먼저 일시중지(ignore)하세요'
+      })
+      continue
+    }
+    if (!ignore.has(name)) {
+      excluded.push({
+        capability: 'binaries',
+        key: name,
+        reason: '일시중지(ignore)되지 않은 항목은 삭제 대상이 아님'
+      })
+      continue
+    }
+    const files = resolvedByName.get(name)
+    if (!files || files.length === 0) {
+      excluded.push({ capability: 'binaries', key: name, reason: '이 머신에 설치돼 있지 않음' })
+      continue
+    }
+    actions.push(makeBinaryUninstallAction(ctx, name, installDir, files, runTs))
+  }
+
+  return { actions, excluded }
 }

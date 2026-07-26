@@ -32,6 +32,16 @@ export interface AptProvider {
    * 화면을 막지 않는다).
    */
   descriptions(names: readonly string[]): Readonly<Record<string, string>>
+  /**
+   * `apt-get remove --dry-run <names…>` 원문 stdout+stderr 그대로. **부작용
+   * 없음** — 실기 확인(2026-07-26, 이 머신에서 `apt-get remove --dry-run curl`
+   * 실행): dry-run은 root 권한 없이도 시뮬레이션만 하고 시스템을 절대 바꾸지
+   * 않는다("locking is deactivated" 경고는 동시 다른 apt 프로세스와의 상태
+   * 정합성 주의일 뿐 삭제 안전성과는 무관). 파싱(REMOVED 섹션 추출)은 이
+   * 원문을 받는 캡ability 레이어의 순수 함수(`parseAptRemoveDryRun`)가
+   * 담당한다 — provider는 원문만 돌려줘 실행을 격리한다.
+   */
+  removeDryRun(names: readonly string[]): string
 }
 
 export interface SnapListRow {
@@ -90,6 +100,12 @@ export interface FlatpakProvider {
   addRemoteUser(name: string, url: string): FlatpakCommandResult
   /** `flatpak install --user -y <origin> <application>`. */
   installAppUser(origin: string, application: string): FlatpakCommandResult
+  /**
+   * `flatpak uninstall --user -y <application>`. install과 대칭으로
+   * unprivileged라(`--user`) 실제로 실행된다 — apt와 달리 executor가 skip하지
+   * 않는다.
+   */
+  uninstallAppUser(application: string): FlatpakCommandResult
   /**
    * `~/.local/share/flatpak/overrides/*` 각 파일의 appId(파일명)+내용 —
    * 정책 §3.2 "권한 오버라이드는 반드시 함께 동기화" (P2c 결정 ④). apt의

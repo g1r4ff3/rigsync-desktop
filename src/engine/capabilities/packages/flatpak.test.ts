@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
-import { captureFlatpak, diffFlatpak, planFlatpak } from './flatpak'
-import { readEffectivePackages } from './io'
+import { captureFlatpak, diffFlatpak, planFlatpak, planFlatpakUninstall } from './flatpak'
+import { readEffectivePackages, writeCommonFlatpakSection } from './io'
 import { makeFakeFlatpakProvider } from './testHelpers'
 
 // 케이스 출처: 구 repo rigsync.py capture_flatpak/diff_flatpak/plan_flatpak +
@@ -185,6 +185,74 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
       const result = await actions[0].run()
       expect(result.ok).toBe(false)
       expect(result.detail).toContain('capture')
+    })
+  })
+
+  // 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정).
+  describe('planFlatpakUninstall', () => {
+    it('rejects a managed (manifest-declared) app even if ignored — safety invariant 5', () => {
+      writeCommonFlatpakSection(fixture.ctx, {
+        app: [{ application: 'org.gimp.GIMP', origin: 'flathub', installation: 'user' }]
+      })
+      writeIgnore(fixture, { flatpak: { apps: ['org.gimp.GIMP'] } })
+      const provider = makeFakeFlatpakProvider({
+        apps: [{ application: 'org.gimp.GIMP', origin: 'flathub', installation: 'user' }]
+      })
+
+      const result = planFlatpakUninstall(fixture.ctx, provider, ['org.gimp.GIMP'])
+
+      expect(result.actions).toEqual([])
+      expect(result.excluded).toEqual([
+        { capability: 'flatpak', key: 'org.gimp.GIMP', reason: expect.stringContaining('managed') }
+      ])
+      expect(provider.uninstallCalls).toEqual([])
+    })
+
+    it('rejects an app that is not ignored (paused) yet', () => {
+      const provider = makeFakeFlatpakProvider({
+        apps: [{ application: 'org.gimp.GIMP', origin: 'flathub', installation: 'user' }]
+      })
+      const result = planFlatpakUninstall(fixture.ctx, provider, ['org.gimp.GIMP'])
+      expect(result.actions).toEqual([])
+      expect(result.excluded[0].reason).toContain('일시중지')
+    })
+
+    it('rejects an app that is not installed on this machine', () => {
+      writeIgnore(fixture, { flatpak: { apps: ['org.ghost.App'] } })
+      const provider = makeFakeFlatpakProvider({ apps: [] })
+      const result = planFlatpakUninstall(fixture.ctx, provider, ['org.ghost.App'])
+      expect(result.actions).toEqual([])
+      expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+    })
+
+    it('produces one unprivileged action per app id and actually invokes the provider when run', async () => {
+      writeIgnore(fixture, { flatpak: { apps: ['org.gimp.GIMP', 'org.deskflow.deskflow'] } })
+      const provider = makeFakeFlatpakProvider({
+        apps: [
+          { application: 'org.gimp.GIMP', origin: 'flathub', installation: 'user' },
+          { application: 'org.deskflow.deskflow', origin: 'flathub', installation: 'user' }
+        ]
+      })
+
+      const result = planFlatpakUninstall(fixture.ctx, provider, [
+        'org.gimp.GIMP',
+        'org.deskflow.deskflow'
+      ])
+
+      expect(result.actions).toHaveLength(2)
+      expect(result.actions.every((a) => a.privileged === false)).toBe(true)
+      expect(result.actions[0].commands[0]).toBe('flatpak uninstall --user -y org.gimp.GIMP')
+
+      const runResults = await Promise.all(result.actions.map((a) => a.run()))
+      expect(runResults.every((r) => r.ok)).toBe(true)
+      expect(provider.uninstallCalls).toEqual(['org.gimp.GIMP', 'org.deskflow.deskflow'])
+    })
+
+    it('reports skipped-with-reason when flatpak is unavailable', () => {
+      const provider = makeFakeFlatpakProvider({ available: false })
+      const result = planFlatpakUninstall(fixture.ctx, provider, ['org.gimp.GIMP'])
+      expect(result.actions).toEqual([])
+      expect(result.excluded[0].reason).toContain('flatpak')
     })
   })
 })

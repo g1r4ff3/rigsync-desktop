@@ -77,4 +77,9 @@ export class LinuxAptProvider implements AptProvider {
     }
     return out
   }
+
+  removeDryRun(names: readonly string[]): string {
+    const result = run(['apt-get', 'remove', '--dry-run', ...names], 30_000)
+    return result.stdout + result.stderr
+  }
 }
