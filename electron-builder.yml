@@ -26,6 +26,8 @@ mac:
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  # .desktop 파일명과 Electron app_id를 일치시킨다 (Wayland 창 연결·작업표시줄 아이콘)
+  syncDesktopName: true
   # AppImage가 주 타깃(정책상 rigsync 자신이 T3다 — GUI지만 호스트 바이너리
   # 실행이 본질이라 flatpak 부적합, bare deb은 이 앱 자신의 INV-2(중복 설치
   # 검출) 정신에 어긋나므로 최우선 배포 형태로 삼지 않는다). deb은 "되면 덤"
