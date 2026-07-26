@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Claude Desktop급 머신 설정 동기화 앱 (Electron + React + TypeScript)",
   "private": true,
-  "author": "Seongil <sngillkym@gmail.com>",
+  "author": "Seongil <sngillkym@gm.gist.ac.kr>",
   "license": "MIT",
   "homepage": "https://github.com/g1r4ff3/rigsync-desktop",
   "repository": {
