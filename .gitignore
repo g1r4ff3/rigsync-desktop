@@ -4,3 +4,6 @@ out/
 *.log*
 .DS_Store
 .eslintcache
+
+# 격리 작업용 git worktree 착지점 (주 체크아웃은 항상 main을 유지한다)
+.claude/worktrees/
