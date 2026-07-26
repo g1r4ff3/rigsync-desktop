@@ -39,7 +39,8 @@ React + TypeScript로 만들어졌고, 현재는 **Linux 전용**(개인 도구,
 | **fonts** | 설치된 폰트 패밀리 |
 
 이 위에 **Doctor**(설치 전제조건 체크리스트 — Gear Lever 버전, NVIDIA 드라이버
-정합성, manifest 소급 시크릿 스캔 등)가 조회 전용으로 얹힌다.
+정합성, manifest 소급 시크릿 스캔, rigsync 자신의 자동 업데이트 소스 설정 여부 등)가
+조회 전용으로 얹힌다.
 
 ## 3계층 패키지 정책
 
@@ -81,7 +82,25 @@ React + TypeScript로 만들어졌고, 현재는 **Linux 전용**(개인 도구,
 1. [Gear Lever](https://github.com/mijorus/gearlever)를 설치한다 (Flathub:
    `it.mijorus.gearlever`).
 2. [Releases](../../releases)에서 최신 `rigsync-desktop-*.AppImage`를 내려받는다.
-3. Gear Lever로 열어 통합(integrate)한다 — 이후 업데이트는 Gear Lever가 추적한다.
+3. Gear Lever로 열어 통합(integrate)한다.
+
+빌드 산출물 자체에 업데이트 소스가 심겨 있어(`.upd_info` ELF 섹션 —
+`gh-releases-zsync|g1r4ff3|rigsync-desktop|latest|<파일명>.zsync`), **통합하는
+순간 Gear Lever가 자동으로 인식**하고 이후 업데이트를 추적한다 — 별도 설정
+불필요.
+
+이 자동 인식 전(구버전에서 넘어왔거나, 위 embed 이전에 통합해 뒀거나)이라
+`[UpdatesNotAvailable]`로 남아 있다면: rigsync는 실행할 때마다 자기 자신이
+Gear Lever에 통합돼 있고 소스가 없는 상태인지 확인해 **한 번 스스로
+등록을 시도한다**(실패해도 반복하지 않는다 — Doctor 탭 "Auto-update (self)"에서
+결과를 확인할 수 있다). 그래도 안 됐다면 아래를 그대로 실행한다(AppImage
+경로는 실제 설치 위치로 바꾼다):
+
+```bash
+flatpak run it.mijorus.gearlever --set-update-source "<AppImage 경로>" \
+  --manager GithubUpdater repo=g1r4ff3/rigsync-desktop \
+  repo_filename='rigsync-desktop-*.AppImage' allow_prereleases=false
+```
 
 ### deb 패키지로
 

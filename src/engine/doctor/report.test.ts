@@ -165,4 +165,68 @@ describe('buildDoctorReport', () => {
     expect(report.emptyFollower.warning).toBeUndefined()
     fixture.cleanup()
   })
+
+  it('selfUpdate is not applicable when appImagePath is null (dev/deb run)', async () => {
+    const fixture = makeFixture('reference')
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: true }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      gitTransportProvider,
+      { configConfigured: true, appImagePath: null }
+    )
+    expect(report.selfUpdate).toEqual({ applicable: false, status: 'not-appimage' })
+    fixture.cleanup()
+  })
+
+  it('selfUpdate warns with a manual command when running as an AppImage without an update source', async () => {
+    const fixture = makeFixture('reference')
+    const appImagePath = '/home/user/Applications/rigsync-desktop.AppImage'
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: true, configsByPath: {} }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      gitTransportProvider,
+      { configConfigured: true, appImagePath }
+    )
+    expect(report.selfUpdate.applicable).toBe(true)
+    expect(report.selfUpdate.status).toBe('not-integrated')
+    expect(report.selfUpdate.warning).toBeDefined()
+    fixture.cleanup()
+  })
+
+  it('selfUpdate passes when the update source is already configured for this AppImage', async () => {
+    const fixture = makeFixture('reference')
+    const appImagePath = '/home/user/Applications/rigsync-desktop.AppImage'
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({
+        available: true,
+        configsByPath: {
+          [appImagePath]: {
+            updateManager: {
+              repo: 'g1r4ff3/rigsync-desktop',
+              repoFilename: 'rigsync-desktop-*.AppImage',
+              manager: 'GithubUpdater',
+              allowPrereleases: false
+            }
+          }
+        }
+      }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      gitTransportProvider,
+      { configConfigured: true, appImagePath }
+    )
+    expect(report.selfUpdate).toEqual({ applicable: true, status: 'configured' })
+    fixture.cleanup()
+  })
 })

@@ -6,6 +6,28 @@ import { doctorResultKind, type StatusKind } from '../statusKind'
 import type { DoctorReportDto } from '../../../shared/ipc'
 
 /**
+ * P4 자기 업데이트 체크 — `src/engine/doctor/selfUpdateCheck.ts`가 만드는 필드를
+ * `DoctorReport`엔 얹었지만, `shared/ipc.ts`의 `DoctorReportDto`는 다른
+ * 에이전트(binaries capability) 소유라 이 작업에서 손댈 수 없다(작업 스펙의
+ * 파일 소유권 분리). `buildDoctorReport`가 반환하는 실제 런타임 객체엔
+ * `selfUpdate` 필드가 이미 실려 오므로(구조적으로 잘려나가지 않는다 — IPC는
+ * 실제 객체를 그대로 전달하고 TS 타입은 컴파일타임 라벨일 뿐), 여기서만
+ * 로컬로 타입을 넓혀 소비한다. DTO 본체를 고치는 정공법이 아니라 이 파일
+ * 안에서만 쓰는 임시 우회임을 남겨둔다.
+ */
+type SelfUpdateStatusCode =
+  'not-appimage' | 'gearlever-missing' | 'not-integrated' | 'source-missing' | 'configured'
+
+interface SelfUpdateCheckDto {
+  readonly applicable: boolean
+  readonly status: SelfUpdateStatusCode
+  readonly warning?: string
+  readonly manualCommand?: string
+}
+
+type DoctorReportWithSelfUpdate = DoctorReportDto & { readonly selfUpdate: SelfUpdateCheckDto }
+
+/**
  * doctor 탭(P2d 세 번째 새 탭) — 전 capability의 preflight/check를 한 화면에
  * 통합한다: 기본 진단(machine-id/role/manifest 존재) + T3 appimage preflight
  * (P2c `checkAppimagePreflight`) + NVIDIA 드라이버 불일치(P4) + 구 repo
@@ -89,6 +111,12 @@ function secretScanKinds(secretScan: DoctorReportDto['secretScan']): StatusKind[
 
 function checklistKinds(checks: DoctorReportDto['checks']): StatusKind[] {
   return checks.map((c) => doctorResultKind(c.result))
+}
+
+/** dev/deb 실행(applicable:false)은 요약 집계에서 아예 빠진다 -- 해당 없음은 통과도 경고도 아니다. */
+function selfUpdateKinds(selfUpdate: SelfUpdateCheckDto): StatusKind[] {
+  if (!selfUpdate.applicable) return []
+  return [selfUpdate.status === 'configured' ? 'ok' : 'warn']
 }
 
 function formatTime(d: Date): string {
@@ -188,7 +216,7 @@ function DoctorGroup({
 }
 
 function DoctorView(): React.JSX.Element {
-  const [report, setReport] = useState<DoctorReportDto | null>(null)
+  const [report, setReport] = useState<DoctorReportWithSelfUpdate | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Record<string, boolean>>({})
   const [refreshing, setRefreshing] = useState(false)
@@ -197,7 +225,7 @@ function DoctorView(): React.JSX.Element {
   async function refresh(): Promise<void> {
     setRefreshing(true)
     try {
-      setReport(await window.api.engine.getDoctorReport())
+      setReport((await window.api.engine.getDoctorReport()) as DoctorReportWithSelfUpdate)
       setLastCheckedAt(new Date())
     } finally {
       setRefreshing(false)
@@ -207,7 +235,7 @@ function DoctorView(): React.JSX.Element {
   useEffect(() => {
     window.api.engine.getDoctorReport().then(
       (r) => {
-        setReport(r)
+        setReport(r as DoctorReportWithSelfUpdate)
         setLastCheckedAt(new Date())
       },
       (err: unknown) => setError(err instanceof Error ? err.message : String(err))
@@ -218,7 +246,7 @@ function DoctorView(): React.JSX.Element {
     setPending((prev) => ({ ...prev, [name]: true }))
     try {
       const next = await window.api.engine.ignoreDoctorCheck({ name, ignored: true })
-      setReport(next)
+      setReport(next as DoctorReportWithSelfUpdate)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -238,11 +266,17 @@ function DoctorView(): React.JSX.Element {
     )
   }
 
+  const selfUpdate: SelfUpdateCheckDto = report.selfUpdate ?? {
+    applicable: false,
+    status: 'not-appimage'
+  }
+
   const basicCounts = countKinds(basicKinds(report.basic, report.emptyFollower))
   const appimageCounts = countKinds(appimageKinds(report.appimage))
   const fontsCounts = countKinds(fontsKinds(report.fonts))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
+  const selfUpdateCounts = countKinds(selfUpdateKinds(selfUpdate))
   const checklistCounts = report.checksVisible
     ? countKinds(checklistKinds(report.checks))
     : { ok: 0, warn: 0, error: 0 }
@@ -252,6 +286,7 @@ function DoctorView(): React.JSX.Element {
     fontsCounts,
     nvidiaCounts,
     secretScanCounts,
+    selfUpdateCounts,
     checklistCounts
   ].reduce(addCounts, {
     ok: 0,
@@ -358,6 +393,25 @@ function DoctorView(): React.JSX.Element {
             <DoctorActionNote key={w} kind="warn" text={w} />
           ))}
         </DoctorGroup>
+
+        {selfUpdate.applicable && (
+          <DoctorGroup
+            title="Auto-update (self)"
+            description="rigsync 자기 자신이 Gear Lever 자동 업데이트 소스로 지정돼 있는지"
+            counts={selfUpdateCounts}
+          >
+            <ul className="space-y-1 text-xs">
+              <li>
+                <StatusText kind={selfUpdate.status === 'configured' ? 'ok' : 'warn'}>
+                  {selfUpdate.status === 'configured'
+                    ? '업데이트 소스 지정됨: GithubUpdater (g1r4ff3/rigsync-desktop)'
+                    : '업데이트 소스 미지정'}
+                </StatusText>
+              </li>
+            </ul>
+            {selfUpdate.warning && <DoctorActionNote kind="warn" text={selfUpdate.warning} />}
+          </DoctorGroup>
+        )}
 
         <DoctorGroup
           title="Fonts"

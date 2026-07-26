@@ -11,6 +11,7 @@ import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
 import type { NvidiaDriverCheckResult } from './nvidia'
 import type { SecretScanPreflightCheck } from './secretScanCheck'
+import type { SelfUpdateCheck } from './selfUpdateCheck'
 
 export type CheckType = 'file' | 'apt' | 'role' | 'cmd'
 
@@ -62,6 +63,11 @@ export interface DoctorReport {
   readonly secretScan: SecretScanPreflightCheck
   /** "빈 follower" 체크 -- follower인데 manifest가 거의 비어 있거나 원격이 없는지. */
   readonly emptyFollower: EmptyFollowerCheckResult
+  /**
+   * P4: rigsync 자기 자신의 AppImage가 Gear Lever 자동 업데이트 소스로 지정돼
+   * 있는지 -- dev/deb 실행은 `applicable:false`로 조용히 통과.
+   */
+  readonly selfUpdate: SelfUpdateCheck
   /**
    * 구 repo `doctor_visible`(gui.py:588) 이식 — ignore 제외 후 checks가 하나라도
    * 있으면 true. UI가 "체크리스트" 섹션 자체를 숨길지 판단하는 데 쓴다(appimage

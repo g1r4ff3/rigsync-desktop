@@ -25,6 +25,7 @@ import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
 import type { DoctorSystemProvider } from './providerTypes'
 import { checkSecretScanPreflight } from './secretScanCheck'
+import { checkSelfUpdateStatus } from './selfUpdateCheck'
 import type { ChecksManifest, DoctorReport } from './types'
 
 export const CHECKS_LAYER = 'checks'
@@ -32,6 +33,13 @@ export const CHECKS_LAYER = 'checks'
 export interface BuildDoctorReportOptions {
   /** true면 config.toml이 실제로 존재(온보딩 완료) -- resolveContext의 firstRun 반전. */
   readonly configConfigured: boolean
+  /**
+   * P4 자기 업데이트 체크용 `process.env.APPIMAGE` — 생략하면 실제 env를 읽는다
+   * (main/ipc.ts 호출부가 이 필드를 몰라도 그대로 동작하도록 optional로 둔다 --
+   * 다른 에이전트 소유 파일이라 이 시그니처를 깨는 변경은 할 수 없다). 테스트는
+   * 명시적으로 넘겨 실제 프로세스 env에 기대지 않는다.
+   */
+  readonly appImagePath?: string | null
 }
 
 export async function buildDoctorReport(
@@ -61,6 +69,15 @@ export async function buildDoctorReport(
   const secretScan = checkSecretScanPreflight(ctx)
   const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
 
+  const appImagePath =
+    options.appImagePath !== undefined ? options.appImagePath : (process.env.APPIMAGE ?? null)
+  const selfUpdateAppConfig = appImagePath ? gearLeverProvider.readAppConfig(appImagePath) : null
+  const selfUpdate = checkSelfUpdateStatus({
+    appImagePath,
+    gearLeverInstalled: appimage.gearLeverInstalled,
+    appConfig: selfUpdateAppConfig
+  })
+
   return {
     basic: {
       machineId: ctx.machineId,
@@ -74,6 +91,7 @@ export async function buildDoctorReport(
     nvidia,
     secretScan,
     emptyFollower,
+    selfUpdate,
     checksVisible: activeChecks.length > 0,
     exitCode
   }

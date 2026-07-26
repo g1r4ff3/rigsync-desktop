@@ -12,6 +12,12 @@ import { runScreenshotHarness } from './screenshot'
 import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
 import { createAppTray, type AppTray } from './tray'
 import { IPC_CHANNELS } from '../shared/ipc'
+import { LinuxGearLeverProvider } from '../engine/providers/linux/gearlever'
+import {
+  attemptSelfUpdateRegistration,
+  readSelfUpdateState,
+  writeSelfUpdateState
+} from './selfUpdate'
 
 /**
  * R4 스크린샷 하네스 트리거 — `RIGSYNC_SCREENSHOT_DIR`가 설정돼 있으면 이
@@ -103,6 +109,40 @@ function createWindow(): void {
   }
 }
 
+/**
+ * P4: 이미 설치된(embed 없는) 구버전 AppImage 구제용 런타임 자기 등록 — 판단은
+ * `src/main/selfUpdate.ts`(순수, fake로 유닛 테스트됨), 여기는 실제 Gear Lever
+ * CLI provider + `app.getPath('userData')` 상태 파일 배선만 한다.
+ *
+ * `createWindow()` 이후 지연 실행하는 이유: Gear Lever CLI 호출(`flatpak run
+ * it.mijorus.gearlever …`)은 동기(`execFileSync`)라 호출 중엔 메인 프로세스가
+ * 블록된다 — "실패해도 기동을 막지 말고"라는 명세를 지키려고, 창이 이미
+ * 뜬 뒤(사용자가 화면을 보기 시작한 뒤)로 미뤄 초기 페인트를 지연시키지
+ * 않는다. 대부분의 실행에서는 이미 한 번 시도돼 상태 파일에 기록돼 있어
+ * `readState()`만 보고 즉시 반환한다(비용 무시할 수준).
+ */
+function runSelfUpdateRegistration(): void {
+  const gearLeverProvider = new LinuxGearLeverProvider()
+  const userDataDir = app.getPath('userData')
+  try {
+    attemptSelfUpdateRegistration({
+      appImagePath: process.env.APPIMAGE || null,
+      isGearLeverAvailable: () => gearLeverProvider.isAvailable(),
+      readAppConfig: (appImagePath) => gearLeverProvider.readAppConfig(appImagePath),
+      setUpdateSource: (appImagePath, manager, params) =>
+        gearLeverProvider.setUpdateSource(appImagePath, manager, params),
+      readState: () => readSelfUpdateState(userDataDir),
+      writeState: (state) => writeSelfUpdateState(userDataDir, state),
+      log: (message) => console.log(message)
+    })
+  } catch (err) {
+    // attemptSelfUpdateRegistration 자체가 이미 내부에서 삼키지만, 이 배선
+    // 함수(provider 생성·app.getPath 등)에서 던질 가능성까지 이중으로 막는다
+    // — 자기 등록은 기동을 절대 막아선 안 된다.
+    console.error('[self-update] wiring failed (non-fatal)', err)
+  }
+}
+
 function showMainWindow(): void {
   if (!mainWindow) {
     createWindow()
@@ -164,6 +204,14 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  // P4: 창이 뜬 뒤로 미뤄 자기 등록(동기 CLI 호출)이 초기 페인트를 지연시키지
+  // 않게 한다 (runSelfUpdateRegistration 주석 참조). 스크린샷 하네스 실행 중엔
+  // Gear Lever/flatpak이 없는 CI 환경일 수 있어(그리고 실제 앱 상태를 흔들 수
+  // 있어) 건너뛴다.
+  if (!screenshotDir) {
+    setTimeout(runSelfUpdateRegistration, 3000)
+  }
 
   // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". P4: 자동 시작
   // 체크박스도 여기 추가(온보딩 ⑤와 같은 토글). 아이콘은 placeholder(design

@@ -43,4 +43,10 @@ npmRebuild: false
 # 자동 업데이트는 P4 비범위 — 원격/릴리스 인프라(push 대상 remote, 배포
 # 서버)가 아직 없다. publish 블록을 비워두면 electron-builder가 업데이트
 # 배선을 만들지 않는다(스캐폴드 기본값의 가짜 example.com URL 제거).
+# **`publish: null`을 그대로 둔다** — `npm run build:linux`가 GitHub Releases에
+# 아무것도 업로드하지 않는다는 뜻(업로드는 `gh release` 수동). 이 값이 있어도
+# electron-builder의 AppImage 타깃은 자기 electron-updater용 블록맵/`app-update.yml`만
+# 만들 뿐 Gear Lever·AppImageUpdate가 읽는 `.upd_info` ELF 섹션/`.zsync`는 손대지
+# 않는다 — 그 두 산출물은 `scripts/embed-appimage-update-info.mjs`(build:linux 후처리,
+# electron-updater 도입 아님)가 직접 만든다. 자세한 이유는 그 스크립트 헤더 주석.
 publish: null
