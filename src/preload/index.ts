@@ -31,10 +31,14 @@ import {
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
+  type PlanUninstallRequest,
+  type PlanUninstallResponse,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
   type RigsyncConfigDto,
+  type RunUninstallRequest,
+  type RunUninstallResponse,
   type ScheduledCaptureReportDto,
   type ScreenshotRoute,
   type ScheduledDiffReportDto,
@@ -144,6 +148,12 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
   /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */
   cancelApply: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.engineCancelApply),
+  /** 항목 삭제 dry-run 미리보기 — 명령 전문·제외 사유·apt 의존성 경고(안전 불변식 5). */
+  planUninstall: (request: PlanUninstallRequest): Promise<PlanUninstallResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.enginePlanUninstall, request),
+  /** 항목 삭제 실행 — engine:apply와 같은 ApplyRunner·진행 이벤트 스트림을 탄다. */
+  runUninstall: (request: RunUninstallRequest): Promise<RunUninstallResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineRunUninstall, request),
   /** `engine:planEvent` push 구독. 반환값을 호출하면 구독을 해제한다. */
   onPlanEvent: (callback: (event: PlanEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: PlanEvent): void =>

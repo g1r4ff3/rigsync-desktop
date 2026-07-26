@@ -65,6 +65,7 @@ import { detectDuplicates } from '../engine/duplicates'
 import { checkExistingManifestPath } from '../engine/manifestPathCheck'
 import type { PlanAction } from '../engine/plan'
 import { cloneManifestRepo, cloneErrorGuidance } from '../engine/transport'
+import { planUninstall, type UninstallProviders } from '../engine/uninstall'
 import {
   linuxAssetResolver,
   linuxBinariesSystemProvider,
@@ -127,12 +128,17 @@ import {
   type ManifestPathCheckDto,
   type PackagesCaptureReport,
   type PackagesDiffReport,
+  type PlanActionResultDto,
   type PlanEvent,
   type PlanSummaryDto,
+  type PlanUninstallRequest,
+  type PlanUninstallResponse,
   type ReclassificationEventDto,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
   type RigsyncConfigDto,
+  type RunUninstallRequest,
+  type RunUninstallResponse,
   type ScheduledCaptureReportDto,
   type ScheduledDiffReportDto,
   type ServicesCaptureReportDto,
@@ -163,6 +169,14 @@ const gitProvider = linuxGitProvider
 const doctorSystemProvider = linuxDoctorSystemProvider
 const nvidiaCheckProvider = linuxNvidiaCheckProvider
 const gitTransportProvider = linuxGitTransportProvider
+// 항목 삭제(uninstall) 엔진이 요구하는 provider 3종 — apt/flatpak는 이미 위
+// `providers`(packages 캡처/diff와 동일 인스턴스)에서, fontsSystem은 fonts
+// capability의 provider를 그대로 재사용한다(새 provider를 만들지 않는다).
+const uninstallProviders: UninstallProviders = {
+  apt: providers.apt,
+  flatpak: providers.flatpak,
+  fontsSystem: linuxFontsSystemProvider
+}
 
 // config.toml은 온보딩 위저드(P4) 전에는 없는 게 정상이라 dev 기본값으로
 // 뜬다 — 앱 프로세스 생애주기 동안 한 번만 해석한다(전역 상태처럼 보이지만
@@ -704,6 +718,66 @@ export function registerEngineIpc(
   ipcMain.handle(IPC_CHANNELS.engineCancelApply, async (): Promise<void> => {
     currentApplyRunner?.cancel()
   })
+
+  // 항목 삭제(uninstall, 안전 불변식 5) — 순수 dry-run 미리보기. 아무것도
+  // 실행하지 않고 planUninstall()이 계산한 명령 전문·제외 사유·apt 의존성
+  // 경고만 돌려준다(확인 다이얼로그가 그대로 노출 — 불변식 ⑥).
+  ipcMain.handle(
+    IPC_CHANNELS.enginePlanUninstall,
+    async (_event, request: PlanUninstallRequest): Promise<PlanUninstallResponse> => {
+      const ctx = getContext()
+      const plan = planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
+      const actions: PlanActionResultDto[] = plan.actions.map((action) => ({
+        capability: action.capability,
+        summary: action.summary,
+        commands: action.commands,
+        status: 'planned'
+      }))
+      const sudoScriptPreview = buildSudoScriptPreview(plan.actions) ?? undefined
+      return {
+        actions,
+        excluded: plan.excluded,
+        ...(plan.aptDependencies ? { aptDependencies: plan.aptDependencies } : {}),
+        ...(sudoScriptPreview ? { sudoScriptPreview } : {})
+      }
+    }
+  )
+
+  // 항목 삭제 실행 — plan을 다시 계산해(engine:apply와 동일 패턴: preview와
+  // run이 각자 새로 plan을 만든다) 기존 ApplyRunner·`engine:planEvent` 이벤트
+  // 스트림·`engine:cancelApply` 취소 경로를 그대로 태운다(코디네이터 지시 —
+  // 실행기를 새로 만들지 않는다).
+  ipcMain.handle(
+    IPC_CHANNELS.engineRunUninstall,
+    async (_event, request: RunUninstallRequest): Promise<RunUninstallResponse> => {
+      const ctx = getContext()
+      const plan = planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
+
+      const send = (event: PlanEvent): void => {
+        getMainWindow()?.webContents.send(IPC_CHANNELS.enginePlanEvent, event)
+      }
+
+      const runner = new ApplyRunner()
+      currentApplyRunner = runner
+      runner.on('action_start', (payload) => send({ type: 'action_start', ...payload }))
+      runner.on('action_done', (payload) => send({ type: 'action_done', ...payload }))
+      let summary: PlanSummaryDto = { ok: 0, failed: 0, skipped: 0, cancelled: 0 }
+      runner.on('summary', (payload) => {
+        summary = payload
+        send({ type: 'summary', summary: payload })
+      })
+
+      try {
+        const results = await runner.run(plan.actions, {
+          confirm: true,
+          elevationExec: linuxElevationExec
+        })
+        return { results, summary }
+      } finally {
+        currentApplyRunner = null
+      }
+    }
+  )
 }
 
 /** 온보딩 위저드(P4) 완료 후 config.toml이 새로 쓰였을 때 캐시를 갱신하기 위한 훅. */

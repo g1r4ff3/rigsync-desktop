@@ -89,6 +89,17 @@ export const IPC_CHANNELS = {
   engineApply: 'engine:apply',
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
+  /**
+   * 항목 삭제(uninstall, 안전 불변식 5) — Candidates 화면의 3상태 컨트롤이
+   * "Delete"를 고르면 항상 이 두 채널을 순서대로 탄다: 먼저 planUninstall로
+   * dry-run 미리보기(명령 전문·제외 사유·apt 의존성 경고)를 확인 다이얼로그에
+   * 노출하고, 사용자가 확인하면 runUninstall이 실제로 실행한다. 실행은
+   * `engine:apply`와 같은 ApplyRunner·`engine:planEvent` 이벤트 스트림·
+   * `engine:cancelApply` 취소 경로를 그대로 재사용한다(엔진 실행기 하나만
+   * 존재 — 동시에 apply와 uninstall을 같이 실행하는 흐름은 없다는 전제).
+   */
+  enginePlanUninstall: 'engine:planUninstall',
+  engineRunUninstall: 'engine:runUninstall',
   /** main -> renderer 단방향 push (invoke 아님) — PlanExecutor 진행 이벤트 중계. */
   enginePlanEvent: 'engine:planEvent',
   /**
@@ -111,6 +122,10 @@ export type ScreenshotRoute =
   | 'doctor'
   | 'settings'
   | 'apply-dialog'
+  /** 항목 삭제 검증 전용 — Candidates에서 삭제 가능한 첫 항목의 확인 다이얼로그를 강제로 연다. */
+  | 'items-delete-confirm'
+  /** 항목 삭제 검증 전용 — Candidates의 일괄 삭제 체크리스트를 강제로 연다. */
+  | 'items-bulk-delete'
 
 export interface EnginePingRequest {
   readonly message?: string
@@ -774,3 +789,48 @@ export interface PlanEventSummary {
 }
 
 export type PlanEvent = PlanEventActionStart | PlanEventActionDone | PlanEventSummary
+
+// ---------------------------------------------------------------------------
+// engine:planUninstall / engine:runUninstall (항목 삭제 — 안전 불변식 5)
+// ---------------------------------------------------------------------------
+
+export interface UninstallItemRequestDto {
+  readonly capability: SyncItemCapability
+  readonly key: string
+}
+
+/** 요청했지만 계획에 담기지 않은 항목 — 왜 빠졌는지를 사용자에게 정직하게 보여준다. */
+export interface UninstallExclusionDto {
+  readonly capability: string
+  readonly key: string
+  readonly reason: string
+}
+
+/** apt 삭제가 다른 패키지까지 함께 제거할 때의 경고(안전 불변식 5 필수 조건). */
+export interface AptRemoveDependencyReportDto {
+  readonly requested: readonly string[]
+  readonly willRemove: readonly string[]
+  readonly extra: readonly string[]
+}
+
+export interface PlanUninstallRequest {
+  readonly items: readonly UninstallItemRequestDto[]
+}
+
+export interface PlanUninstallResponse {
+  /** 실행될 명령 전문 미리보기 — status는 항상 'planned'(불변식 ⑥). */
+  readonly actions: readonly PlanActionResultDto[]
+  readonly excluded: readonly UninstallExclusionDto[]
+  readonly aptDependencies?: AptRemoveDependencyReportDto
+  /** privileged 액션(sudo apt remove 등)이 있을 때만 채워지는 스크립트 전문. */
+  readonly sudoScriptPreview?: string
+}
+
+export interface RunUninstallRequest {
+  readonly items: readonly UninstallItemRequestDto[]
+}
+
+export interface RunUninstallResponse {
+  readonly results: readonly PlanActionResultDto[]
+  readonly summary: PlanSummaryDto
+}
