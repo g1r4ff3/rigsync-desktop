@@ -8,12 +8,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { captureAll } from '../captureAll'
 import {
   buttonCopy,
-  detectionOnlyDisabledReason,
+  candidatesIntroCopy,
+  describeSyncItemState,
   emptyStateCopy,
   formatDetectionOnlySummary,
   formatSyncItemStateSummary,
+  isFollowerToggleDisabled,
   pendingChangesCopy,
-  syncItemStateCopy
+  shouldShowPendingCaptureBanner,
+  toggleDisabledReason
 } from '../copy'
 import { StatusText } from '../status'
 import type { EngineStatus, SyncItemGroupDto, SyncItemState } from '../../../shared/ipc'
@@ -186,6 +189,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
   const [pendingGroups, setPendingGroups] = useState<Record<string, boolean>>({})
   const [captureBusy, setCaptureBusy] = useState(false)
+  // R8: follower는 capture가 막혀 있어(안전 불변식 ⑦) 이 화면의 ignore
+  // 토글이 다시 커밋될 방법이 없다(copy.ts `followerToggleDisabledReason`
+  // 주석 — git 재현으로 확인). 배너·집계 문구·스위치 비활성 판단 전부 이
+  // 하나의 플래그로 가른다.
+  const isFollower = isFollowerToggleDisabled(status?.role)
 
   async function refresh(): Promise<void> {
     setGroups(await window.api.engine.listSyncItems())
@@ -331,14 +339,27 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         </Tooltip>
       </ViewToolbar>
 
+      {/* R8: 화면 자체가 "이게 무엇인지"를 먼저 말한다(Microcopy 층) — 실사용
+          실패("추가 예정 99"가 무슨 뜻인지 화면만 보고 전혀 짐작 못 함) 재발
+          방지. role별로 "안 들어있는 항목"이 실제로 어떻게 되는지만 갈라
+          말한다(copy.ts candidatesIntroCopy). */}
+      <p className="-mt-1 text-[11px] text-muted-foreground">
+        {isFollower ? candidatesIntroCopy.follower : candidatesIntroCopy.reference}
+      </p>
+
       {groups !== null && groups.length > 0 && (
         <p className="-mt-1 text-[11px] text-muted-foreground">
-          전체: {formatSyncItemStateSummary(overallCounts) || '해당 없음'}
+          전체: {formatSyncItemStateSummary(overallCounts, status?.role) || '해당 없음'}
         </p>
       )}
 
-      {/* R6 R1: 보류 중 변경이 있을 때만 배너를 띄운다(0건이면 안 보임). */}
-      {pendingCount > 0 && (
+      {/* R6 R1: 보류 중 변경이 있을 때만 배너를 띄운다(0건이면 안 보임).
+          R8: follower에는 이 배너를 아예 안 띄운다 — capture가 불가능한
+          머신에 "Capture를 실행하세요"라고 지시하는 건 불가능한 행동 지시다
+          (실사용 실패 그 자체 — follower에서 버튼을 눌러도 아무 일도 안
+          일어났다). 위 intro 줄 + 항목별 role-aware 상태 설명이 "무엇을 봤는지"
+          설명을 대신한다. */}
+      {shouldShowPendingCaptureBanner(pendingCount, status?.role) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-status-warn/40 bg-status-warn/10 px-3 py-2">
           <StatusText kind="warn">{pendingChangesCopy.bannerText(pendingCount)}</StatusText>
           <ActionButton
@@ -346,9 +367,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
             size="sm"
             label={buttonCopy.capture.label}
             subtitle={pendingChangesCopy.captureSubtitle}
-            disabledReason={buttonCopy.captureDisabledFollower}
             busy={captureBusy}
-            disabled={captureBusy || status?.role === 'follower'}
+            disabled={captureBusy}
             onClick={handleCapture}
           />
         </div>
@@ -388,8 +408,10 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                     <>
                       <GroupCheckbox
                         state={row.groupState}
-                        disabled={row.detectionOnly || !!pendingGroups[row.capability]}
-                        disabledReason={row.detectionOnly ? detectionOnlyDisabledReason : undefined}
+                        disabled={
+                          row.detectionOnly || isFollower || !!pendingGroups[row.capability]
+                        }
+                        disabledReason={toggleDisabledReason(row.detectionOnly, status?.role)}
                         onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
                       />
                       <span className="font-mono">{row.title}</span>
@@ -399,11 +421,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                       {/* R6 R1: 그룹 헤더 집계 — 검색 필터와 무관하게 그룹 전체 값,
                           0건인 상태는 생략해 158행짜리 그룹에서도 잡음을 줄인다.
                           R7: detectionOnly는 4상태 요약이 아니라 "검출됨 N"만 말한다
-                          (동기화 대상이 아닌 그룹이 "추가 예정"을 말하는 자기모순 수정). */}
+                          (동기화 대상이 아닌 그룹이 "추가 예정"을 말하는 자기모순 수정).
+                          R8: pending-add 라벨은 role에 따라 달라지므로 role도 넘긴다. */}
                       <span className="ml-auto shrink-0 truncate font-mono text-[10px] font-normal text-muted-foreground">
                         {row.detectionOnly
                           ? formatDetectionOnlySummary(row.detectedCount)
-                          : formatSyncItemStateSummary(row.stateCounts)}
+                          : formatSyncItemStateSummary(row.stateCounts, status?.role)}
                       </span>
                     </>
                   ) : (
@@ -411,10 +434,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                       {/* R6 R1: managed/unmanaged 아이콘 하나였던 것을 4상태
                           아이콘+라벨로 넓힌다 — "내가 고른 스위치가 실제로 manifest에
                           반영됐는지"를 상태 이름으로 직접 말해준다(색+형태 병행:
-                          pending-add/remove는 같은 warn 색이지만 +/− 모양으로 구분). */}
+                          pending-add/remove는 같은 warn 색이지만 +/− 모양으로 구분).
+                          R8: 라벨·설명은 role-aware(describeSyncItemState) — follower의
+                          pending-add는 "추가 예정"이 아니라 "이 머신에만 있음"으로 보인다. */}
                       <span
                         className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
-                        title={`${syncItemStateCopy[row.state].label} — ${syncItemStateCopy[row.state].description}`}
+                        title={`${describeSyncItemState(row.state, status?.role).label} — ${describeSyncItemState(row.state, status?.role).description}`}
                       >
                         <CandidateStateIcon state={row.state} />
                         <span className="shrink-0 font-mono text-foreground">{row.label}</span>
@@ -433,16 +458,20 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         // R7: detectionOnly 항목은 이 스위치를 눌러도 관찰 가능한 효과가
                         // 없다는 걸 코드로 확인했다(copy.ts detectionOnlyDisabledReason
                         // 주석 참조) — 비활성화하고 이유를 title로 노출한다.
+                        // R8: follower도 같은 이유로 비활성화한다(copy.ts
+                        // followerToggleDisabledReason 주석 — git 재현으로 확인:
+                        // 커밋되지 않아 효과가 없거나 다음 동기화를 막을 수 있다).
+                        // 두 비활성 사유의 우선순위는 copy.ts toggleDisabledReason이
+                        // 결정한다(detectionOnly가 더 구체적이라 우선).
                         checked={!row.ignored}
-                        disabled={row.detectionOnly || pendingKeys[row.key]}
+                        disabled={row.detectionOnly || isFollower || pendingKeys[row.key]}
                         onCheckedChange={(checked) => toggle(row.capability, row.itemKey, !checked)}
                         aria-label={`${row.label} 동기화 포함 토글`}
                         title={
-                          row.detectionOnly
-                            ? detectionOnlyDisabledReason
-                            : row.ignored
-                              ? '무시됨 — 클릭하면 동기화 대상에 포함'
-                              : '동기화 대상에 포함됨 — 클릭하면 무시(제외)'
+                          toggleDisabledReason(row.detectionOnly, status?.role) ??
+                          (row.ignored
+                            ? '무시됨 — 클릭하면 동기화 대상에 포함'
+                            : '동기화 대상에 포함됨 — 클릭하면 무시(제외)')
                         }
                       />
                     </>

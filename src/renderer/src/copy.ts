@@ -1,3 +1,5 @@
+import type { EngineRole, SyncItemState } from '../../shared/ipc'
+
 /**
  * Microcopy 상수 — CLAUDE.md Explanability contract ①. 라벨/버튼/탭은 영어,
  * 설명·툴팁·헬프·상태 문구는 한국어(계약의 언어 정책). 새 화면을 추가하거나
@@ -10,6 +12,23 @@ export const tabCopy = {
   items: { label: 'Candidates', subtitle: '동기화할 항목 선택' },
   doctor: { label: 'Doctor', subtitle: '수동 점검 체크리스트' },
   settings: { label: 'Settings', subtitle: '머신 이름·역할·저장 위치' }
+} as const
+
+/**
+ * R8 (Candidates 화면 explainability 재작업 — 실사용 실패 수정): 이 화면이
+ * "무엇인지"를 화면 자체가 먼저 말하지 않아서 생긴 오독을 고친다. 실사용
+ * 사례 — follower 머신에서 "추가 예정 99"를 본 사용자가 "밀린 동기화
+ * 작업"으로 읽었다("연구실 컴퓨터에 없는 항목들이란 거잖아"라는 실제 뜻을
+ * 화면만 보고는 전혀 짐작 못 함). 목록 자체의 정의(이 머신에 있는 것 중
+ * manifest에 있는/없는 것)를 role과 무관하게 먼저 밝히고, "안 들어있는 항목"이
+ * 실제로 어떻게 되는지만 role별로 갈라 말한다 — reference는 이 머신에서 바로
+ * Capture할 수 있고, follower는 그럴 수 없어 reference에서 해야 한다.
+ */
+export const candidatesIntroCopy = {
+  reference:
+    '이 머신에 설치·존재하는 항목을 모아, manifest(동기화 기준)에 이미 들어있는 것과 아직 안 들어있는 것을 보여줍니다 — 아직 안 들어있는 항목은 Capture하면 manifest에 추가됩니다.',
+  follower:
+    '이 머신에 설치·존재하는 항목을 모아, manifest(동기화 기준)에 이미 들어있는 것과 아직 안 들어있는 것을 보여줍니다 — 아직 안 들어있는 항목은 이 머신에만 있는 것이며, follower는 Capture할 수 없어 manifest에 넣으려면 reference 머신에서 해야 합니다.'
 } as const
 
 /**
@@ -42,6 +61,11 @@ export const diffSummaryCopy = {
  * 배지)에서, description은 항목 행의 상태 아이콘 툴팁에서 쓴다. 실제 동작
  * 확인 결과(ignore.ts): ignore 토글은 manifest를 즉시 안 바꾸고 common
  * ignore.toml만 갱신한다 -- 실제 반영(추가/제거)은 다음 Capture 때 일어난다.
+ *
+ * R8: 이 기본값은 **reference 프레이밍**이다(Capture가 실제로 이 머신에서
+ * 실행 가능한 동작이므로 "다음 Capture가 ~" 문장이 참). follower에서는
+ * `describeSyncItemState`가 role을 보고 대신 갈아 끼운다 — 아래 그 함수의
+ * 주석 참조(실사용 실패의 핵심 원인이 이 문구였다).
  */
 export const syncItemStateCopy = {
   synced: {
@@ -50,15 +74,15 @@ export const syncItemStateCopy = {
   },
   'pending-add': {
     label: '추가 예정',
-    description: '아직 manifest엔 없습니다 — 다음 Capture가 새로 추가합니다.'
+    description: '이 머신에는 있지만 아직 manifest엔 없습니다 — Capture하면 새로 추가됩니다.'
   },
   'pending-remove': {
     label: '제거 예정',
-    description: '지금은 manifest에 있지만 ignore 처리돼 다음 Capture가 제거합니다.'
+    description: '지금은 manifest에 있지만 ignore 처리돼 있어 Capture하면 제거됩니다.'
   },
   excluded: {
     label: '제외됨',
-    description: 'ignore 처리되어 있어 다음 Capture도 다시 담지 않습니다.'
+    description: 'ignore 처리되어 있어 Capture해도 다시 담기지 않습니다.'
   },
   /**
    * R7: detection-only 그룹(snap) 전용 상태 — 코디네이터가 스크린샷에서 발견한
@@ -73,17 +97,66 @@ export const syncItemStateCopy = {
   }
 } as const
 
-/** R6 R1: Candidates 화면 상단/그룹 헤더 집계 한 줄 — 0건인 상태는 생략해 잡음을 줄인다. */
-export function formatSyncItemStateSummary(counts: {
-  readonly synced: number
-  readonly pendingAdd: number
-  readonly pendingRemove: number
-  readonly excluded: number
-}): string {
+/**
+ * R8: role을 아는 상태 설명 — 실사용 실패("follower에서 '추가 예정 99'를
+ * 밀린 동기화 작업으로 오독") 재발 방지. follower는 Capture를 실행할 수 없는데
+ * (안전 불변식 ⑦) 위 기본 문구는 전부 "Capture하면 ~"라고 말해 "내가 뭘 해야
+ * 한다"는 오독을 부른다. 특히 `pending-add`는 라벨 자체를 바꾼다 — "추가
+ * 예정"은 이 머신이 뭔가를 곧 할 것처럼 들리는데, follower는 애초에 추가할
+ * 수 없다(real-world match 위반). "이 머신에만 있음"으로 바꾸면 사용자가
+ * 실제로 물었던 질문("연구실 컴퓨터에 없는 항목들이란 거잖아")에 화면이 직접
+ * 답한다. pending-remove/excluded는 사실관계 자체는 role과 무관하게 참이라
+ * 라벨은 그대로 두고, 주어만 "Capture" → "reference에서 Capture"로 바꿔
+ * "내가 할 일"이 아님을 분명히 한다.
+ */
+export function describeSyncItemState(
+  state: SyncItemState,
+  role: EngineRole | undefined
+): { readonly label: string; readonly description: string } {
+  if (role !== 'follower') return syncItemStateCopy[state]
+  if (state === 'pending-add') {
+    return {
+      label: '이 머신에만 있음',
+      description:
+        '이 머신에서 발견됐지만 manifest(동기화 기준)엔 없습니다 — 기준에 넣으려면 reference 머신에서 Capture해야 합니다.'
+    }
+  }
+  if (state === 'pending-remove') {
+    return {
+      label: syncItemStateCopy['pending-remove'].label,
+      description:
+        '지금은 manifest에 있지만 ignore 처리돼 있어 reference에서 Capture하면 제거됩니다.'
+    }
+  }
+  if (state === 'excluded') {
+    return {
+      label: syncItemStateCopy.excluded.label,
+      description: 'ignore 처리되어 있어 reference가 Capture해도 다시 담기지 않습니다.'
+    }
+  }
+  return syncItemStateCopy[state]
+}
+
+/**
+ * R6 R1: Candidates 화면 상단/그룹 헤더 집계 한 줄 — 0건인 상태는 생략해 잡음을 줄인다.
+ * R8: `pending-add`의 라벨은 role에 따라 달라지므로(위 `describeSyncItemState`
+ * 참조) 집계 문구도 같은 함수로 라벨을 얻어 일관되게 맞춘다 — 그렇지 않으면
+ * follower가 항목 목록에선 "이 머신에만 있음"을 보고 바로 위 집계 줄에선
+ * "추가 예정"을 보는 모순이 생긴다.
+ */
+export function formatSyncItemStateSummary(
+  counts: {
+    readonly synced: number
+    readonly pendingAdd: number
+    readonly pendingRemove: number
+    readonly excluded: number
+  },
+  role: EngineRole | undefined
+): string {
   const parts: string[] = []
   if (counts.synced > 0) parts.push(`${syncItemStateCopy.synced.label} ${counts.synced}`)
   if (counts.pendingAdd > 0) {
-    parts.push(`${syncItemStateCopy['pending-add'].label} ${counts.pendingAdd}`)
+    parts.push(`${describeSyncItemState('pending-add', role).label} ${counts.pendingAdd}`)
   }
   if (counts.pendingRemove > 0) {
     parts.push(`${syncItemStateCopy['pending-remove'].label} ${counts.pendingRemove}`)
@@ -114,7 +187,59 @@ export function formatDetectionOnlySummary(count: number): string {
 export const detectionOnlyDisabledReason =
   'snap은 동기화 대상이 아닙니다 — 중복 설치 검출에만 사용합니다.'
 
-/** R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내". */
+/**
+ * R8: follower에서 ignore 스위치·그룹 체크박스를 비활성화하는 이유 — 실사용
+ * 실패 수정 3번("역할별로 정직하게")의 핵심. 코드로 직접 재현해 확인한 실제
+ * 동작(git 작업 트리 실험, `ignore.ts` setIgnoredBulk가 common/ignore.toml에
+ * 즉시 쓰는 경로를 그대로 따라감):
+ * - follower는 capture가 막혀 있어(안전 불변식 ⑦) 이 쓰기가 절대 커밋되지
+ *   않는다 — manifest 저장소 작업 트리에 커밋되지 않은 변경으로만 남는다.
+ * - reference가 나중에 같은 파일(common/ignore.toml)을 건드리는 커밋을
+ *   push하면, 이 머신의 다음 `git pull --ff-only`가 그 파일의 로컬 미커밋
+ *   변경과 충돌해 **통째로 실패**한다("Your local changes... would be
+ *   overwritten by merge" — 실제 재현 확인). 즉 사소한 토글 하나가 이 머신
+ *   전체 동기화를 막아버릴 수 있다.
+ * - 그렇지 않은 경우엔 그냥 무기한 로컬 미커밋 상태로 남아 아무 효과가 없다.
+ * 두 경우 다 "의미 있는 효과"가 없거나 위험만 만드므로 비활성화한다.
+ */
+export const followerToggleDisabledReason =
+  'follower에서는 저장되지 않습니다 — 이 머신에서 바꿔도 반영되지 않고 그대로 남거나, reference가 나중에 같은 항목을 바꾸면 이 머신의 다음 동기화가 막힐 수 있습니다. reference 머신에서 바꾸세요.'
+
+/** R8: follower에서는 ignore 토글이 전부 비활성이다(위 followerToggleDisabledReason). */
+export function isFollowerToggleDisabled(role: EngineRole | undefined): boolean {
+  return role === 'follower'
+}
+
+/**
+ * R8: ignore 스위치·그룹 체크박스의 비활성 사유를 우선순위대로 고른다 —
+ * SyncItemsView의 GroupCheckbox·Switch 두 곳에서 똑같은 분기가 중복돼 있던
+ * 것을 여기 하나로 모았다(순서 규칙: 그룹이 detectionOnly면 그 사유가 더
+ * 구체적이므로 우선, 아니면 follower 사유, 둘 다 아니면 비활성 아님).
+ */
+export function toggleDisabledReason(
+  detectionOnly: boolean,
+  role: EngineRole | undefined
+): string | undefined {
+  if (detectionOnly) return detectionOnlyDisabledReason
+  if (isFollowerToggleDisabled(role)) return followerToggleDisabledReason
+  return undefined
+}
+
+/**
+ * R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내".
+ * R8: follower는 이 배너를 아예 띄우지 않는다 — capture가 불가능한 머신에
+ * "Capture를 실행하세요"라고 지시하는 건 불가능한 행동 지시(실사용 실패
+ * 2번: 사용자가 지시대로 눌렀지만 follower라 차단돼 아무 일도 안 일어났다).
+ * 다른 문구로 대체하는 대신 화면 상단의 `candidatesIntroCopy.follower` +
+ * 항목별 role-aware 상태 설명이 그 역할을 대신한다(중복 정보를 늘리지 않는다).
+ */
+export function shouldShowPendingCaptureBanner(
+  pendingCount: number,
+  role: EngineRole | undefined
+): boolean {
+  return pendingCount > 0 && role !== 'follower'
+}
+
 export const pendingChangesCopy = {
   bannerText: (count: number): string =>
     `보류 중인 변경 ${count}건 — 반영하려면 Capture를 실행하세요.`,
@@ -192,11 +317,13 @@ export const helpCopy = {
     '계층 재분류 감지는 manifest가 기록한 설치 방식과 실제 설치 방식이 어긋난 경우를 보여줍니다.'
   ].join(' '),
   items: [
-    'Candidates는 각 항목이 지금 동기화 중인지, 다음 Capture로 바뀔 예정인지를 4가지 상태로 보여줍니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(아직 manifest엔 없지만 다음 Capture가 담음)/제거 예정(지금은 있지만 ignore돼 다음 Capture가 뺌)/제외됨(ignore돼 안정적으로 빠진 상태).',
-    '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 ignore 처리하지만, manifest 반영(추가/제거)은 그 자리에서 즉시 일어나지 않고 다음 Capture 때 일어납니다 — 그래서 보류 중 변경이 있으면 배너로 Capture를 안내합니다.',
-    '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
+    'Candidates는 이 머신에 설치·존재하는 항목을 provider(apt/flatpak/appimage/fonts/binaries/dotfiles/tools/repos)별로 모아, manifest(동기화 기준)에 이미 들어있는(managed) 항목과 아직 안 들어있는(unmanaged) 항목을 함께 보여줍니다.',
+    '각 항목은 4가지 상태 중 하나입니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(이 머신엔 있지만 manifest엔 아직 없음 — reference에서 Capture하면 추가됨)/제거 예정(지금은 manifest에 있지만 ignore돼 있어 Capture하면 빠짐)/제외됨(ignore돼 안정적으로 빠진 상태). follower 머신에서는 "추가 예정"이 "이 머신에만 있음"으로 표시됩니다 — follower는 Capture를 할 수 없어 "예정"이라는 말 자체가 성립하지 않고, 실제로는 "reference의 manifest엔 없는, 이 머신만의 항목"이라는 뜻이기 때문입니다.',
+    '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 ignore 처리하지만, manifest 반영(추가/제거)은 그 자리에서 즉시 일어나지 않고 reference의 다음 Capture 때 일어납니다 — 그래서 reference 머신에서 보류 중 변경이 있으면 배너로 Capture를 안내합니다.',
+    'follower 머신에서는 이 스위치·그룹 체크박스가 모두 비활성화되어 있습니다 — follower는 capture가 막혀 있어 이 화면에서 바꾼 값이 다시 커밋되지 않고, 이 머신에만 남아 효과가 없거나 reference가 나중에 같은 항목을 바꾸면 오히려 이 머신의 다음 동기화를 막을 수 있기 때문입니다. 바꾸려면 reference 머신에서 하세요.',
+    '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정 또는 이 머신에만 있음/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
     '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/fonts(설치된 파일 수)/binaries(설치된 실행파일 이름)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
-    '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다.',
+    '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다(follower에서는 비활성화).',
     'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님). 그래서 4상태 대신 "검출됨" 하나로만 표시되고, 스위치도 비활성화되어 있습니다(눌러도 동기화 결과에 아무 영향이 없기 때문).'
   ].join(' '),
   doctor: [
