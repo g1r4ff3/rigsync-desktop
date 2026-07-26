@@ -162,8 +162,13 @@ function looksLikeHighConfidenceValue(value: string): boolean {
 // 주의: 접두어 그룹은 `*?`(0회 이상, lazy)여야 한다 -- 식별자가 "API_KEY"처럼
 // 접두어 없이 바로 alternation으로 시작하는 경우, 앞에 강제로 1글자를 소비하는
 // 그룹을 두면 그 한 글자가 "API"의 "A"를 먹어버려 alternation 자체가 깨진다.
+// `_PASS`는 **선행 언더스코어를 요구**한다 -- 2026-07-26 실사례로 `RCLONE_PASS=`
+// (Zotero WebDAV 브리지 자격증명)가 이 층을 그대로 통과했다. 접미 `PASS`를 그냥
+// alternation에 넣으면 "BYPASS"·"PASSED" 같은 평범한 식별자까지 먹으므로,
+// 언더스코어 경계를 강제하고 뒤에 영숫자가 더 붙지 않는 경우만 인정한다
+// (RCLONE_PASS ✓ / BYPASS ✗ / PASSED ✗ / DB_PASSPHRASE는 PASSPHRASE로 별도 인정).
 const GENERIC_ASSIGNMENT_RE =
-  /\b([A-Za-z0-9_]*?(?:PASSWORD|SECRET|API[_-]?KEY|TOKEN|ACCESS[_-]?KEY)[A-Za-z0-9_]{0,20})\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|(\S+))/gi
+  /\b([A-Za-z0-9_]*?(?:PASSWORD|PASSPHRASE|PASSWD|_PASS(?![A-Za-z0-9])|SECRET|API[_-]?KEY|TOKEN|ACCESS[_-]?KEY)[A-Za-z0-9_]{0,20})\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|(\S+))/gi
 
 function scanGenericAssignmentsInLine(line: string, path: string, lineNo: number): SecretFinding[] {
   const findings: SecretFinding[] = []

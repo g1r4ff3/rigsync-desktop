@@ -110,6 +110,23 @@ describe('scanTextForSecrets — medium-confidence generic assignment', () => {
     expect(findings.some((f) => f.kind === 'generic-secret-assignment')).toBe(true)
   })
 
+  // 2026-07-26 실사례: Zotero WebDAV 브리지의 `RCLONE_PASS=`가 이 층을 통과했다.
+  // 접미 `_PASS`를 인정하되 언더스코어 경계를 강제해 평범한 식별자는 안 먹는다.
+  it('flags an underscore-bounded _PASS assignment (실사례: RCLONE_PASS)', () => {
+    const findings = findingsOf('RCLONE_PASS=aRealLookingValue123')
+    expect(findings.some((f) => f.kind === 'generic-secret-assignment')).toBe(true)
+  })
+
+  it('does NOT flag identifiers that merely contain the letters "pass"', () => {
+    expect(findingsOf('BYPASS=someRealLookingValue123')).toHaveLength(0)
+    expect(findingsOf('PASSED=anotherRealLookingValue')).toHaveLength(0)
+  })
+
+  it('flags PASSPHRASE / PASSWD variants', () => {
+    expect(findingsOf('GPG_PASSPHRASE=realLookingValue123').length).toBeGreaterThan(0)
+    expect(findingsOf('MYSQL_PASSWD=realLookingValue123').length).toBeGreaterThan(0)
+  })
+
   it('flags a SECRET/API_KEY/TOKEN assignment', () => {
     expect(findingsOf('API_KEY=abcdefgh12345678').length).toBeGreaterThan(0)
     expect(findingsOf('MY_SECRET="anotherRealLookingValue"').length).toBeGreaterThan(0)

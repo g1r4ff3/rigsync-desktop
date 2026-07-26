@@ -14,12 +14,27 @@ export const DENYLIST_PATTERNS: readonly string[] = [
   'known_hosts*',
   '*token*',
   '*.key',
-  'credentials*',
+  // 2026-07-26 확대: 구 repo는 `credentials*`(접두 고정)라 선행 점이 붙은
+  // `.git-credentials`·`.credentials_test`가 통과했다. 구 repo 이식 계약을
+  // 유지하지 않기로 한 결정(사용자 승인)에 따라 `*token*`·`*secret*`과 같은
+  // 형태로 넓힌다 — basename 어디에 있든 잡는다.
+  '*credentials*',
   '.env*',
   // C단계 실사례: "secrets.zsh" 같은 이름 기반 파일이 위 패턴 어디에도
   // 안 걸려 통과했다 — "secret"을 basename 어디에 두든(접두/접미/중간)
   // 잡히게 *token*과 같은 형태로 추가.
-  '*secret*'
+  '*secret*',
+  // 2026-07-26 실사례(Zotero WebDAV 브리지 세팅): 자격증명 파일 두 개가 이름
+  // 기반 방어를 그대로 통과했다.
+  //   ① "zotero-webdav.env" — `.env*`는 **선행 점**을 요구해서 안 걸린다.
+  //      확장자가 .env면 위치와 무관하게 환경변수 파일이므로 접미 형태로 추가.
+  //   ② "rclone.conf" — 이름은 평범한데 내용이 OAuth refresh token이다.
+  //      "이름은 무해, 내용은 자격증명" 부류는 개별 등재 외에 방법이 없다.
+  // 같은 부류로 알려진 `.netrc`도 함께 등재한다
+  // (`.git-credentials`는 위 `*credentials*` 확대로 이미 잡힌다).
+  '*.env',
+  'rclone.conf',
+  '.netrc'
 ]
 
 /**
