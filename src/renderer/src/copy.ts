@@ -59,6 +59,17 @@ export const syncItemStateCopy = {
   excluded: {
     label: '제외됨',
     description: 'ignore 처리되어 있어 다음 Capture도 다시 담지 않습니다.'
+  },
+  /**
+   * R7: detection-only 그룹(snap) 전용 상태 — 코디네이터가 스크린샷에서 발견한
+   * 자기모순("검출 전용" 그룹인데 "추가 예정"이라 표시) 수정. snap은 plan/apply
+   * 대상이 아니므로(FORWARD.md §7) 다른 네 상태처럼 "다음 Capture가 어떻게
+   * 바꿀지"를 말하지 않고, 그냥 이 머신에 있다는 사실만 말한다.
+   */
+  detected: {
+    label: '검출됨',
+    description:
+      '이 머신에서 발견됐습니다 — snap은 동기화 대상이 아니라 중복 설치 검출(INV-1)에만 쓰입니다.'
   }
 } as const
 
@@ -80,6 +91,28 @@ export function formatSyncItemStateSummary(counts: {
   if (counts.excluded > 0) parts.push(`${syncItemStateCopy.excluded.label} ${counts.excluded}`)
   return parts.join(' · ')
 }
+
+/**
+ * R7: detection-only 그룹(snap) 헤더 집계 — 4상태 요약과 다른 문구를 쓴다
+ * ("추가 예정 N"이 아니라 "검출됨 N"). 그룹 전체가 항상 `detected` 상태뿐이라
+ * 카운트 하나면 충분하다.
+ */
+export function formatDetectionOnlySummary(count: number): string {
+  return `${syncItemStateCopy.detected.label} ${count}`
+}
+
+/**
+ * R7: detection-only 그룹(snap)의 스위치·그룹 체크박스가 비활성인 이유.
+ * 코드로 확인한 실제 동작: ignore 토글은 `[snap] packages` ignore.toml만
+ * 갱신하는데, 이 값을 읽는 곳은 captureSnap/diffSnap뿐이고 diffSnap 결과는
+ * 어느 화면에도 안 보이며(DiffView가 의도적으로 숨김), planPackages는
+ * planSnap을 호출하지 않는다(plan.ts) — 그리고 INV-1 중복 검출(duplicates.ts)은
+ * 아예 다른 ignore 네임스페이스(`duplicates`/`names`)를 쓴다. 즉 이 화면에서
+ * 스위치를 눌러도 사용자가 관찰 가능한 결과가 전혀 없다 — 그래서 끄지 않고
+ * 비활성화한다(Explanability 계약 ②: 비활성 요소엔 반드시 이유).
+ */
+export const detectionOnlyDisabledReason =
+  'snap은 동기화 대상이 아닙니다 — 중복 설치 검출에만 사용합니다.'
 
 /** R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내". */
 export const pendingChangesCopy = {
@@ -155,7 +188,7 @@ export const helpCopy = {
     '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
     '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
     '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다.',
-    'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님).'
+    'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님). 그래서 4상태 대신 "검출됨" 하나로만 표시되고, 스위치도 비활성화되어 있습니다(눌러도 동기화 결과에 아무 영향이 없기 때문).'
   ].join(' '),
   doctor: [
     'Doctor는 rigsync가 자동화하지 않는 수동 설치·설정 상태를 점검합니다.',

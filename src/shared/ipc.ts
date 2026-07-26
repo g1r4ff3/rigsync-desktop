@@ -491,8 +491,12 @@ export type SyncItemCapability =
  * src/engine/syncItems.ts 참조):
  * synced=지금 동기화 중, pending-add=다음 Capture가 추가, pending-remove=다음
  * Capture가 제거, excluded=ignore돼 안정적으로 빠진 상태.
+ * R7: detected=detection-only 그룹(snap) 소속 항목의 유일한 상태 — managed×
+ * ignored와 무관하게 `withSyncItemState`가 덮어쓴다(snap은 plan/apply에서
+ * 빠져 있어 나머지 네 상태의 "다음 Capture가 어떻게 바꿀지" 질문 자체가
+ * 성립하지 않는다).
  */
-export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded'
+export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected'
 
 export interface SyncItemDto {
   readonly key: string

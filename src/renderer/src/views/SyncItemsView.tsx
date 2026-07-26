@@ -8,7 +8,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { captureAll } from '../captureAll'
 import {
   buttonCopy,
+  detectionOnlyDisabledReason,
   emptyStateCopy,
+  formatDetectionOnlySummary,
   formatSyncItemStateSummary,
   pendingChangesCopy,
   syncItemStateCopy
@@ -41,6 +43,14 @@ import type { EngineStatus, SyncItemGroupDto, SyncItemState } from '../../../sha
  * shadcn Tooltip을 안 쓰고 네이티브 `title` 속성만 쓴다 — 행마다 Radix
  * Portal을 띄우면 가상 스크롤 성능이 떨어진다. 구조적 컨트롤(검색창·그룹
  * 체크박스·상단 배너)에는 shadcn Tooltip/ActionButton을 쓴다.
+ *
+ * R7: detection-only 그룹(snap)은 위 4상태 모델에 태우지 않는다 — 코디네이터가
+ * 스크린샷에서 짚은 자기모순("검출 전용" 헤더인데 우측 집계는 "추가 예정",
+ * 스위치도 전부 켜짐) 수정. engine이 이미 이 그룹의 모든 항목을 `detected`
+ * 단일 상태로 덮어써서 보내주므로(`withSyncItemState`), 이 화면은 그 그룹을
+ * stateCounts가 아니라 `detectedCount` 하나로 집계하고, 화면 상단 전체 집계·
+ * 보류 배너 계산에서도 제외한다. 스위치·그룹 체크박스는 실제 효과가 없다는
+ * 걸 코드로 확인했으므로(copy.ts `detectionOnlyDisabledReason` 참조) 비활성화.
  */
 
 type GroupToggleState = 'all-synced' | 'all-ignored' | 'mixed'
@@ -62,8 +72,15 @@ type Row =
       readonly groupState: GroupToggleState
       /** 그룹 전체 항목의 key 목록(검색 필터와 무관 — 그룹 토글은 항상 전체 대상). */
       readonly allItemKeys: readonly string[]
-      /** 검색 필터와 무관하게 그룹 전체를 센 값(집계는 항상 전체 대상 — R6 R1). */
+      /**
+       * 검색 필터와 무관하게 그룹 전체를 센 값(집계는 항상 전체 대상 — R6 R1).
+       * R7: detectionOnly 그룹은 4상태 집계가 성립하지 않으므로 `detectedCount`만
+       * 채우고 이건 전부 0인 채로 둔다(렌더 쪽에서 detectionOnly면 이 필드를
+       * 안 쓴다 — 둘 다 갖고 있게 해 타입을 단순하게 유지).
+       */
       readonly stateCounts: StateCounts
+      /** R7: detectionOnly 그룹 전용 집계 — 비-detectionOnly 그룹은 항상 0. */
+      readonly detectedCount: number
     }
   | {
       readonly kind: 'item'
@@ -74,6 +91,8 @@ type Row =
       readonly description?: string
       readonly ignored: boolean
       readonly state: SyncItemState
+      /** R7: 소속 그룹이 detectionOnly면 스위치를 비활성화한다. */
+      readonly detectionOnly: boolean
     }
 
 function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
@@ -84,13 +103,19 @@ function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
   return 'mixed'
 }
 
+/**
+ * R7: 4상태 집계 — detectionOnly 그룹(항목이 전부 `detected`)에는 호출하지
+ * 않는다(호출부는 `detectedCount`를 쓴다). `detected`를 여기 섞으면 else
+ * 분기가 그걸 `excluded`로 잘못 세므로, 안전하게 명시 분기로 막아둔다.
+ */
 function computeStateCounts(items: SyncItemGroupDto['items']): StateCounts {
   const counts: StateCounts = { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
   return items.reduce((acc, item) => {
     if (item.state === 'synced') return { ...acc, synced: acc.synced + 1 }
     if (item.state === 'pending-add') return { ...acc, pendingAdd: acc.pendingAdd + 1 }
     if (item.state === 'pending-remove') return { ...acc, pendingRemove: acc.pendingRemove + 1 }
-    return { ...acc, excluded: acc.excluded + 1 }
+    if (item.state === 'excluded') return { ...acc, excluded: acc.excluded + 1 }
+    return acc
   }, counts)
 }
 
@@ -113,14 +138,22 @@ function groupCheckboxLabel(state: GroupToggleState): string {
   return '일부만 ignore됨(혼합) — 클릭하면 그룹 전체를 동기화 대상으로 되돌립니다'
 }
 
-/** 네이티브 checkbox는 `indeterminate`를 prop이 아니라 DOM 속성으로만 지원한다. */
+/**
+ * 네이티브 checkbox는 `indeterminate`를 prop이 아니라 DOM 속성으로만 지원한다.
+ * R7: `disabledReason`이 있으면(detectionOnly 그룹) 체크박스를 비활성화하고
+ * 그 이유를 툴팁으로 보여준다 — 일반 그룹의 groupCheckboxLabel 문구는 안 쓴다
+ * (동기화 대상이 아닌 그룹에 "ignore 처리합니다" 같은 문구를 다는 건 그 자체가
+ * real-world match 위반).
+ */
 function GroupCheckbox({
   state,
   disabled,
+  disabledReason,
   onClick
 }: {
   readonly state: GroupToggleState
   readonly disabled: boolean
+  readonly disabledReason?: string
   readonly onClick: () => void
 }): React.JSX.Element {
   return (
@@ -137,7 +170,7 @@ function GroupCheckbox({
           aria-label="그룹 전체 토글"
         />
       </TooltipTrigger>
-      <TooltipContent>{groupCheckboxLabel(state)}</TooltipContent>
+      <TooltipContent>{disabledReason ?? groupCheckboxLabel(state)}</TooltipContent>
     </Tooltip>
   )
 }
@@ -163,8 +196,14 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   }, [])
 
   // R6 R1: 화면 상단 집계는 검색 필터·그룹 구분과 무관하게 전체 항목을 센다.
+  // R7: detectionOnly 그룹(snap)은 4상태 개념이 성립하지 않으므로 이 집계와
+  // "보류 중인 변경" 배너 계산 둘 다에서 뺀다 — 그렇지 않으면 동기화 대상이
+  // 아닌 항목이 배너 숫자를 부풀린다(코디네이터가 발견한 23건 중 14건 snap 버그).
   const overallCounts = useMemo<StateCounts>(
-    () => mergeStateCounts((groups ?? []).map((g) => computeStateCounts(g.items))),
+    () =>
+      mergeStateCounts(
+        (groups ?? []).filter((g) => !g.detectionOnly).map((g) => computeStateCounts(g.items))
+      ),
     [groups]
   )
   const pendingCount = overallCounts.pendingAdd + overallCounts.pendingRemove
@@ -176,16 +215,22 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     for (const group of groups) {
       const items = q ? group.items.filter((i) => i.label.toLowerCase().includes(q)) : group.items
       if (items.length === 0) continue
+      const detectionOnly = !!group.detectionOnly
       out.push({
         kind: 'header',
         key: `h:${group.capability}`,
         title: `${group.title} (${items.length})`,
         capability: group.capability,
-        detectionOnly: !!group.detectionOnly,
+        detectionOnly,
         // 그룹 토글·집계는 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
         groupState: computeGroupState(group.items),
         allItemKeys: group.items.map((i) => i.key),
-        stateCounts: computeStateCounts(group.items)
+        // R7: detectionOnly면 stateCounts는 무의미하니 안 채우고(0으로 둠)
+        // detectedCount만 채운다 — 렌더가 detectionOnly 분기에서 골라 쓴다.
+        stateCounts: detectionOnly
+          ? { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
+          : computeStateCounts(group.items),
+        detectedCount: detectionOnly ? group.items.length : 0
       })
       for (const item of items) {
         out.push({
@@ -196,7 +241,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
           label: item.label,
           description: item.description,
           ignored: item.ignored,
-          state: item.state
+          state: item.state,
+          detectionOnly
         })
       }
     }
@@ -342,7 +388,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                     <>
                       <GroupCheckbox
                         state={row.groupState}
-                        disabled={!!pendingGroups[row.capability]}
+                        disabled={row.detectionOnly || !!pendingGroups[row.capability]}
+                        disabledReason={row.detectionOnly ? detectionOnlyDisabledReason : undefined}
                         onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
                       />
                       <span className="font-mono">{row.title}</span>
@@ -350,9 +397,13 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         <span className="text-status-muted">— detection-only</span>
                       )}
                       {/* R6 R1: 그룹 헤더 집계 — 검색 필터와 무관하게 그룹 전체 값,
-                          0건인 상태는 생략해 158행짜리 그룹에서도 잡음을 줄인다. */}
+                          0건인 상태는 생략해 158행짜리 그룹에서도 잡음을 줄인다.
+                          R7: detectionOnly는 4상태 요약이 아니라 "검출됨 N"만 말한다
+                          (동기화 대상이 아닌 그룹이 "추가 예정"을 말하는 자기모순 수정). */}
                       <span className="ml-auto shrink-0 truncate font-mono text-[10px] font-normal text-muted-foreground">
-                        {formatSyncItemStateSummary(row.stateCounts)}
+                        {row.detectionOnly
+                          ? formatDetectionOnlySummary(row.detectedCount)
+                          : formatSyncItemStateSummary(row.stateCounts)}
                       </span>
                     </>
                   ) : (
@@ -379,14 +430,19 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         // ("그룹 체크됨 + 항목 전부 꺼짐"이 둘 다 '동기화 대상'을 뜻하는 시각
                         // 모순). 엔진 쪽 ignore 의미는 그대로 두고 UI 표시만 반전한다 —
                         // 켜짐 = 동기화 대상에 포함(그룹 체크박스와 같은 극성).
+                        // R7: detectionOnly 항목은 이 스위치를 눌러도 관찰 가능한 효과가
+                        // 없다는 걸 코드로 확인했다(copy.ts detectionOnlyDisabledReason
+                        // 주석 참조) — 비활성화하고 이유를 title로 노출한다.
                         checked={!row.ignored}
-                        disabled={pendingKeys[row.key]}
+                        disabled={row.detectionOnly || pendingKeys[row.key]}
                         onCheckedChange={(checked) => toggle(row.capability, row.itemKey, !checked)}
                         aria-label={`${row.label} 동기화 포함 토글`}
                         title={
-                          row.ignored
-                            ? '무시됨 — 클릭하면 동기화 대상에 포함'
-                            : '동기화 대상에 포함됨 — 클릭하면 무시(제외)'
+                          row.detectionOnly
+                            ? detectionOnlyDisabledReason
+                            : row.ignored
+                              ? '무시됨 — 클릭하면 동기화 대상에 포함'
+                              : '동기화 대상에 포함됨 — 클릭하면 무시(제외)'
                         }
                       />
                     </>

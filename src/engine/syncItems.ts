@@ -46,10 +46,20 @@ export interface SyncItem {
  *   켜졌으니 다음 Capture가 additive-only의 유일한 예외로 제거할 것.
  * - excluded: !managed && ignored — manifest에도 없고 ignore돼 있어 다음
  *   Capture도 담지 않을 안정 상태.
+ * - detected: detection-only 그룹(snap) 소속 항목의 유일한 상태. 이 네 상태는
+ *   전부 "다음 Capture가 manifest를 어떻게 바꿀지"를 말하는데, snap은 plan/apply
+ *   에서 완전히 빠져있어(`SyncItemGroup.detectionOnly`, FORWARD.md §7) 그 질문
+ *   자체가 성립하지 않는다 — managed×ignored를 그대로 4상태에 태우면 "동기화
+ *   대상이 아님"이라 적어둔 그룹이 "추가 예정"을 말하는 자기모순이 생긴다
+ *   (R7 코디네이터 스크린샷 발견). `computeSyncItemState`는 그래서 이 상태를
+ *   모른다 — 소비 지점(`withSyncItemState`)이 그룹의 `detectionOnly` 플래그를
+ *   보고 이 단일 상태로 덮어쓴다.
  */
-export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded'
+export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected'
 
-export function computeSyncItemState(item: Pick<SyncItem, 'managed' | 'ignored'>): SyncItemState {
+export function computeSyncItemState(
+  item: Pick<SyncItem, 'managed' | 'ignored'>
+): Exclude<SyncItemState, 'detected'> {
   if (item.managed && !item.ignored) return 'synced'
   if (!item.managed && !item.ignored) return 'pending-add'
   if (item.managed && item.ignored) return 'pending-remove'
@@ -86,13 +96,19 @@ export interface SyncItemGroupWithState extends Omit<SyncItemGroup, 'items'> {
  * 갈라두면 `listSyncItemGroups` 자체의 반환 shape·기존 테스트(정확히
  * {key,label,managed,ignored}만 기대)는 그대로 두고, IPC 경계(main/ipc.ts)에서만
  * 이 함수로 감싸 renderer DTO에 `state`를 실어 보낸다.
+ *
+ * R7: `detectionOnly` 그룹(snap)의 항목은 managed×ignored 4상태를 계산하지
+ * 않고 전부 `detected`로 덮어쓴다 — 위 `SyncItemState` 주석 참조.
  */
 export function withSyncItemState(
   groups: readonly SyncItemGroup[]
 ): readonly SyncItemGroupWithState[] {
   return groups.map((group) => ({
     ...group,
-    items: group.items.map((item) => ({ ...item, state: computeSyncItemState(item) }))
+    items: group.items.map((item) => ({
+      ...item,
+      state: group.detectionOnly ? ('detected' as const) : computeSyncItemState(item)
+    }))
   }))
 }
 

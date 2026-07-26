@@ -13,14 +13,19 @@ const ICON_BY_STATE = {
   synced: CheckCircle2,
   'pending-add': PlusCircle,
   'pending-remove': MinusCircle,
-  excluded: Circle
+  excluded: Circle,
+  // R7: detection-only(snap) 항목 — excluded와 같은 중립 모양(Circle)을 쓰지만
+  // 별개 개념이다(excluded=ignore로 안정적으로 빠짐, detected=애초에 동기화
+  // 대상권 밖). 색은 같은 muted라 라벨/툴팁 문구로 구분한다(syncItemStateCopy).
+  detected: Circle
 } as const
 
 const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
   synced: 'text-status-ok',
   'pending-add': 'text-status-warn',
   'pending-remove': 'text-status-warn',
-  excluded: 'text-status-muted'
+  excluded: 'text-status-muted',
+  detected: 'text-status-muted'
 }
 
 export function CandidateStateIcon({

@@ -72,6 +72,50 @@ describe('withSyncItemState', () => {
       'excluded'
     ])
   })
+
+  // R7: 코디네이터 스크린샷 발견 — snap(detectionOnly) 그룹 헤더는 "검출 전용 —
+  // 동기화 대상 아님"인데 항목은 4상태 모델을 그대로 태워 "추가 예정"으로
+  // 나온 자기모순이 있었다. detectionOnly 그룹은 managed×ignored 조합과
+  // 무관하게 전부 'detected' 하나로 나와야 한다.
+  it('overrides every state to "detected" for a detectionOnly group, regardless of managed/ignored', () => {
+    const groups = withSyncItemState([
+      {
+        capability: 'snap',
+        title: 'snap (검출 전용 — 동기화 대상 아님)',
+        detectionOnly: true,
+        items: [
+          { key: 'a', label: 'a', managed: true, ignored: false },
+          { key: 'b', label: 'b', managed: false, ignored: false },
+          { key: 'c', label: 'c', managed: true, ignored: true },
+          { key: 'd', label: 'd', managed: false, ignored: true }
+        ]
+      }
+    ])
+    expect(groups[0].items.map((i) => i.state)).toEqual([
+      'detected',
+      'detected',
+      'detected',
+      'detected'
+    ])
+  })
+
+  it('leaves non-detectionOnly groups on the 4-state model when mixed with a detectionOnly group', () => {
+    const groups = withSyncItemState([
+      {
+        capability: 'apt',
+        title: 'apt',
+        items: [{ key: 'a', label: 'a', managed: false, ignored: false }]
+      },
+      {
+        capability: 'snap',
+        title: 'snap (검출 전용 — 동기화 대상 아님)',
+        detectionOnly: true,
+        items: [{ key: 'b', label: 'b', managed: false, ignored: false }]
+      }
+    ])
+    expect(groups[0].items[0].state).toBe('pending-add')
+    expect(groups[1].items[0].state).toBe('detected')
+  })
 })
 
 // R6 R1 검증 기준: "Capture 실행 후 이 화면이 갱신되어 '추가 예정'이 '동기화
