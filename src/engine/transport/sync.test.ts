@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LinuxGitTransportProvider } from '../providers/linux/gitTransport'
 import { getSyncStatus, syncFollower, syncReference } from './sync'
 
+// 픽스처 주의(★): public repo -- 실제 토큰 형식을 흉내내지 않도록 `.repeat()`로
+// 조립한 반복 단어 더미만 쓴다(engine/safety/secretScan.test.ts와 동일 원칙).
+const FAKE_GITHUB_PAT = 'ghp_' + 'FAKE'.repeat(9)
+
 // git 실행은 전부 temp dir 안의 로컬 bare 원격 + 로컬 clone 사이에서만
 // 일어난다(네트워크 없음, 안전 -- 코디네이터 지시).
 
@@ -124,6 +128,39 @@ describe('git transport (real local git, no network)', () => {
       provider
     )
     expect(status.kind).toBe('error')
+  })
+
+  // ⑤ push 직전 재검사 -- capture 관문을 우회해(여기서는 테스트가 직접 파일을
+  // 써서 시뮬레이션) manifest에 비밀이 실렸다면, 커밋은 허용하되(로컬, 회수
+  // 가능) push는 막고 에러로 표면화해야 한다.
+  it('syncReference commits but refuses to push when the manifest contains a secret', async () => {
+    fs.mkdirSync(path.join(fixture.referenceDir, 'common'), { recursive: true })
+    fs.writeFileSync(
+      path.join(fixture.referenceDir, 'common', 'leaky.toml'),
+      `token = "${FAKE_GITHUB_PAT}"\n`
+    )
+
+    const status = await syncReference(
+      { manifestDir: fixture.referenceDir, machineId: 'testhost' },
+      provider
+    )
+
+    expect(status.kind).toBe('error')
+    if (status.kind === 'error') {
+      expect(status.message).toContain('push 중단')
+      expect(status.message).not.toContain(FAKE_GITHUB_PAT)
+    }
+    // 커밋은 됐어야 한다(로컬, 회수 가능) -- push만 막힌다.
+    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
+      encoding: 'utf-8'
+    })
+    expect(log.stdout.trim()).toMatch(/^capture: testhost \d{4}-\d{2}-\d{2}$/)
+    // 원격(bare repo)엔 아직 새 커밋이 안 보여야 한다 -- push가 실제로 안 갔다는 증거.
+    const remoteLog = spawnSync('git', ['-C', fixture.bareDir, 'log', '-1', '--pretty=%s'], {
+      encoding: 'utf-8'
+    })
+    expect(remoteLog.stdout.trim()).not.toMatch(/^capture: testhost/)
   })
 
   it('syncFollower fetches and fast-forward pulls a new commit from the reference', async () => {

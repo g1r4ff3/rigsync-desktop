@@ -3,6 +3,13 @@
  * 구 repo `capture_services`/`diff_services`/`plan_services`(rigsync.py:1542-1610)
  * 행동을 옮긴 것(코드 복사 아님).
  */
+import type { SecretFinding } from '../../safety/secretScan'
+
+/** 내용 수준 비밀 스캔에 걸려 스토어에 담기지 않은 unit 하나. */
+export interface ServicesSecretScanBlockedEntry {
+  readonly name: string
+  readonly findings: readonly SecretFinding[]
+}
 
 export interface ServiceUnitEntry {
   readonly name: string
@@ -17,6 +24,9 @@ export interface ServicesManifest {
 
 export interface ServicesCaptureReport {
   readonly captured: number
+  /** 내용 수준 비밀 스캔에 걸려 캡처에서 제외된 unit 수. */
+  readonly skippedSecretScan: number
+  readonly secretScanBlocked: readonly ServicesSecretScanBlockedEntry[]
 }
 
 export interface ServicesDiffReport {

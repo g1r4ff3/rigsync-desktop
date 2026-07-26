@@ -3,6 +3,14 @@
  * manifest TOML 스키마(`[[entry]]` — home/store/type/link/mode)를 그대로
  * 따른다(정신적 호환 — CLAUDE.md "manifest 포맷은 TOML 유지").
  */
+import type { SecretFinding } from '../../safety/secretScan'
+
+/** 내용 수준 비밀 스캔에 걸려 스토어에 담기지 않은 entry 하나. */
+export interface SecretScanBlockedEntry {
+  readonly home: string
+  /** 절대 원문 값을 담지 않는다 — 경로+줄 번호+패턴 종류+마스킹된 발췌뿐. */
+  readonly findings: readonly SecretFinding[]
+}
 
 export interface DotfileEntry {
   /** `~` 축약형 홈 경로. manifest의 유일 키(host overlay key field). */
@@ -27,6 +35,10 @@ export interface CaptureReport {
   readonly skippedInvalidStore: number
   /** ignore.toml에 의해 건너뛴(그리고 manifest에서 제거된) 엔트리 수. */
   readonly ignored: number
+  /** 내용 수준 비밀 스캔에 걸려 스토어·manifest 어느 쪽에도 담기지 않은 entry 수. */
+  readonly skippedSecretScan: number
+  /** 차단된 entry별 상세(경로+줄 번호+패턴 종류만 — 값은 절대 없음). */
+  readonly secretScanBlocked: readonly SecretScanBlockedEntry[]
   readonly notes: readonly string[]
 }
 

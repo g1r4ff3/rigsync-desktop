@@ -3,10 +3,16 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { effectiveLayer, writeCommonLayer } from '../../manifest'
 import { matchesDenylist } from '../../safety/denylist'
+import { SECRET_ALLOWLIST_LAYER } from '../../safety/secretAllowlist'
 import { captureDotfiles, FollowerCaptureBlockedError } from './capture'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
 import type { DotfileEntry } from './types'
+
+// 픽스처 주의(★): 이 repo는 public이다 -- 실제 토큰 형식을 그대로 흉내내지
+// 않도록 `.repeat()`로 조립한 반복 단어 더미만 쓴다(secretScan.test.ts와
+// 동일 원칙).
+const FAKE_GITHUB_PAT = 'ghp_' + 'FAKE'.repeat(9)
 
 // 케이스 출처: 구 repo ~/repos/rigsync/tests/test_dotfiles.py (행동만 옮김).
 
@@ -150,5 +156,66 @@ describe('captureDotfiles', () => {
     const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
     expect(homes).not.toContain('~/.local/bin/sync-claude-to-opencode.sh')
     expect(report.ignored).toBe(1)
+  })
+
+  // 신규: 내용 수준 비밀 스캔 -- 이름이 평범한 파일(denylist 통과) 안에 박힌
+  // 비밀은 별도 관문(scanTreeForSecrets)이 잡아야 한다(실제 사고 직전 사례:
+  // ~/.zshrc 안의 GitHub PAT).
+  describe('content-level secret scan gate', () => {
+    it('blocks an entry whose ordinary-named file contains a high-confidence secret', async () => {
+      writeHomeFile(fixture, '.zshrc', `export GITHUB_TOKEN=${FAKE_GITHUB_PAT}\n`)
+
+      const report = await captureDotfiles(fixture.ctx, { dryRun: false })
+
+      expect(report.skippedSecretScan).toBeGreaterThanOrEqual(1)
+      const blocked = report.secretScanBlocked.find((b) => b.home === '~/.zshrc')
+      expect(blocked).toBeDefined()
+      expect(blocked!.findings.some((f) => f.kind === 'github-pat')).toBe(true)
+      // 값 비노출: 리포트 어디에도 원문 토큰이 담기면 안 된다.
+      expect(JSON.stringify(report)).not.toContain(FAKE_GITHUB_PAT)
+
+      const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+      const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+      expect(homes).not.toContain('~/.zshrc')
+
+      const storePath = path.join(fixture.manifestDir, 'dotfiles', '.zshrc')
+      expect(fs.existsSync(storePath)).toBe(false)
+    })
+
+    it('does not block an ordinary dotfile with no secret-looking content', async () => {
+      writeHomeFile(fixture, '.zshrc', 'export EDITOR=vim\nalias ll="ls -la"\n')
+
+      const report = await captureDotfiles(fixture.ctx, { dryRun: false })
+
+      expect(report.skippedSecretScan).toBe(0)
+      expect(report.secretScanBlocked).toHaveLength(0)
+      const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+      const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+      expect(homes).toContain('~/.zshrc')
+    })
+
+    it('an allowlisted (path,kind) pair is not blocked', async () => {
+      writeHomeFile(fixture, '.zshrc', `export GITHUB_TOKEN=${FAKE_GITHUB_PAT}\n`)
+      writeCommonLayer(fixture.ctx, SECRET_ALLOWLIST_LAYER, {
+        allow: [{ path: '~/.zshrc', kind: 'github-pat' }]
+      })
+
+      const report = await captureDotfiles(fixture.ctx, { dryRun: false })
+
+      expect(report.skippedSecretScan).toBe(0)
+      const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+      const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+      expect(homes).toContain('~/.zshrc')
+    })
+
+    it('dry-run still reports the block but writes nothing (preview, not silent)', async () => {
+      writeHomeFile(fixture, '.zshrc', `export GITHUB_TOKEN=${FAKE_GITHUB_PAT}\n`)
+
+      const report = await captureDotfiles(fixture.ctx, { dryRun: true })
+
+      expect(report.skippedSecretScan).toBeGreaterThanOrEqual(1)
+      expect(fs.existsSync(path.join(fixture.manifestDir, 'dotfiles', '.zshrc'))).toBe(false)
+      expect(fs.existsSync(path.join(fixture.manifestDir, 'common', 'dotfiles.toml'))).toBe(false)
+    })
   })
 })

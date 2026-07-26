@@ -6,6 +6,13 @@
  * - role='follower'면 즉시 거부 (불변식 ⑦) — `FollowerCaptureBlockedError`.
  * - denylist 매치는 어떤 경로로도 담기지 않는다 (불변식 ③) — 스토어에 복사도,
  *   manifest 기록도 안 한다.
+ * - 내용 수준 비밀 스캔(denylist는 파일 **이름**만 보므로, 이름이 평범한
+ *   파일 안의 비밀은 이름 기반 denylist를 통과한다 — 실제 사고 직전 사례:
+ *   `~/.zshrc` 안의 GitHub PAT)도 같은 원칙으로 막는다. entry가 파일이든
+ *   디렉터리 트리든 `scanTreeForSecrets`로 전체를 스캔해 allowlist에 없는
+ *   고신뢰/중간신뢰 매치가 하나라도 있으면 그 entry 전체를 스토어에 담지
+ *   않는다(denylist와 동일한 entry 단위 granularity — 디렉터리 내 개별
+ *   파일만 선별 차단하지는 않는다, 아래 `captureDotfiles` 주석의 한계 참고).
  * - additive-only (불변식 ④) — 기존 manifest 항목 제거는 안 하고(denylist·ignore
  *   매치 제외), 새 항목 추가만 한다. ignore는 additive-only의 유일한 예외
  *   (이미 manifest에 있던 항목도 ignore되면 제거된다 — `tests/test_ignore.py`
@@ -26,10 +33,12 @@ import {
 } from '../../manifest'
 import { expandHome } from '../../paths'
 import { matchesDenylist } from '../../safety/denylist'
+import { filterAllowlistedFindings, readSecretAllowlist } from '../../safety/secretAllowlist'
+import { scanTreeForSecrets } from '../../safety/secretScan'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { copyTreeMirror, resolveDotfileStorePath } from './fsTree'
 import { SEED_DOTFILES } from './seed'
-import type { CaptureReport, DotfileEntry } from './types'
+import type { CaptureReport, DotfileEntry, SecretScanBlockedEntry } from './types'
 
 export class FollowerCaptureBlockedError extends Error {
   constructor() {
@@ -90,6 +99,7 @@ export async function captureDotfiles(
 
   const entries = new Map<string, DotfileEntry>([...commonEntries, ...hostOnlyEntries])
   const ignoreHomes = readIgnoreSet(ctx, 'dotfiles', 'homes')
+  const secretAllowlist = readSecretAllowlist(ctx)
 
   let copied = 0
   let alreadyLinked = 0
@@ -98,8 +108,10 @@ export async function captureDotfiles(
   let skippedBrokenSymlink = 0
   let skippedInvalidStore = 0
   let ignored = 0
+  let skippedSecretScan = 0
   const notes: string[] = []
   const denylistedHomes = new Set<string>()
+  const secretScanBlocked: SecretScanBlockedEntry[] = []
 
   for (const [home, entry] of entries) {
     if (ignoreHomes.has(home)) {
@@ -144,6 +156,19 @@ export async function captureDotfiles(
       }
     }
 
+    // capture 직전 차단(핵심 관문) — denylist(이름 기반)를 통과했더라도 내용
+    // 자체에 고신뢰/중간신뢰 비밀 패턴이 있으면 이 entry는 스토어에 들어가지
+    // 않는다. entry가 디렉터리면 트리 전체를 스캔한다(파일 하나만 보지 않음).
+    const scanResult = scanTreeForSecrets(homePath, home)
+    const blockedFindings = filterAllowlistedFindings(secretAllowlist, scanResult.findings)
+    if (blockedFindings.length > 0) {
+      skippedSecretScan += 1
+      secretScanBlocked.push({ home, findings: blockedFindings })
+      notes.push(`refused (secret scan): ${home} -- ${blockedFindings.length}건 감지`)
+      denylistedHomes.add(home) // manifest additive-only의 유일한 예외 경로를 재사용 -- 이전부터 있었어도 제거한다.
+      continue
+    }
+
     if (!options.dryRun) {
       const treeSkipped = copyTreeMirror(homePath, storePath)
       if (treeSkipped.length > 0) {
@@ -154,7 +179,7 @@ export async function captureDotfiles(
     copied += 1
   }
 
-  // denylist·ignore 매치는 이전부터 manifest에 있었더라도 절대 남지 않는다.
+  // denylist·secret scan·ignore 매치는 이전부터 manifest에 있었더라도 절대 남지 않는다.
   for (const home of denylistedHomes) commonEntries.delete(home)
   for (const home of ignoreHomes) commonEntries.delete(home)
 
@@ -174,6 +199,8 @@ export async function captureDotfiles(
     skippedBrokenSymlink,
     skippedInvalidStore,
     ignored,
+    skippedSecretScan,
+    secretScanBlocked,
     notes
   }
 }

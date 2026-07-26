@@ -2,12 +2,15 @@
  * scheduled(cron) 리포트 타입. 구 repo `capture_cron`/`diff_cron`/`plan_cron`
  * (rigsync.py:1613-1655) 행동을 옮긴 것(코드 복사 아님).
  */
+import type { SecretFinding } from '../../safety/secretScan'
 
 export interface ScheduledCaptureReport {
   readonly skipped: boolean
   readonly captured: boolean
   readonly lines: number
   readonly note?: string
+  /** 내용 수준 비밀 스캔에 걸려 캡처가 통째로 차단됐는지 (파일 단위 계약이라 부분 캡처 없음). */
+  readonly secretScanBlocked: readonly SecretFinding[]
 }
 
 /**

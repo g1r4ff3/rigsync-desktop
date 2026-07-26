@@ -6,6 +6,10 @@ import { captureScheduled, FollowerScheduledCaptureBlockedError } from './captur
 import { SCHEDULED_STORE_REL_PATH } from './constants'
 import { makeFakeCronProvider } from './testHelpers'
 
+// 픽스처 주의(★): public repo -- 실제 토큰 형식을 흉내내지 않도록 `.repeat()`로
+// 조립한 반복 단어 더미만 쓴다.
+const FAKE_GITHUB_PAT = 'ghp_' + 'FAKE'.repeat(9)
+
 // 케이스 출처: 구 repo rigsync.py capture_cron 행동(코드 복사 아님). 파일 단위
 // 캡처(라인 단위 아님)라는 계약을 유지한다 — 정책이 명시한 계승 함정.
 
@@ -64,6 +68,30 @@ describe('captureScheduled', () => {
     )
     expect(report.captured).toBe(true)
     expect(fs.existsSync(path.join(fixture.ctx.manifestDir, SCHEDULED_STORE_REL_PATH))).toBe(false)
+    fixture.cleanup()
+  })
+
+  it('blocks the whole crontab capture when a high-confidence secret is present', async () => {
+    const fixture = makeFixture('reference')
+    const tab = `0 * * * * curl -H "Authorization: token ${FAKE_GITHUB_PAT}" https://example.com\n`
+    const report = await captureScheduled(fixture.ctx, makeFakeCronProvider({ crontab: tab }), {
+      dryRun: false
+    })
+    expect(report.captured).toBe(false)
+    expect(report.secretScanBlocked.some((f) => f.kind === 'github-pat')).toBe(true)
+    expect(JSON.stringify(report)).not.toContain(FAKE_GITHUB_PAT)
+    expect(fs.existsSync(path.join(fixture.ctx.manifestDir, SCHEDULED_STORE_REL_PATH))).toBe(false)
+    fixture.cleanup()
+  })
+
+  it('does not block an ordinary crontab with no secret-looking content', async () => {
+    const fixture = makeFixture('reference')
+    const tab = '0 * * * * /usr/bin/backup\n'
+    const report = await captureScheduled(fixture.ctx, makeFakeCronProvider({ crontab: tab }), {
+      dryRun: false
+    })
+    expect(report.captured).toBe(true)
+    expect(report.secretScanBlocked).toHaveLength(0)
     fixture.cleanup()
   })
 })

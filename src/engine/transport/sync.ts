@@ -5,6 +5,7 @@
  * reference/follower일 때 동기화를 어떻게 하는가"만 판단한다.
  */
 import type { RigsyncContext } from '../context'
+import { scanManifestForSecrets } from '../safety/manifestScan'
 import type { GitTransportProvider, SyncStatus } from './types'
 
 /** 부작용 없는 상태 조회 — behindCount는 마지막 fetch 기준이라 갱신하려면 fetch를 먼저 해야 한다. */
@@ -19,7 +20,19 @@ export function getSyncStatus(
   return behindBy > 0 ? { kind: 'behind', behindBy } : { kind: 'synced' }
 }
 
-/** reference: 미커밋 변경이 있으면 커밋(`capture: <machineId> <ISO date>`) 후 push. */
+/**
+ * reference: 미커밋 변경이 있으면 커밋(`capture: <machineId> <ISO date>`) 후 push.
+ *
+ * ⑤ push 직전 재검사(이중 안전망) — 각 capability의 capture 관문을 어떤 경로로든
+ * 우회해 manifest에 비밀이 실렸을 가능성(수동 편집, 관문 도입 전 캡처분 등)에
+ * 대비해 **push 바로 직전**에 manifest 전체를 다시 스캔한다. 커밋까지는 허용한다
+ * (로컬이라 회수 가능 — 안 하면 다음 capture까지 변경분이 통째로 묶여버린다)
+ * 지만, **push는 여기서 막는다**(원격 이력에 박히면 회수가 어렵다 -- 코디네이터
+ * 지시). 새 SyncStatus kind를 만들지 않고 기존 'error' kind를 재사용한다 --
+ * 렌더러의 에러 상태 렌더링(상태바 메시지)이 이미 "무엇을 해야 하는지"를
+ * 그대로 보여주므로 렌더러 쪽 변경 없이 Explanability contract의 State 층을
+ * 만족한다.
+ */
 export async function syncReference(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
   provider: GitTransportProvider
@@ -32,6 +45,20 @@ export async function syncReference(
     const commit = provider.addAllAndCommit(ctx.manifestDir, message)
     if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
   }
+
+  const scan = scanManifestForSecrets(ctx)
+  if (scan.blocked) {
+    const paths = [...new Set(scan.findings.map((f) => f.path))]
+    return {
+      kind: 'error',
+      message:
+        `push 중단 -- manifest에 비밀로 의심되는 값이 있습니다 (${scan.findings.length}건, ` +
+        `경로 ${paths.length}개: ${paths.slice(0, 3).join(', ')}${paths.length > 3 ? ' 등' : ''}). ` +
+        'Doctor의 "Secret scan"에서 확인 후 common/secret-allowlist.toml에 등록하거나 ' +
+        '해당 파일을 제외한 뒤 다시 캡처하세요.'
+    }
+  }
+
   const push = provider.push(ctx.manifestDir)
   if (!push.ok)
     return { kind: 'error', message: push.output || 'push 실패 -- "지금 동기화"로 재시도하세요' }

@@ -8,6 +8,10 @@ import { SERVICES_LAYER } from './constants'
 import { makeFakeSystemdUserProvider } from './testHelpers'
 import type { ServicesManifest } from './types'
 
+// 픽스처 주의(★): public repo -- 실제 토큰 형식을 흉내내지 않도록 `.repeat()`로
+// 조립한 반복 단어 더미만 쓴다.
+const FAKE_GITHUB_PAT = 'ghp_' + 'FAKE'.repeat(9)
+
 // 케이스 출처: 구 repo rigsync.py capture_services 행동(코드 복사 아님).
 
 describe('captureServices', () => {
@@ -55,6 +59,35 @@ describe('captureServices', () => {
     expect(report.captured).toBe(1)
     const manifest = readCommonLayer(fixture.ctx, SERVICES_LAYER) as ServicesManifest
     expect(manifest.unit ?? []).toEqual([])
+    fixture.cleanup()
+  })
+
+  it('blocks only the unit containing a secret, capturing the rest normally', async () => {
+    const fixture = makeFixture('reference')
+    const provider = makeFakeSystemdUserProvider({
+      units: [
+        { name: 'clean.service', content: '[Service]\nExecStart=/bin/true\n' },
+        {
+          name: 'leaky.service',
+          content: `[Service]\nEnvironment=GITHUB_TOKEN=${FAKE_GITHUB_PAT}\n`
+        }
+      ]
+    })
+    const report = await captureServices(fixture.ctx, provider, { dryRun: false })
+
+    expect(report.captured).toBe(1)
+    expect(report.skippedSecretScan).toBe(1)
+    expect(report.secretScanBlocked).toHaveLength(1)
+    expect(report.secretScanBlocked[0].name).toBe('leaky.service')
+    expect(JSON.stringify(report)).not.toContain(FAKE_GITHUB_PAT)
+
+    const manifest = readCommonLayer(fixture.ctx, SERVICES_LAYER) as ServicesManifest
+    const names = (manifest.unit ?? []).map((u) => u.name)
+    expect(names).toContain('clean.service')
+    expect(names).not.toContain('leaky.service')
+    expect(
+      fs.existsSync(path.join(fixture.ctx.manifestDir, 'services', 'systemd-user', 'leaky.service'))
+    ).toBe(false)
     fixture.cleanup()
   })
 })

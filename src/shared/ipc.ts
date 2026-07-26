@@ -9,6 +9,31 @@
  * 바뀌면 main의 핸들러가 컴파일 에러로 어긋남을 알려준다).
  */
 
+// ---------------------------------------------------------------------------
+// 내용 수준 비밀 스캔 — capability 여러 곳(dotfiles/scheduled/services capture,
+// doctor secret scan)이 공유하는 finding shape. **원문 값은 절대 담지 않는다**
+// (경로+줄 번호+패턴 종류+마스킹된 발췌만 — src/engine/safety/secretScan.ts 참조).
+// ---------------------------------------------------------------------------
+
+export type SecretPatternKindDto =
+  | 'github-pat'
+  | 'aws-access-key'
+  | 'slack-token'
+  | 'google-api-key'
+  | 'anthropic-api-key'
+  | 'openai-api-key'
+  | 'pem-private-key'
+  | 'generic-secret-assignment'
+
+export interface SecretFindingDto {
+  readonly path: string
+  readonly line: number
+  readonly kind: SecretPatternKindDto
+  readonly confidence: 'high' | 'medium'
+  readonly label: string
+  readonly maskedExcerpt: string
+}
+
 export const IPC_CHANNELS = {
   enginePing: 'engine:ping',
   engineGetStatus: 'engine:getStatus',
@@ -169,6 +194,11 @@ export interface CaptureDotfilesRequest {
   readonly dryRun: boolean
 }
 
+export interface DotfilesSecretScanBlockedEntryDto {
+  readonly home: string
+  readonly findings: readonly SecretFindingDto[]
+}
+
 export interface DotfilesCaptureReport {
   readonly capability: 'dotfiles'
   readonly seededNew: number
@@ -179,6 +209,9 @@ export interface DotfilesCaptureReport {
   readonly skippedBrokenSymlink: number
   readonly skippedInvalidStore: number
   readonly ignored: number
+  /** 내용 수준 비밀 스캔에 걸려 스토어·manifest 어느 쪽에도 담기지 않은 entry 수. */
+  readonly skippedSecretScan: number
+  readonly secretScanBlocked: readonly DotfilesSecretScanBlockedEntryDto[]
   readonly notes: readonly string[]
 }
 
@@ -350,8 +383,15 @@ export interface ServicesDiffReportDto {
   readonly enabledMismatch: readonly string[]
 }
 
+export interface ServicesSecretScanBlockedEntryDto {
+  readonly name: string
+  readonly findings: readonly SecretFindingDto[]
+}
+
 export interface ServicesCaptureReportDto {
   readonly captured: number
+  readonly skippedSecretScan: number
+  readonly secretScanBlocked: readonly ServicesSecretScanBlockedEntryDto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +413,8 @@ export interface ScheduledCaptureReportDto {
   readonly captured: boolean
   readonly lines: number
   readonly note?: string
+  /** 내용 수준 비밀 스캔에 걸려 캡처가 통째로 차단됐는지 (파일 단위 계약이라 부분 캡처 없음). */
+  readonly secretScanBlocked: readonly SecretFindingDto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -467,12 +509,19 @@ export interface DoctorFontsPreflightDto {
   readonly warnings: readonly string[]
 }
 
+/** manifest 스토어 전체 소급 시크릿 스캔(⑥) -- capture 관문 우회분을 잡는 마지막 안전망. */
+export interface DoctorSecretScanPreflightDto {
+  readonly blockedFindings: readonly SecretFindingDto[]
+  readonly warnings: readonly string[]
+}
+
 export interface DoctorReportDto {
   readonly basic: DoctorBasicDiagnosticsDto
   readonly checks: readonly DoctorCheckResultDto[]
   readonly appimage: DoctorAppimagePreflightDto
   readonly fonts: DoctorFontsPreflightDto
   readonly nvidia: DoctorNvidiaCheckDto
+  readonly secretScan: DoctorSecretScanPreflightDto
   readonly checksVisible: boolean
   readonly exitCode: number
 }
