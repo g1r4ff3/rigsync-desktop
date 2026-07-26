@@ -6,7 +6,12 @@ import { helpCopy, tabCopy } from './copy'
 import { SCREENSHOT_GOTO_EVENT } from './screenshotBus'
 import { StatusText } from './status'
 import { syncStatusKind } from './statusKind'
-import type { EngineStatus, ScreenshotRoute, SyncStatusDto } from '../../shared/ipc'
+import type {
+  EngineStatus,
+  ManifestSourceMode,
+  ScreenshotRoute,
+  SyncStatusDto
+} from '../../shared/ipc'
 import DiffView from './views/DiffView'
 import DoctorView from './views/DoctorView'
 import OnboardingView from './views/OnboardingView'
@@ -34,6 +39,9 @@ function App(): React.JSX.Element {
   const [syncStatus, setSyncStatus] = useState<SyncStatusDto | null>(null)
   // R4: 스크린샷 하네스가 firstRun과 무관하게 온보딩 화면을 강제로 띄울 때만 true.
   const [forceOnboarding, setForceOnboarding] = useState(false)
+  // R4: 'onboarding-clone' route 전용 -- 클론 탭이 미리 선택된 온보딩 화면을 캡처하려고
+  // OnboardingView의 initialManifestSource를 강제한다(스크린샷 하네스 전용, 평상시 미사용).
+  const [onboardingPreset, setOnboardingPreset] = useState<ManifestSourceMode | undefined>()
 
   // R2: getStatus()를 마운트 시 1회만 부르면 Settings 저장 후에도 헤더(machineId·
   // role·manifestDir)와 이를 참조하는 다른 화면(Capture 비활성 사유 등)이 stale로
@@ -86,6 +94,12 @@ function App(): React.JSX.Element {
   useEffect(() => {
     return window.api.engine.onScreenshotGoto((route: ScreenshotRoute) => {
       if (route === 'onboarding') {
+        setOnboardingPreset(undefined)
+        setForceOnboarding(true)
+        return
+      }
+      if (route === 'onboarding-clone') {
+        setOnboardingPreset('clone')
         setForceOnboarding(true)
         return
       }
@@ -118,6 +132,7 @@ function App(): React.JSX.Element {
             setForceOnboarding(false)
             setStatus(s)
           }}
+          initialManifestSource={onboardingPreset}
         />
       </div>
     )

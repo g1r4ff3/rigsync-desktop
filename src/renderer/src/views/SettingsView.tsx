@@ -37,6 +37,14 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
+  // 복구용 클론(선택 기능) -- follower가 빈 로컬 저장소로 잘못 시작됐을 때
+  // 온보딩을 다시 하지 않고 여기서 클론해 연결한다.
+  const [cloneRepoUrl, setCloneRepoUrl] = useState('')
+  const [cloneTargetDir, setCloneTargetDir] = useState('')
+  const [cloning, setCloning] = useState(false)
+  const [cloneError, setCloneError] = useState<string | null>(null)
+  const [cloneSucceeded, setCloneSucceeded] = useState(false)
+
   useEffect(() => {
     window.api.engine.getConfig().then((config) => {
       setLoaded(config)
@@ -69,6 +77,32 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleClone(): Promise<void> {
+    setCloning(true)
+    setCloneError(null)
+    setCloneSucceeded(false)
+    try {
+      const response = await window.api.engine.cloneManifestRepo({
+        repoUrl: cloneRepoUrl.trim(),
+        manifestDir: cloneTargetDir.trim()
+      })
+      if (!response.ok) {
+        setCloneError(response.error ?? '클론 실패')
+        return
+      }
+      if (response.config) {
+        setLoaded(response.config)
+        setManifestDir(response.config.manifestDir)
+      }
+      setCloneSucceeded(true)
+      onSaved?.()
+    } catch (err) {
+      setCloneError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCloning(false)
     }
   }
 
@@ -154,6 +188,55 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
               없으면 capture 전까지는 빈 상태로 보일 수 있습니다.
             </StatusText>
           )}
+        </section>
+
+        <section className="space-y-1 rounded-md border border-border p-3">
+          <label className="block text-xs font-medium text-foreground">
+            Clone from repository (recovery)
+          </label>
+          <p className="text-xs text-muted-foreground">
+            follower가 빈 로컬 저장소로 잘못 시작됐을 때, 온보딩을 다시 하지 않고 여기서 기준
+            저장소를 클론해 연결합니다.
+          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                className={inputClass}
+                value={cloneRepoUrl}
+                onChange={(e) => setCloneRepoUrl(e.target.value)}
+                placeholder="https://github.com/you/rigsync-manifest.git"
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              클론할 manifest 저장소 URL — private 저장소는 gh auth 설정이 먼저 필요합니다
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                className={inputClass}
+                value={cloneTargetDir}
+                onChange={(e) => setCloneTargetDir(e.target.value)}
+                placeholder="~/.local/share/rigsync-desktop/manifest"
+              />
+            </TooltipTrigger>
+            <TooltipContent>클론될 위치 (비어 있거나 아직 없어야 합니다)</TooltipContent>
+          </Tooltip>
+          {cloneError && <StatusText kind="error">{cloneError}</StatusText>}
+          {cloneSucceeded && !cloneError && (
+            <StatusText kind="ok">클론 완료 — 이 머신의 manifest 경로가 갱신됐습니다.</StatusText>
+          )}
+          <ActionButton
+            variant="secondary"
+            label={buttonCopy.cloneManifestRepo.label}
+            subtitle={buttonCopy.cloneManifestRepo.subtitle}
+            disabledReason={buttonCopy.cloneManifestRepoDisabled}
+            busy={cloning}
+            disabled={
+              cloning || cloneRepoUrl.trim().length === 0 || cloneTargetDir.trim().length === 0
+            }
+            onClick={() => void handleClone()}
+          />
         </section>
 
         <section className="space-y-1">

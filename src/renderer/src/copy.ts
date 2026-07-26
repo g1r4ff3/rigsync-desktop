@@ -134,6 +134,9 @@ export const buttonCopy = {
   saveSettings: { label: 'Save', subtitle: '변경 사항을 config.toml에 저장' },
   saveSettingsDisabled: '머신 이름과 저장 경로는 비워둘 수 없습니다',
   completeOnboarding: { label: 'Finish setup', subtitle: '설정을 마치고 메인 화면으로' },
+  completeOnboardingDisabledClone: 'repository URL과 저장 경로를 모두 입력해야 클론할 수 있습니다',
+  cloneManifestRepo: { label: 'Clone', subtitle: '지정한 저장소를 이 경로로 클론' },
+  cloneManifestRepoDisabled: 'repository URL과 저장 경로를 모두 입력해야 클론할 수 있습니다',
   // R4 스크린샷 자기검수에서 발견: 버튼이 busy(진행 중) 때문에 비활성화됐는데도
   // ActionButton이 항상 domain별 disabledReason(예: "follower는 capture 불가")을
   // 보여줘 실제 비활성 사유와 다른 설명이 뜨는 문제가 있었다 — busy는 이 공용
@@ -196,6 +199,7 @@ export const helpCopy = {
   doctor: [
     'Doctor는 rigsync가 자동화하지 않는 수동 설치·설정 상태를 점검합니다.',
     '기본 진단은 machine-id/role/manifest 폴더 존재 여부를 보여줍니다.',
+    'follower인데 manifest에 선언된 항목이 없거나 원격 저장소가 연결돼 있지 않으면 경고합니다 — follower는 기준 저장소를 클론해서 시작해야 하는데 그 경로 없이 시작되면 사고이기 때문입니다(reference의 빈 manifest는 첫 capture 전이라 정상입니다).',
     'AppImage preflight는 Gear Lever 설치 여부와 버전, libfuse2t64, AppImageLauncher 충돌 가능성을 확인합니다.',
     'Fonts 점검은 manifest에 선언됐지만 이 머신에 없는 폰트, 설치는 됐지만 소스가 알려지지 않아 재현 불가능한 폰트, fc-cache/fc-list 사용 가능 여부를 확인합니다.',
     'NVIDIA 항목은 커널 드라이버(NVRM)와 설치된 패키지 버전이 다르면 경고합니다 — 대개 재부팅하면 해소됩니다.',
@@ -207,13 +211,15 @@ export const helpCopy = {
     'role을 reference에서 follower로 바꾸면 이 머신의 capture가 즉시 차단됩니다.',
     'follower에서 reference로 바꾸면 이 머신이 manifest 저작 권한을 갖게 되어 이후 capture가 자동 commit+push됩니다.',
     'manifest 경로를 바꿔도 기존 데이터는 옮겨지지 않습니다 — 경로 설정만 바뀝니다.',
-    'drift 체크 간격을 0으로 두면 트레이 상주 감시가 완전히 꺼집니다.'
+    'drift 체크 간격을 0으로 두면 트레이 상주 감시가 완전히 꺼집니다.',
+    '"Clone from repository"는 온보딩을 다시 하지 않고도 manifest 저장소를 새로 클론해 이 머신을 연결합니다 — follower가 빈 로컬 저장소로 잘못 시작됐을 때 복구하는 용도입니다.'
   ].join(' '),
   onboarding: [
     '처음 실행할 때 딱 한 번 필요한 설정입니다 — Settings 화면에서 나중에 다시 바꿀 수 있습니다.',
     '머신 이름은 이 머신을 구별하는 고유 식별자입니다 — hostname을 그대로 쓰면 여러 머신이 같은 이름이 될 수 있습니다.',
     'reference는 이 머신에서 저작(capture)하고, follower는 다른 머신이 저작한 내용을 받기만 합니다.',
-    'manifest 저장소는 여러 머신이 공유하는 설정 저장소입니다 — 새로 만들거나 기존 경로를 지정할 수 있습니다.'
+    'manifest 저장소는 여러 머신이 공유하는 설정 저장소입니다 — 새로 만들거나(reference의 첫 시작), 기존 경로를 지정하거나, 저장소에서 클론할 수 있습니다.',
+    'follower의 정상적인 시작 방법은 "저장소에서 클론"입니다 — 기준(reference) 머신이 이미 commit+push해 둔 manifest를 그대로 받아옵니다. "새로 만들기"로 시작하면 빈 로컬 저장소가 되어 다른 머신과 동기화되지 않습니다.'
   ].join(' '),
   applyDialog: [
     '아래는 Apply가 실제로 실행할 명령 전문입니다 — 실행 전에 항상 그대로 보여줍니다(안전 불변식 ⑥).',

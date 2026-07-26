@@ -35,8 +35,16 @@ function addCounts(a: KindCounts, b: KindCounts): KindCounts {
   return { ok: a.ok + b.ok, warn: a.warn + b.warn, error: a.error + b.error }
 }
 
-function basicKinds(basic: DoctorReportDto['basic']): StatusKind[] {
-  return [basic.configConfigured ? 'ok' : 'warn', basic.manifestDirExists ? 'ok' : 'warn']
+function basicKinds(
+  basic: DoctorReportDto['basic'],
+  emptyFollower: DoctorReportDto['emptyFollower']
+): StatusKind[] {
+  const kinds: StatusKind[] = [
+    basic.configConfigured ? 'ok' : 'warn',
+    basic.manifestDirExists ? 'ok' : 'warn'
+  ]
+  if (emptyFollower.warning) kinds.push('warn')
+  return kinds
 }
 
 function appimageKinds(appimage: DoctorReportDto['appimage']): StatusKind[] {
@@ -230,7 +238,7 @@ function DoctorView(): React.JSX.Element {
     )
   }
 
-  const basicCounts = countKinds(basicKinds(report.basic))
+  const basicCounts = countKinds(basicKinds(report.basic, report.emptyFollower))
   const appimageCounts = countKinds(appimageKinds(report.appimage))
   const fontsCounts = countKinds(fontsKinds(report.fonts))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
@@ -303,6 +311,9 @@ function DoctorView(): React.JSX.Element {
               </StatusText>
             </li>
           </ul>
+          {report.emptyFollower.warning && (
+            <DoctorActionNote kind="warn" text={report.emptyFollower.warning} />
+          )}
         </DoctorGroup>
 
         <DoctorGroup
