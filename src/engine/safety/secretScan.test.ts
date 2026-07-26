@@ -242,3 +242,25 @@ describe('scanTreeForSecrets', () => {
     expect(result.skippedCount).toBe(1)
   })
 })
+
+describe('허용 목록 파일 자체 제외 (2026-07-26 실사고)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-secretscan-allow-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('common/secret-allowlist.toml은 스캔하지 않는다 — 예시·주석에 패턴이 들어가는 것이 정상이라, 스캔하면 자기가 자기를 신고해 push가 영구히 막힌다', () => {
+    const common = path.join(dir, 'common')
+    fs.mkdirSync(common, { recursive: true })
+    fs.writeFileSync(
+      path.join(common, 'secret-allowlist.toml'),
+      '[[allow]]\npath = "x.sh"\nkind = "generic-secret-assignment"  # accessToken: creds.accessToken\n'
+    )
+    expect(scanTreeForSecrets(dir, '').findings).toEqual([])
+  })
+})

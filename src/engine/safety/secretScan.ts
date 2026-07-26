@@ -193,6 +193,9 @@ function scanGenericAssignmentsInLine(line: string, path: string, lineNo: number
 }
 
 /** 텍스트 본문 하나를 스캔한다 -- 파일 I/O 없는 순수 함수(테스트 용이). */
+/** 허용 목록 파일 자체의 manifest 상대 경로 -- 스캔 제외 대상. */
+export const SECRET_ALLOWLIST_RELPATH = 'common/secret-allowlist.toml'
+
 export function scanTextForSecrets(content: string, path: string): SecretFinding[] {
   const findings: SecretFinding[] = []
   const lines = content.split('\n')
@@ -292,6 +295,10 @@ export function scanTreeForSecrets(absPath: string, displayPath: string): TreeSc
       return
     }
     if (!stat.isFile()) return // 소켓·디바이스 등은 스캔 대상 아님
+    // 허용 목록 파일 자체는 스캔하지 않는다 -- 이 파일은 "어떤 패턴을 왜 허용하는가"를
+    // 기록하는 곳이라 예시·주석에 패턴 문자열이 들어가는 것이 정상이다. 스캔하면
+    // 자기가 자기를 신고해 push가 영구히 막힌다(2026-07-26 실사고).
+    if (currentDisplay === SECRET_ALLOWLIST_RELPATH) return
     const outcome = scanFileForSecrets(currentAbs, currentDisplay)
     if (outcome.kind === 'findings') {
       findings.push(...outcome.findings)
