@@ -3,6 +3,17 @@
  * diff와 동일한 순수 읽기 전용 원칙. 폰트 디렉터리 스캔은 provider 뒤가 아니라
  * ctx.homeDir 기준 순수 fs라(scan.ts) diffAppimage와 달리 provider 인자가
  * 없다 — diffDotfiles(ctx)와 동일한 시그니처.
+ *
+ * **설치 판정 = variant 단위** (실사용 버그 수정, 2026-07-26): manifest의
+ * `files`는 캡처 시점에 실제로 발견한 파일명 그대로라 github-release 소스
+ * (예: D2Coding)는 release가 항상 최신을 내려주는 이상 파일명의 버전이 매번
+ * 달라진다 — 정확한 파일명 일치는 이 소스 종류에서 구조적으로 영원히
+ * 수렴하지 않는다. 그래서 레지스트리에 등록된 폰트는 `variantKey`(버전을 뺀
+ * 식별자, 기본은 파일명 그대로)로 "이 variant가 설치돼 있는가"를 판정하고,
+ * `pin`이 걸려 있을 때만 별도로 정확한 버전 일치를 확인한다(pin의 의미가
+ * "버전을 고정한다"인 이상 이 값은 여전히 유지돼야 한다). 레지스트리에 없는
+ * (미지 소스) 항목은 variant 판정을 할 근거(정규식)가 없으므로 기존처럼 선언된
+ * `files` 정확 일치로 판정한다.
  */
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
@@ -14,9 +25,6 @@ import type { FontEntry, FontsDiffReport, FontsPinMismatch } from './types'
 export async function diffFonts(ctx: RigsyncContext): Promise<FontsDiffReport> {
   const manifest =
     (effectiveLayer(ctx, FONTS_LAYER, FONTS_KEY_FIELDS).font as FontEntry[] | undefined) ?? []
-  // "설치돼 있는지"는 레지스트리 식별 여부와 무관하게 전체 스캔 결과로
-  // 판정한다(manifest가 과거에 캡처한 파일명이 지금 레지스트리 패턴과 어긋나도
-  // 실제 파일 존재는 존재다) — uncaptured만 레지스트리 식별 결과를 쓴다.
   const installedFilenames = new Set(scanInstalledFontFiles(ctx))
   const { resolvedByName } = groupInstalledFontFiles(ctx)
   const manifestNames = new Set(manifest.map((e) => e.name))
@@ -25,20 +33,32 @@ export async function diffFonts(ctx: RigsyncContext): Promise<FontsDiffReport> {
   const pinMismatch: FontsPinMismatch[] = []
 
   for (const entry of manifest) {
-    const missing = entry.files.filter((f) => !installedFilenames.has(f))
-    if (missing.length > 0) {
+    const def = getKnownFontDefinition(entry.name)
+
+    if (!def) {
+      // 레지스트리 밖 항목 -- variant를 판정할 정규식이 없어 선언된 files
+      // 정확 일치로 폴백한다(기존 동작 그대로).
+      const missing = entry.files.filter((f) => !installedFilenames.has(f))
+      if (missing.length > 0) toInstall.push(entry.name)
+      continue
+    }
+
+    const variantKeyOf = def.variantKey ?? ((f: string) => f)
+    const declaredVariants = new Set(entry.files.map(variantKeyOf))
+    const installedFilesForFamily = resolvedByName.get(entry.name) ?? []
+    const installedVariants = new Set(installedFilesForFamily.map(variantKeyOf))
+    const missingVariants = [...declaredVariants].filter((v) => !installedVariants.has(v))
+    if (missingVariants.length > 0) {
       toInstall.push(entry.name)
       continue
     }
-    if (entry.pin) {
-      const def = getKnownFontDefinition(entry.name)
-      if (def?.extractVersion) {
-        for (const file of entry.files) {
-          const version = def.extractVersion(file)
-          if (version && version !== entry.pin) {
-            pinMismatch.push({ name: entry.name, pinned: entry.pin, installedVersion: version })
-            break
-          }
+
+    if (entry.pin && def.extractVersion) {
+      for (const file of installedFilesForFamily) {
+        const version = def.extractVersion(file)
+        if (version && version !== entry.pin) {
+          pinMismatch.push({ name: entry.name, pinned: entry.pin, installedVersion: version })
+          break
         }
       }
     }

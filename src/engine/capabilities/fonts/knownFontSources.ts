@@ -20,6 +20,14 @@ export interface KnownFontDefinition {
   matches(filename: string): boolean
   /** 파일명에서 버전 문자열을 추출한다(가능하면). 버전이 파일명에 없으면 생략. */
   extractVersion?(filename: string): string | null
+  /**
+   * 파일명에서 버전을 뺀 "variant 식별자"(예: 일반/Bold 구분)를 돌려준다.
+   * github-release 소스처럼 asset 파일명에 버전이 박혀 매번 바뀌는 경우, diff가
+   * 정확한 파일명이 아니라 이 식별자 집합으로 "설치됐는지"를 판정한다(★버전
+   * drift에도 수렴하기 위한 장치 — static 소스는 버전이 없어 파일명 자체가
+   * 이미 안정적인 식별자이므로 생략하면 diff가 파일명을 그대로 쓴다).
+   */
+  variantKey?(filename: string): string
 }
 
 const MESLO_FILE_PATTERN = /^MesloLGS NF (Regular|Bold|Italic|Bold Italic)\.ttf$/
@@ -51,6 +59,12 @@ export const KNOWN_FONTS: readonly KnownFontDefinition[] = [
     extractVersion: (filename) => {
       const match = D2CODING_FILE_PATTERN.exec(filename)
       return match ? match[2] : null
+    },
+    // 버전(그룹 2)을 뺀 "D2Coding" | "D2CodingBold"만 남긴다 -- release asset이
+    // Ver1.3.2든 Ver1.3.3이든 같은 variant로 취급된다.
+    variantKey: (filename) => {
+      const match = D2CODING_FILE_PATTERN.exec(filename)
+      return match ? `D2Coding${match[1] ?? ''}` : filename
     }
   }
 ]
