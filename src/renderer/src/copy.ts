@@ -384,6 +384,85 @@ export const emptyStateCopy = {
   loading: '불러오는 중…'
 } as const
 
+/**
+ * 항목 삭제(uninstall, 안전 불변식 5) — Candidates 화면 3상태 컨트롤(Sync/
+ * Pause/Delete)과 삭제 확인/일괄 삭제 다이얼로그의 문구. 라벨은 영어(사용자
+ * 지시 — "삭제"가 화면에서 분명히 읽혀야 하므로 Delete 그대로), 설명·툴팁은
+ * 한국어(Explanability 계약 언어 정책).
+ */
+export const candidateControlCopy = {
+  sync: { label: 'Sync', tooltip: '동기화 대상에 포함 — 계속 manifest에 유지합니다.' },
+  pause: {
+    label: 'Pause',
+    tooltip: '일시중지(ignore) — 다음 Capture 때 manifest에서 제외되거나 추가되지 않습니다.'
+  },
+  delete: {
+    label: 'Delete',
+    tooltip:
+      '이 머신에서 실제로 제거합니다 — 실행 전 항상 확인 화면에서 명령 전문을 보여줍니다(1회성 행동, 취소하면 아무 일도 일어나지 않습니다).'
+  }
+} as const
+
+/**
+ * 삭제가 불가능한 항목의 사유 — computeDeleteEligibility(deleteEligibility.ts)가
+ * 고른다. 엔진의 excluded 사유(짧은 기계적 문장)를 그대로 노출하지 않고
+ * 사용자 말로 옮긴다(코디네이터 지시).
+ */
+export const deleteDisabledReasonCopy = {
+  detectionOnly: 'snap은 삭제 대상이 아닙니다 — 중복 설치 검출에만 사용합니다.',
+  unsupportedCapability: (capability: string): string =>
+    `${capability} 항목은 아직 삭제를 지원하지 않습니다.`,
+  stillManaged:
+    '아직 manifest에 있는(동기화 중인) 항목입니다 — 먼저 Pause로 전환한 뒤 Capture로 manifest에서 빠져야 삭제할 수 있습니다.',
+  notPaused: '아직 일시중지(Pause)되지 않았습니다 — 먼저 Pause로 전환하세요.'
+} as const
+
+/**
+ * R8 비대칭 안내: follower에서는 Sync/Pause가 비활성화되지만(직전 pull 파손
+ * 위험 — followerToggleDisabledReason) Delete는 이 머신의 로컬 시스템 변경일
+ * 뿐이라 role 가드 대상이 아니다. 이 비대칭이 실수로 보일 수 있어 별도로
+ * 설명한다.
+ */
+export const followerDeleteAsymmetryCopy =
+  'follower에서도 Delete는 사용할 수 있습니다 — 삭제는 이 머신의 로컬 시스템 변경일 뿐 git으로 동기화되는 내용이 아니기 때문입니다. 반면 Sync/Pause는 계속 비활성화되어 있습니다(위 사유 — 직전 pull이 깨질 위험).'
+
+/** 일괄 삭제 툴바 버튼 — "일시중지 + 설치됨" 항목이 하나 이상일 때만 노출된다. */
+export const bulkDeleteCopy = {
+  toolbarButton: {
+    label: 'Delete selected…',
+    subtitle: '일시중지되고 이 머신에 설치된 항목을 모아 한 번에 삭제'
+  },
+  dialogTitle: 'Select items to delete',
+  dialogDescription: (count: number): string =>
+    `일시중지되고 이 머신에 설치된 항목 ${count}개 중 삭제할 항목을 고르세요 — 기본은 전체 선택이며, 체크를 해제하면 대상에서 빠집니다.`,
+  searchPlaceholder: 'Search…',
+  selectedCountSuffix: '개 선택됨',
+  continueButton: {
+    label: 'Continue',
+    subtitle: '선택한 항목으로 삭제 확인 화면으로 이동합니다'
+  },
+  continueDisabledEmpty: '선택된 항목이 없습니다',
+  cancelButton: { label: 'Cancel', subtitle: '아무것도 선택하지 않고 닫습니다' }
+} as const
+
+/** 삭제 확인 다이얼로그(단건·일괄 공용) — Apply 확인 다이얼로그와 같은 패턴을 재사용한다. */
+export const deleteConfirmCopy = {
+  title: (count: number): string => (count === 1 ? 'Delete item' : `Delete ${count} items`),
+  description:
+    '아래는 실제로 실행할 명령 전문입니다 — 실행 전에 항상 그대로 보여줍니다(안전 불변식 5). 확인하면 되돌릴 수 없습니다.',
+  dependencyWarningTitle: '함께 제거될 패키지 (요청하지 않았지만 의존성 때문에 제거됨)',
+  excludedTitle: '제외된 항목과 이유',
+  confirmButton: { label: 'Delete', subtitle: '위 명령을 실제로 실행합니다 — 되돌릴 수 없습니다' },
+  cancelButton: { label: 'Cancel', subtitle: '아무것도 삭제하지 않고 닫습니다(선택은 원래대로)' },
+  closeButton: { label: 'Close', subtitle: '결과를 닫고 목록으로 돌아갑니다' },
+  runningLabel: '삭제 중…',
+  doneLabel: '완료됨',
+  doneSummary: (ok: number, failed: number): string =>
+    failed > 0 ? `${ok}개 삭제됨, ${failed}개 실패` : `${ok}개 삭제됨`,
+  loadingPreview: '삭제 계획을 계산하는 중…',
+  noValidTargets: '삭제 가능한 항목이 없습니다 — 아래 제외된 항목과 이유를 확인하세요.'
+} as const
+
 export const errorGuidanceCopy = {
   generic: '문제가 반복되면 Doctor 탭에서 기본 진단을 먼저 확인하세요.',
   syncError:
