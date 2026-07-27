@@ -196,7 +196,7 @@ export function planFontsUninstall(
     (effectiveLayer(ctx, FONTS_LAYER, FONTS_KEY_FIELDS).font as FontEntry[] | undefined) ?? []
   const managedSet = new Set(manifest.map((e) => e.name))
   const ignore = readIgnoreSet(ctx, 'fonts', 'names')
-  const { resolvedByName } = groupInstalledFontFiles(ctx)
+  const { resolvedByName } = groupInstalledFontFiles(ctx, manifest)
 
   const actions: PlanAction[] = []
   const excluded: UninstallExclusion[] = []

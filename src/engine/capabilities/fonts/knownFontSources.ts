@@ -6,10 +6,14 @@
  *
  * 최소 2건 포함(이 머신 실측, FORWARD.md 성격의 실측 근거):
  * - MesloLGS NF — Powerlevel10k 요구 폰트 4종, static 소스(버전 개념 없음).
- * - D2Coding — naver/d2codingfont 릴리스 zip, github-release 소스. 파일명에
- *   버전이 박혀 있다(예: "D2Coding-Ver1.3.2-20180524.ttf") — 정확한 최신
- *   파일명을 하드코딩할 수 없어 `assetPattern`은 와일드카드로 release asset을
- *   찾고, `files`는 capture가 실제로 찾은 파일명을 그대로 쓴다.
+ * - D2Coding — naver/d2-coding-font(구 naver/d2codingfont, repo 이관 —
+ *   2026-07-27 실측 확인, VER1.3.3이 latest) 릴리스 zip, github-release 소스.
+ *   파일명에 버전이 박혀 있다(예: "D2Coding-Ver1.3.2-20180524.ttf") — 정확한
+ *   최신 파일명을 하드코딩할 수 없어 `assetPattern`은 와일드카드로 release
+ *   asset을 찾고, `files`는 capture가 실제로 찾은 파일명을 그대로 쓴다.
+ *   1.3.3부터는 .ttf 외에 .ttc·-ligature·-all 변종도 배포된다 — 패턴은 이
+ *   변종을 전부 포괄해야 한다(실사용 버그: 패턴이 못 잡으면 diff의 variant
+ *   판정 경로 자체를 못 타 재-diff가 영원히 수렴하지 않는다).
  */
 import type { FontSource } from './types'
 
@@ -32,7 +36,9 @@ export interface KnownFontDefinition {
 
 const MESLO_FILE_PATTERN = /^MesloLGS NF (Regular|Bold|Italic|Bold Italic)\.ttf$/
 
-const D2CODING_FILE_PATTERN = /^D2Coding(Bold)?-Ver([0-9.]+-[0-9]+)\.ttf$/i
+// 그룹: 1=Bold?, 2=버전-날짜(예: "1.3.3-20240524"), 3=-ligature|-all 접미?,
+// 4=확장자(ttf|ttc). 1.3.3부터 배포되는 .ttc·ligature·all 변종을 전부 포괄한다.
+const D2CODING_FILE_PATTERN = /^D2Coding(Bold)?-Ver([0-9.]+-[0-9]+)(-ligature|-all)?\.(ttf|ttc)$/i
 
 export const KNOWN_FONTS: readonly KnownFontDefinition[] = [
   {
@@ -52,7 +58,7 @@ export const KNOWN_FONTS: readonly KnownFontDefinition[] = [
     name: 'D2Coding',
     source: {
       kind: 'github-release',
-      coordinate: 'naver/d2codingfont',
+      coordinate: 'naver/d2-coding-font',
       assetPattern: 'D2Coding-Ver*.zip'
     },
     matches: (filename) => D2CODING_FILE_PATTERN.test(filename),
@@ -60,11 +66,17 @@ export const KNOWN_FONTS: readonly KnownFontDefinition[] = [
       const match = D2CODING_FILE_PATTERN.exec(filename)
       return match ? match[2] : null
     },
-    // 버전(그룹 2)을 뺀 "D2Coding" | "D2CodingBold"만 남긴다 -- release asset이
-    // Ver1.3.2든 Ver1.3.3이든 같은 variant로 취급된다.
+    // 버전(그룹 2)을 뺀 나머지 식별자 -- Bold 여부(그룹 1) + ligature/all
+    // 접미(그룹 3) + 확장자(그룹 4)를 보존한다. 예: "D2CodingBold-ligature.ttf",
+    // "D2Coding-all.ttc". release asset이 Ver1.3.2든 Ver1.3.3이든 같은 variant로
+    // 취급되면서도, .ttf와 .ttc·ligature·all은 서로 다른 variant로 구분된다.
     variantKey: (filename) => {
       const match = D2CODING_FILE_PATTERN.exec(filename)
-      return match ? `D2Coding${match[1] ?? ''}` : filename
+      if (!match) return filename
+      const bold = match[1] ?? ''
+      const suffix = match[3] ?? ''
+      const ext = match[4].toLowerCase()
+      return `D2Coding${bold}${suffix}.${ext}`
     }
   }
 ]

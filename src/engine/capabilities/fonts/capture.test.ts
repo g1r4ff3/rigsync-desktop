@@ -71,7 +71,7 @@ describe('captureFonts', () => {
     expect(entries[0].name).toBe('D2Coding')
     expect(entries[0].source.kind).toBe('github-release')
     if (entries[0].source.kind === 'github-release') {
-      expect(entries[0].source.coordinate).toBe('naver/d2codingfont')
+      expect(entries[0].source.coordinate).toBe('naver/d2-coding-font')
     }
     expect([...entries[0].files].sort()).toEqual(
       ['D2Coding-Ver1.3.2-20180524.ttf', 'D2CodingBold-Ver1.3.2-20180524.ttf'].sort()

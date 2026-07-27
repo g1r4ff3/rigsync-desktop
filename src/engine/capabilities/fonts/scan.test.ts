@@ -91,4 +91,47 @@ describe('scanInstalledFontFiles / groupInstalledFontFiles', () => {
     expect(resolvedByName.size).toBe(0)
     expect(unresolvedFiles).toEqual([])
   })
+
+  // 실사용 회귀(2026-07-27): 식별의 1차 진실은 manifest여야 한다 -- 하드코딩
+  // 레지스트리 패턴이 못 알아보는 파일이라도, manifest 엔트리의 files에 정확히
+  // 선언돼 있으면 그 엔트리 소속으로 분류하고 unresolvedFiles에 남기지 않는다.
+  it('classifies a manifest-declared file by manifest entry name even when no registry pattern matches it', () => {
+    writeFontFile(fixture, 'D2Coding-Ver1.3.3-20240524-ligature.ttc')
+    const { resolvedByName, unresolvedFiles } = groupInstalledFontFiles(fixture.ctx, [
+      {
+        name: 'D2Coding',
+        source: { kind: 'github-release', coordinate: 'naver/d2-coding-font', assetPattern: '*' },
+        files: ['D2Coding-Ver1.3.3-20240524-ligature.ttc']
+      }
+    ])
+    expect(resolvedByName.get('D2Coding')).toEqual(['D2Coding-Ver1.3.3-20240524-ligature.ttc'])
+    expect(unresolvedFiles).toEqual([])
+  })
+
+  it('classifies a manifest-declared file under an entirely unregistered family name (no registry entry at all)', () => {
+    writeFontFile(fixture, 'FiraCode-Regular.ttf')
+    const { resolvedByName, unresolvedFiles } = groupInstalledFontFiles(fixture.ctx, [
+      {
+        name: 'Fira Code',
+        source: { kind: 'static', urls: [] },
+        files: ['FiraCode-Regular.ttf']
+      }
+    ])
+    expect(resolvedByName.get('Fira Code')).toEqual(['FiraCode-Regular.ttf'])
+    expect(unresolvedFiles).toEqual([])
+  })
+
+  it('dedupes a filename that appears in both ~/.local/share/fonts and ~/.fonts', () => {
+    writeFontFile(fixture, 'SomeRandomFont.ttf')
+    writeFontFile(fixture, 'SomeRandomFont.ttf', path.join(fixture.homeDir, '.fonts'))
+    const { unresolvedFiles } = groupInstalledFontFiles(fixture.ctx)
+    expect(unresolvedFiles).toEqual(['SomeRandomFont.ttf'])
+  })
+
+  it('dedupes a resolved (registry-matched) filename duplicated across both font directories', () => {
+    writeFontFile(fixture, 'MesloLGS NF Regular.ttf')
+    writeFontFile(fixture, 'MesloLGS NF Regular.ttf', path.join(fixture.homeDir, '.fonts'))
+    const { resolvedByName } = groupInstalledFontFiles(fixture.ctx)
+    expect(resolvedByName.get('MesloLGS NF')).toEqual(['MesloLGS NF Regular.ttf'])
+  })
 })

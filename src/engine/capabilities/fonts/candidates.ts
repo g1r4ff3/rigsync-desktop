@@ -16,7 +16,7 @@ export async function buildFontsSyncGroup(ctx: RigsyncContext): Promise<SyncItem
   const manifest =
     (effectiveLayer(ctx, FONTS_LAYER, FONTS_KEY_FIELDS).font as FontEntry[] | undefined) ?? []
   const managedSet = new Set(manifest.map((e) => e.name))
-  const { resolvedByName } = groupInstalledFontFiles(ctx)
+  const { resolvedByName } = groupInstalledFontFiles(ctx, manifest)
   const names = [...new Set([...managedSet, ...resolvedByName.keys()])].sort()
   if (names.length === 0) return null
 

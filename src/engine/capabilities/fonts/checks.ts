@@ -8,8 +8,15 @@
  * (doctor/report.ts) 자체가 sync라 여기도 diff를 미리 계산해 인자로 받는다
  * (diffFonts는 다른 diff 함수들과의 시그니처 통일을 위해 nominal async지만
  * 내부는 순수 fs 동기 로직이라 이미 계산된 결과를 그대로 재사용해도 안전).
+ *
+ * ②는 `groupInstalledFontFiles`에 manifest를 넘겨 manifest-aware로 판정한다
+ * (실사용 버그 수정, 2026-07-27) — manifest에 이미 파일명이 선언된 항목은
+ * 하드코딩 레지스트리 패턴이 아직 인식 못 하는 파일 종류라도 "재현 불가"로
+ * 오탐하지 않는다(scan.ts의 groupInstalledFontFiles 참조).
  */
-import type { FontsDiffReport } from './types'
+import { effectiveLayer } from '../../manifest'
+import { FONTS_KEY_FIELDS, FONTS_LAYER } from './constants'
+import type { FontEntry, FontsDiffReport } from './types'
 import type { FontsSystemProvider } from './providerTypes'
 import { groupInstalledFontFiles } from './scan'
 import type { RigsyncContext } from '../../context'
@@ -26,11 +33,13 @@ export interface FontsPreflightCheck {
 }
 
 export function checkFontsPreflight(
-  ctx: Pick<RigsyncContext, 'homeDir'>,
+  ctx: Pick<RigsyncContext, 'homeDir' | 'manifestDir' | 'machineId' | 'profile'>,
   diff: FontsDiffReport,
   systemProvider: FontsSystemProvider
 ): FontsPreflightCheck {
-  const { unresolvedFiles } = groupInstalledFontFiles(ctx)
+  const manifest =
+    (effectiveLayer(ctx, FONTS_LAYER, FONTS_KEY_FIELDS).font as FontEntry[] | undefined) ?? []
+  const { unresolvedFiles } = groupInstalledFontFiles(ctx, manifest)
   const fcCacheAvailable = systemProvider.fcCacheAvailable()
   const fcListAvailable = systemProvider.fcListAvailable()
 

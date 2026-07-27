@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { identifyFontFamily, type KnownFontDefinition } from './knownFontSources'
+import type { FontEntry } from './types'
 
 const FONT_FILE_PATTERN = /\.(ttf|otf|ttc|woff2?)$/i
 
@@ -92,24 +93,50 @@ export function locateFontFiles(
   return out
 }
 
-/** 설치된 폰트 파일을 레지스트리로 분류한다 — capture/candidates/doctor가 공유. */
+/**
+ * 설치된 폰트 파일을 분류한다 — capture/candidates/doctor/diff가 공유.
+ *
+ * 식별의 1차 진실은 **manifest** 다(실사용 버그 수정, 2026-07-27): manifest
+ * 엔트리의 `files`에 정확히 등장하는 파일명은 하드코딩 레지스트리 패턴이
+ * 무엇을 인식하든 그 엔트리 이름 소속으로 분류하고 unresolvedFiles에서
+ * 제외한다. 레지스트리(`identifyFontFamily`) 매칭은 manifest에 없는 파일에
+ * 대해서만(미등록 파일 자동 인식용 보조) 적용한다. 이러면 하드코딩 패턴이
+ * 아직 못 따라잡은 새 파일 종류(예: D2Coding의 .ttc·-ligature 변종)도, 이미
+ * capture가 예전에 잡아 manifest에 박아 둔 경우라면 "재현 불가"로 오탐되지
+ * 않는다.
+ *
+ * `scanInstalledFontFiles`가 돌려주는 파일명은 `~/.fonts`와
+ * `~/.local/share/fonts` 양쪽에 같은 파일이 있으면 중복될 수 있어(fontDirs가
+ * 둘 다 스캔), 분류 전에 Set으로 걷어낸다 — resolvedByName·unresolvedFiles
+ * 어디에도 같은 파일명이 두 번 나오지 않는다(Doctor 경고 중복 방지).
+ */
 export function groupInstalledFontFiles(
-  ctx: Pick<RigsyncContext, 'homeDir'>
+  ctx: Pick<RigsyncContext, 'homeDir'>,
+  manifestEntries: readonly FontEntry[] = []
 ): GroupedInstalledFonts {
+  const manifestNameByFile = new Map<string, string>()
+  for (const entry of manifestEntries) {
+    for (const file of entry.files) {
+      if (!manifestNameByFile.has(file)) manifestNameByFile.set(file, entry.name)
+    }
+  }
+
   const resolvedByName = new Map<string, string[]>()
   const definitionByFile = new Map<string, KnownFontDefinition>()
   const unresolvedFiles: string[] = []
 
-  for (const filename of scanInstalledFontFiles(ctx)) {
+  for (const filename of new Set(scanInstalledFontFiles(ctx))) {
     const def = identifyFontFamily(filename)
-    if (!def) {
+    if (def) definitionByFile.set(filename, def)
+
+    const name = manifestNameByFile.get(filename) ?? def?.name
+    if (!name) {
       unresolvedFiles.push(filename)
       continue
     }
-    definitionByFile.set(filename, def)
-    const list = resolvedByName.get(def.name) ?? []
+    const list = resolvedByName.get(name) ?? []
     list.push(filename)
-    resolvedByName.set(def.name, list)
+    resolvedByName.set(name, list)
   }
 
   return { resolvedByName, unresolvedFiles: unresolvedFiles.sort(), definitionByFile }

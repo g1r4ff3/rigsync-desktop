@@ -47,8 +47,9 @@ export async function captureFonts(
     throw new FollowerFontsCaptureBlockedError()
   }
 
-  const existingMap = new Map<string, FontEntry>(readExistingEntries(ctx).map((e) => [e.name, e]))
-  const { resolvedByName, unresolvedFiles } = groupInstalledFontFiles(ctx)
+  const existingEntries = readExistingEntries(ctx)
+  const existingMap = new Map<string, FontEntry>(existingEntries.map((e) => [e.name, e]))
+  const { resolvedByName, unresolvedFiles } = groupInstalledFontFiles(ctx, existingEntries)
   const notes: string[] = []
   let added = 0
 
