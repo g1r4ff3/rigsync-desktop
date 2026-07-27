@@ -635,6 +635,24 @@ export interface DoctorPortabilityDto {
 }
 
 /**
+ * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
+ * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인. follower는 warning(경고),
+ * reference는 note(P4가 자동 정리하므로 중립 정보)로 표현이 갈린다.
+ */
+export interface DoctorManifestDirtyFileDto {
+  readonly status: string
+  readonly path: string
+}
+
+export interface DoctorManifestDirtyDto {
+  readonly role: 'reference' | 'follower'
+  readonly dirty: boolean
+  readonly files: readonly DoctorManifestDirtyFileDto[]
+  readonly warning?: string
+  readonly note?: string
+}
+
+/**
  * 수동 동기화 체크리스트 항목 -- `common/manual-sync.toml`의 `[[note]]`
  * 엔트리 하나. rigsync가 자동화하지 않는(런타임 변이·secret 포함 등) 설정을
  * 사용자가 수동으로 맞춰야 한다는 것을 Doctor에 표출한다.
@@ -665,6 +683,7 @@ export interface DoctorReportDto {
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
   readonly portability: DoctorPortabilityDto
+  readonly manifestDirty: DoctorManifestDirtyDto
   readonly manualSyncNotes: readonly ManualSyncNoteDto[]
   readonly emptyFollower: DoctorEmptyFollowerDto
   readonly checksVisible: boolean

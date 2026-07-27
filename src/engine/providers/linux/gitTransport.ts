@@ -3,7 +3,7 @@
  * "linux" 전용은 아니지만, 다른 provider들과 위치를 맞춘다(v1은 어차피
  * Linux provider만 조립하므로 `providers/linux/index.ts`에서 함께 노출).
  */
-import type { GitCommandResult, GitTransportProvider } from '../../transport/types'
+import type { GitChangedFile, GitCommandResult, GitTransportProvider } from '../../transport/types'
 import { run } from './exec'
 
 function git(dir: string, args: string[], timeoutMs = 30_000): { code: number; text: string } {
@@ -41,6 +41,22 @@ export class LinuxGitTransportProvider implements GitTransportProvider {
   hasUncommittedChanges(dir: string): boolean {
     const result = git(dir, ['status', '--porcelain'])
     return result.code === 0 && result.text.trim().length > 0
+  }
+
+  changedFiles(dir: string): readonly GitChangedFile[] {
+    const result = git(dir, ['status', '--porcelain'])
+    if (result.code !== 0) return []
+    return result.text
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const status = line.slice(0, 2)
+        let rest = line.slice(3)
+        // rename/copy 라인은 "orig -> new" 형태 -- 새 경로만 취한다.
+        const arrow = rest.indexOf(' -> ')
+        if (arrow !== -1) rest = rest.slice(arrow + 4)
+        return { status, path: rest }
+      })
   }
 
   addAllAndCommit(dir: string, message: string): GitCommandResult {

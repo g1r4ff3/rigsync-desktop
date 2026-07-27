@@ -201,6 +201,27 @@ describe('buildDoctorReport', () => {
     fixture.cleanup()
   })
 
+  it('includes the manifestDirty check (P3) in the same report', async () => {
+    const fixture = makeFixture('follower')
+    const dirtyProvider = makeFakeGitTransportProvider({
+      isGitRepo: true,
+      changedFiles: [{ status: ' M', path: 'dotfiles/.zshrc' }]
+    })
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: false }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      dirtyProvider,
+      { configConfigured: true }
+    )
+    expect(report.manifestDirty.dirty).toBe(true)
+    expect(report.manifestDirty.warning).toBeDefined()
+    fixture.cleanup()
+  })
+
   it('selfUpdate passes when the update source is already configured for this AppImage', async () => {
     const fixture = makeFixture('reference')
     const appImagePath = '/home/user/Applications/rigsync-desktop.AppImage'

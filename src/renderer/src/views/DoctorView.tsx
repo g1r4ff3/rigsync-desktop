@@ -119,6 +119,16 @@ function portabilityKinds(portability: DoctorReportDto['portability']): StatusKi
   return portability.warnings.map((): StatusKind => 'warn')
 }
 
+/**
+ * P3(D2-a) manifest dirty 검사 -- follower dirty만 'warn'으로 센다. reference
+ * dirty는 P4(`sweepLiveEditsIfDirty`)가 다음 드리프트 주기에 자동 정리하므로
+ * 중립 정보일 뿐 경고가 아니다(요약 카운트에 반영하지 않는다).
+ */
+function manifestDirtyKinds(manifestDirty: DoctorReportDto['manifestDirty']): StatusKind[] {
+  if (!manifestDirty.dirty) return []
+  return manifestDirty.role === 'follower' ? ['warn'] : []
+}
+
 function checklistKinds(checks: DoctorReportDto['checks']): StatusKind[] {
   return checks.map((c) => doctorResultKind(c.result))
 }
@@ -287,6 +297,7 @@ function DoctorView(): React.JSX.Element {
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
   const portabilityCounts = countKinds(portabilityKinds(report.portability))
+  const manifestDirtyCounts = countKinds(manifestDirtyKinds(report.manifestDirty))
   const selfUpdateCounts = countKinds(selfUpdateKinds(selfUpdate))
   const checklistCounts = report.checksVisible
     ? countKinds(checklistKinds(report.checks))
@@ -298,6 +309,7 @@ function DoctorView(): React.JSX.Element {
     nvidiaCounts,
     secretScanCounts,
     portabilityCounts,
+    manifestDirtyCounts,
     selfUpdateCounts,
     checklistCounts
   ].reduce(addCounts, {
@@ -512,6 +524,45 @@ function DoctorView(): React.JSX.Element {
                 </li>
               ))}
             </ul>
+          )}
+        </DoctorGroup>
+
+        {/*
+          P3(D2-a) manifest dirty -- follower/reference 표현이 다르다: follower는
+          다음 pull이 실패한다는 실질적 경고(warn), reference는 P4가 다음 드리프트
+          주기에 자동으로 정리한다는 중립 정보(muted)다. 둘 다 같은 DoctorGroup
+          골격을 쓰되 kind만 role에 따라 갈린다.
+        */}
+        <DoctorGroup
+          title="Manifest local edits"
+          description="이 머신에 적용된 manifest 작업 트리가 커밋되지 않은 채로 바뀌어 있는지 확인"
+          counts={manifestDirtyCounts}
+        >
+          {!report.manifestDirty.dirty ? (
+            <p className="text-xs text-muted-foreground">
+              감지된 항목 없음 -- manifest 작업 트리가 깨끗합니다.
+            </p>
+          ) : (
+            <div className="rounded border border-border p-2 text-xs">
+              <StatusText kind={report.manifestDirty.role === 'follower' ? 'warn' : 'muted'}>
+                {report.manifestDirty.role === 'follower'
+                  ? 'manifest 로컬 편집 감지'
+                  : '커밋 안 된 라이브 편집'}
+              </StatusText>
+              {report.manifestDirty.role === 'follower' && report.manifestDirty.warning && (
+                <DoctorActionNote kind="warn" text={report.manifestDirty.warning} />
+              )}
+              {report.manifestDirty.role === 'reference' && report.manifestDirty.note && (
+                <p className="mt-1 text-muted-foreground">{report.manifestDirty.note}</p>
+              )}
+              <ul className="mt-2 space-y-0.5 font-mono text-muted-foreground">
+                {report.manifestDirty.files.map((f) => (
+                  <li key={f.path}>
+                    {f.status} {f.path}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </DoctorGroup>
 

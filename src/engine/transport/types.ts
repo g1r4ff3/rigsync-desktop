@@ -10,6 +10,13 @@ export interface GitCommandResult {
   readonly output: string
 }
 
+/** `git status --porcelain` 한 줄 — XY 상태 코드 원문 + 경로. */
+export interface GitChangedFile {
+  /** porcelain XY 코드 그대로(예: ` M`, `??`, `A `, `D `) -- 트림하지 않는다(의미 있는 공백). */
+  readonly status: string
+  readonly path: string
+}
+
 /**
  * 실제 git 호출 인터페이스 — P2a 결정 ⑥과 동일한 원칙(provider 뒤 시스템 격리).
  * 단 이 provider는 실제 구현(`providers/linux/gitTransport.ts`)을 fake가 아닌
@@ -29,6 +36,14 @@ export interface GitTransportProvider {
   /** `fetch()` 이후 기준 — origin의 upstream 대비 몇 커밋 뒤처졌는지. */
   behindCount(dir: string): number
   hasUncommittedChanges(dir: string): boolean
+  /**
+   * `git status --porcelain` 상당의 구조화된 변경 파일 목록 — P3(F3) Doctor
+   * "manifest dirty" 검사가 역할별 안내(follower: 경고, reference: 정보)에
+   * 파일 목록을 실어 보내기 위해 `hasUncommittedChanges`(boolean)보다 세밀한
+   * 정보가 필요해 추가한다. 순서는 porcelain 출력 순서 그대로(경로순 정렬은
+   * 호출자 책임 -- 이 provider는 git 그대로만 옮긴다).
+   */
+  changedFiles(dir: string): readonly GitChangedFile[]
   addAllAndCommit(dir: string, message: string): GitCommandResult
   push(dir: string): GitCommandResult
   /**

@@ -21,6 +21,7 @@ import type { FontsSystemProvider } from '../capabilities/fonts/providerTypes'
 import type { GitTransportProvider } from '../transport/types'
 import { checkEmptyFollower } from './emptyFollowerCheck'
 import { evaluateCheck } from './evaluate'
+import { checkManifestDirty } from './manifestDirtyCheck'
 import { readManualSyncNotes } from './manualSyncNotes'
 import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
@@ -51,7 +52,7 @@ export async function buildDoctorReport(
   appimageSystemCheck: AppimageSystemCheckProvider,
   fontsSystemProvider: FontsSystemProvider,
   nvidiaProvider: NvidiaCheckProvider,
-  gitTransportProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote'>,
+  gitTransportProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote' | 'changedFiles'>,
   options: BuildDoctorReportOptions
 ): Promise<DoctorReport> {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')
@@ -72,6 +73,7 @@ export async function buildDoctorReport(
   const portability = checkManifestPortability(ctx)
   const manualSyncNotes = readManualSyncNotes(ctx)
   const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
+  const manifestDirty = checkManifestDirty(ctx, gitTransportProvider)
 
   const appImagePath =
     options.appImagePath !== undefined ? options.appImagePath : (process.env.APPIMAGE ?? null)
@@ -95,6 +97,7 @@ export async function buildDoctorReport(
     nvidia,
     secretScan,
     portability,
+    manifestDirty,
     manualSyncNotes,
     emptyFollower,
     selfUpdate,

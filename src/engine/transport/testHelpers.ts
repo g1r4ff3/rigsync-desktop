@@ -1,4 +1,4 @@
-import type { GitCommandResult, GitTransportProvider } from './types'
+import type { GitChangedFile, GitCommandResult, GitTransportProvider } from './types'
 
 /**
  * fake GitTransportProvider -- doctor/report.test.ts, onboarding 클론 유닛
@@ -11,6 +11,7 @@ export interface FakeGitTransportState {
   readonly hasRemote?: boolean
   readonly behindCount?: number
   readonly hasUncommittedChanges?: boolean
+  readonly changedFiles?: readonly GitChangedFile[]
   readonly cloneResult?: GitCommandResult
   readonly fetchResult?: GitCommandResult
   readonly pushResult?: GitCommandResult
@@ -30,6 +31,7 @@ export function makeFakeGitTransportProvider(
     pullFastForward: () => state.pullResult ?? OK,
     behindCount: () => state.behindCount ?? 0,
     hasUncommittedChanges: () => state.hasUncommittedChanges ?? false,
+    changedFiles: () => state.changedFiles ?? [],
     addAllAndCommit: () => state.commitResult ?? OK,
     push: () => state.pushResult ?? OK,
     cloneManifest: () => state.cloneResult ?? OK

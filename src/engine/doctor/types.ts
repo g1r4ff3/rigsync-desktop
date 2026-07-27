@@ -9,6 +9,7 @@ import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
+import type { ManifestDirtyCheckResult } from './manifestDirtyCheck'
 import type { ManualSyncNote } from './manualSyncNotes'
 import type { NvidiaDriverCheckResult } from './nvidia'
 import type { PortabilityCheckResult } from './portabilityCheck'
@@ -65,6 +66,12 @@ export interface DoctorReport {
   readonly secretScan: SecretScanPreflightCheck
   /** refactor-spec-v0.2 P2: 이 머신에 적용될 스토어 콘텐츠의 다른 사용자 홈 경로 참조 탐지 (F1 재발 방지). */
   readonly portability: PortabilityCheckResult
+  /**
+   * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
+   * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인을 경고로 표면화한다.
+   * reference의 dirty는 P4가 자동 정리하므로 중립 정보로만 표시한다.
+   */
+  readonly manifestDirty: ManifestDirtyCheckResult
   /**
    * 수동 동기화 체크리스트 -- `common/manual-sync.toml`에서 정의되는, rigsync가
    * 자동화할 수 없어 사용자가 수동으로 맞춰야 하는 항목(런타임 변이·secret
