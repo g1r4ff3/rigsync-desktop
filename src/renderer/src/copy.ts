@@ -361,6 +361,7 @@ export const helpCopy = {
     'follower인데 manifest에 선언된 항목이 없거나 원격 저장소가 연결돼 있지 않으면 경고합니다 — follower는 기준 저장소를 클론해서 시작해야 하는데 그 경로 없이 시작되면 사고이기 때문입니다(reference의 빈 manifest는 첫 capture 전이라 정상입니다).',
     'AppImage preflight는 Gear Lever 설치 여부와 버전, libfuse2t64, AppImageLauncher 충돌 가능성을 확인합니다.',
     'Fonts 점검은 manifest에 선언됐지만 이 머신에 없는 폰트, 설치는 됐지만 소스가 알려지지 않아 재현 불가능한 폰트, fc-cache/fc-list 사용 가능 여부를 확인합니다.',
+    'Binaries 점검은 fonts와 같은 문제를 봅니다 — 레지스트리에 없는 실행파일은 파일명 정확 일치로만 비교되므로, 파일명에 버전이 박혀 있으면(예: 릴리스 asset 원본 이름) 다른 머신에서 받는 버전이 달라 영원히 일치하지 않을 수 있습니다. source를 지정해 레지스트리에 등록해야 해소됩니다.',
     'NVIDIA 항목은 커널 드라이버(NVRM)와 설치된 패키지 버전이 다르면 경고합니다 — 대개 재부팅하면 해소됩니다.',
     'Secret scan은 manifest 저장소 전체를 다시 훑어 GitHub 토큰 등 비밀로 보이는 값이 남아있는지 확인합니다 — Capture 시점에 이미 한 번 걸러졌어야 할 것들이 어떤 경로로든 남아있는지 잡는 마지막 안전망입니다.',
     'Portability는 이 머신에 적용될 manifest 콘텐츠(dotfiles·crontab·서비스 유닛)에 다른 사용자의 /home 경로가 박혀 있는지 확인합니다 — 그런 항목이 배포되면 그 머신에서 깨진 경로가 되므로(실사고 사례), 머신 고유 항목은 host 계층으로 옮기고 공유 항목은 $HOME/~ 기반으로 고쳐야 합니다.',

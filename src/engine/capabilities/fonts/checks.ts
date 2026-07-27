@@ -13,6 +13,7 @@ import type { FontsDiffReport } from './types'
 import type { FontsSystemProvider } from './providerTypes'
 import { groupInstalledFontFiles } from './scan'
 import type { RigsyncContext } from '../../context'
+import { isVersionedFilename, VERSIONED_FILENAME_WARNING } from '../../versionedFilename'
 
 export interface FontsPreflightCheck {
   /** manifest에 선언됐지만 이 머신에 설치되지 않은 폰트 이름(diff.toInstall 그대로). */
@@ -40,9 +41,13 @@ export function checkFontsPreflight(
     )
   }
   for (const file of unresolvedFiles) {
+    // refactor-spec-v0.2 F5 -- 버전성 파일명이면 "재현 불가"보다 구체적으로,
+    // source를 지정하기 전까지 다른 머신에서 영원히 파일명이 갈릴 수 있다는
+    // 사실을 덧붙인다(capture.ts의 note와 동일 판정 기준).
+    const suffix = isVersionedFilename(file) ? ` (${VERSIONED_FILENAME_WARNING})` : ''
     warnings.push(
       `${file}: 설치돼 있지만 알려진 레지스트리에 없어 다른 머신에서 재현할 수 없습니다 -- ` +
-        'manifest에 source를 지정해야 합니다'
+        `manifest에 source를 지정해야 합니다${suffix}`
     )
   }
   if (!fcCacheAvailable) {

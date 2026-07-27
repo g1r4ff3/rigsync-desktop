@@ -46,7 +46,19 @@ describe('checkFontsPreflight', () => {
     const diff = await diffFonts(fixture.ctx)
     const result = checkFontsPreflight(fixture.ctx, diff, makeFakeFontsSystemProvider())
     expect(result.unresolvedInstalled).toEqual(['SomeRandomFont.ttf'])
-    expect(result.warnings.some((w) => w.includes('SomeRandomFont.ttf'))).toBe(true)
+    const warning = result.warnings.find((w) => w.includes('SomeRandomFont.ttf'))
+    expect(warning).toBeDefined()
+    // 버전성 파일명이 아니므로(F5) 수렴 경고 문구는 붙지 않는다.
+    expect(warning).not.toContain('수렴하지 않을 수 있음')
+  })
+
+  it('appends the F5 non-convergence warning for an unresolved, versioned font filename', async () => {
+    writeFontFile(fixture, 'JetBrainsMono-2.304.ttf')
+    const diff = await diffFonts(fixture.ctx)
+    const result = checkFontsPreflight(fixture.ctx, diff, makeFakeFontsSystemProvider())
+    const warning = result.warnings.find((w) => w.includes('JetBrainsMono-2.304.ttf'))
+    expect(warning).toBeDefined()
+    expect(warning).toContain('수렴하지 않을 수 있음')
   })
 
   it('warns when fc-cache is unavailable', async () => {

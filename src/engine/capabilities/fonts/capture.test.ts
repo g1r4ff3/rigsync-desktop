@@ -84,9 +84,21 @@ describe('captureFonts', () => {
     const report = await captureFonts(fixture.ctx, { dryRun: false })
     expect(report.added).toBe(0)
     expect(report.notes.some((n) => n.includes('SomeRandomFont.ttf'))).toBe(true)
+    // 버전성 파일명이 아니므로(F5) 수렴 경고는 붙지 않는다.
+    expect(report.notes.some((n) => n.includes('수렴하지 않을 수 있음'))).toBe(false)
 
     const manifest = effectiveLayer(fixture.ctx, FONTS_LAYER, FONTS_KEY_FIELDS)
     expect((manifest.font as FontEntry[] | undefined) ?? []).toHaveLength(0)
+  })
+
+  it('flags an unknown, versioned font filename with the F5 non-convergence warning', async () => {
+    writeFontFile(fixture, 'JetBrainsMono-2.304.ttf')
+
+    const report = await captureFonts(fixture.ctx, { dryRun: false })
+    expect(report.added).toBe(0)
+    const note = report.notes.find((n) => n.includes('JetBrainsMono-2.304.ttf'))
+    expect(note).toBeDefined()
+    expect(note).toContain('수렴하지 않을 수 있음')
   })
 
   it('preserves an existing pin across recapture (capture never touches pin)', async () => {

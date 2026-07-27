@@ -7,6 +7,7 @@
  */
 import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
+import type { BinariesPreflightCheck } from '../capabilities/binaries/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
 import type { ManifestDirtyCheckResult } from './manifestDirtyCheck'
@@ -60,6 +61,11 @@ export interface DoctorReport {
   readonly appimage: AppimagePreflightCheck
   /** fonts capability preflight — manifest 미설치/소스 미지정/fc-cache·fc-list 가용성. */
   readonly fonts: FontsPreflightCheck
+  /**
+   * refactor-spec-v0.2 F5(P5): binaries capability preflight — 레지스트리
+   * 미등록 + 버전성 파일명 실행파일 경고("binaries도 fonts와 동일 구조").
+   */
+  readonly binaries: BinariesPreflightCheck
   /** P4: NVRM 커널 모듈 vs dpkg 유저스페이스 드라이버 버전 불일치 체크. */
   readonly nvidia: NvidiaDriverCheckResult
   /** manifest 스토어 전체 소급 시크릿 스캔(⑥) -- capture 관문 우회분을 잡는 마지막 안전망. */

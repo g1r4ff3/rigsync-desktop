@@ -15,6 +15,7 @@ import type {
   AppimageSystemCheckProvider,
   GearLeverProvider
 } from '../capabilities/appimage/providerTypes'
+import { checkBinariesPreflight } from '../capabilities/binaries/checks'
 import { checkFontsPreflight } from '../capabilities/fonts/checks'
 import { diffFonts } from '../capabilities/fonts/diff'
 import type { FontsSystemProvider } from '../capabilities/fonts/providerTypes'
@@ -68,6 +69,7 @@ export async function buildDoctorReport(
   const appimage = checkAppimagePreflight(gearLeverProvider, appimageSystemCheck)
   const fontsDiff = await diffFonts(ctx)
   const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
+  const binaries = checkBinariesPreflight(ctx)
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
   const secretScan = checkSecretScanPreflight(ctx)
   const portability = checkManifestPortability(ctx)
@@ -94,6 +96,7 @@ export async function buildDoctorReport(
     checks,
     appimage,
     fonts,
+    binaries,
     nvidia,
     secretScan,
     portability,

@@ -83,9 +83,21 @@ describe('captureBinaries', () => {
     const report = await captureBinaries(fixture.ctx, { dryRun: false })
     expect(report.added).toBe(0)
     expect(report.notes.some((n) => n.includes('sync-claude-to-opencode.sh'))).toBe(true)
+    // 버전성 파일명이 아니므로(F5) 수렴 경고는 붙지 않는다.
+    expect(report.notes.some((n) => n.includes('수렴하지 않을 수 있음'))).toBe(false)
 
     const manifest = effectiveLayer(fixture.ctx, BINARIES_LAYER, BINARIES_KEY_FIELDS)
     expect((manifest.binary as BinaryEntry[] | undefined) ?? []).toHaveLength(0)
+  })
+
+  it('flags an unknown, versioned executable filename with the F5 non-convergence warning', async () => {
+    writeExecutable(fixture, '.local/bin', 'some-tool-1.2.3')
+
+    const report = await captureBinaries(fixture.ctx, { dryRun: false })
+    expect(report.added).toBe(0)
+    const note = report.notes.find((n) => n.includes('some-tool-1.2.3'))
+    expect(note).toBeDefined()
+    expect(note).toContain('수렴하지 않을 수 있음')
   })
 
   it('preserves an existing pin across recapture (capture never touches pin)', async () => {

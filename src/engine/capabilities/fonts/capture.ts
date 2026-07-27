@@ -14,6 +14,7 @@
  */
 import type { RigsyncContext } from '../../context'
 import { readCommonLayer, writeCommonLayer, type ManifestDocument } from '../../manifest'
+import { isVersionedFilename, VERSIONED_FILENAME_WARNING } from '../../versionedFilename'
 import { FONTS_LAYER } from './constants'
 import { getKnownFontDefinition } from './knownFontSources'
 import { groupInstalledFontFiles } from './scan'
@@ -71,8 +72,12 @@ export async function captureFonts(
   }
 
   for (const file of unresolvedFiles) {
+    // refactor-spec-v0.2 F5 -- 미등록 + 버전성 파일명이면 소스를 지정하기
+    // 전까지 다른 머신에서 영원히 파일명이 일치하지 않을 수 있다는 것까지
+    // 함께 경고한다(단순 "레지스트리에 없음"보다 구체적인 위험).
+    const suffix = isVersionedFilename(file) ? ` -- ${VERSIONED_FILENAME_WARNING}` : ''
     notes.push(
-      `${file}: 알려진 폰트 레지스트리에 없어 소스를 특정할 수 없음 -- manifest에 담지 않음`
+      `${file}: 알려진 폰트 레지스트리에 없어 소스를 특정할 수 없음 -- manifest에 담지 않음${suffix}`
     )
   }
 

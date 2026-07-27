@@ -95,6 +95,11 @@ function fontsKinds(fonts: DoctorReportDto['fonts']): StatusKind[] {
   return kinds
 }
 
+/** refactor-spec-v0.2 F5(P5) -- binaries preflight는 버전성 파일명 경고뿐이라 fonts보다 단순하다. */
+function binariesKinds(binaries: DoctorReportDto['binaries']): StatusKind[] {
+  return binaries.warnings.map((): StatusKind => 'warn')
+}
+
 function nvidiaKinds(nvidia: DoctorReportDto['nvidia']): StatusKind[] {
   if (!nvidia.applicable) return []
   return [nvidia.matched ? 'ok' : 'warn']
@@ -294,6 +299,7 @@ function DoctorView(): React.JSX.Element {
   const basicCounts = countKinds(basicKinds(report.basic, report.emptyFollower))
   const appimageCounts = countKinds(appimageKinds(report.appimage))
   const fontsCounts = countKinds(fontsKinds(report.fonts))
+  const binariesCounts = countKinds(binariesKinds(report.binaries))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
   const portabilityCounts = countKinds(portabilityKinds(report.portability))
@@ -306,6 +312,7 @@ function DoctorView(): React.JSX.Element {
     basicCounts,
     appimageCounts,
     fontsCounts,
+    binariesCounts,
     nvidiaCounts,
     secretScanCounts,
     portabilityCounts,
@@ -457,6 +464,24 @@ function DoctorView(): React.JSX.Element {
           {report.fonts.warnings.map((w) => (
             <DoctorActionNote key={w} kind="warn" text={w} />
           ))}
+        </DoctorGroup>
+
+        {/*
+          refactor-spec-v0.2 F5(P5) -- binaries는 fonts와 같은 문제 구조를
+          공유하지만(레지스트리 미등록 실행파일의 파일명 정확 일치 문제)
+          fc-cache류 시스템 명령이 없어 fonts보다 단순하다. 버전성 파일명
+          경고만 다룬다.
+        */}
+        <DoctorGroup
+          title="Binaries"
+          description="레지스트리 미등록 + 버전성 파일명 실행파일 (다른 머신에서 수렴하지 않을 수 있음)"
+          counts={binariesCounts}
+        >
+          {report.binaries.warnings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">감지된 항목 없음.</p>
+          ) : (
+            report.binaries.warnings.map((w) => <DoctorActionNote key={w} kind="warn" text={w} />)
+          )}
         </DoctorGroup>
 
         {report.nvidia.applicable && (

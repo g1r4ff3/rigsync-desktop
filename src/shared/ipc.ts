@@ -610,6 +610,15 @@ export interface DoctorFontsPreflightDto {
   readonly warnings: readonly string[]
 }
 
+/**
+ * refactor-spec-v0.2 F5(P5): binaries capability preflight — 레지스트리
+ * 미등록 + 버전성 파일명 실행파일 경고("binaries도 fonts와 동일 구조").
+ */
+export interface DoctorBinariesPreflightDto {
+  readonly unresolvedInstalled: readonly string[]
+  readonly warnings: readonly string[]
+}
+
 /** manifest 스토어 전체 소급 시크릿 스캔(⑥) -- capture 관문 우회분을 잡는 마지막 안전망. */
 export interface DoctorSecretScanPreflightDto {
   readonly blockedFindings: readonly SecretFindingDto[]
@@ -680,6 +689,7 @@ export interface DoctorReportDto {
   readonly checks: readonly DoctorCheckResultDto[]
   readonly appimage: DoctorAppimagePreflightDto
   readonly fonts: DoctorFontsPreflightDto
+  readonly binaries: DoctorBinariesPreflightDto
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
   readonly portability: DoctorPortabilityDto

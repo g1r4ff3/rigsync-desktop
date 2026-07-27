@@ -4,6 +4,7 @@ export {
   FollowerBinariesCaptureBlockedError,
   type CaptureBinariesOptions
 } from './capture'
+export { checkBinariesPreflight, type BinariesPreflightCheck } from './checks'
 export { diffBinaries } from './diff'
 export {
   getKnownBinaryDefinition,

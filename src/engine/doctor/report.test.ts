@@ -132,6 +132,22 @@ describe('buildDoctorReport', () => {
     fixture.cleanup()
   })
 
+  it('includes the binaries preflight (F5/P5) in the same report', async () => {
+    const fixture = makeFixture('reference')
+    const report = await buildDoctorReport(
+      fixture.ctx,
+      makeFakeDoctorSystemProvider(),
+      makeFakeGearLeverProvider({ available: false }),
+      { isPackageInstalled: () => false },
+      makeFakeFontsSystemProvider(),
+      makeFakeNvidiaProvider(),
+      gitTransportProvider,
+      { configConfigured: true }
+    )
+    expect(report.binaries).toEqual({ unresolvedInstalled: [], warnings: [] })
+    fixture.cleanup()
+  })
+
   it('surfaces the empty-follower warning for a follower with an empty, remote-less manifest', async () => {
     const fixture = makeFixture('follower')
     const report = await buildDoctorReport(

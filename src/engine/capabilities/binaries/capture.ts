@@ -14,6 +14,7 @@
  */
 import type { RigsyncContext } from '../../context'
 import { readCommonLayer, writeCommonLayer, type ManifestDocument } from '../../manifest'
+import { isVersionedFilename, VERSIONED_FILENAME_WARNING } from '../../versionedFilename'
 import { BINARIES_LAYER } from './constants'
 import { getKnownBinaryDefinition } from './knownBinarySources'
 import { groupInstalledBinaries } from './scan'
@@ -71,8 +72,12 @@ export async function captureBinaries(
   }
 
   for (const file of unresolvedFiles) {
+    // refactor-spec-v0.2 F5 -- fonts capture.ts와 동일 판정: 미등록 + 버전성
+    // 파일명이면 소스를 지정하기 전까지 다른 머신에서 영원히 일치하지 않을
+    // 수 있다.
+    const suffix = isVersionedFilename(file) ? ` -- ${VERSIONED_FILENAME_WARNING}` : ''
     notes.push(
-      `${file}: 알려진 바이너리 레지스트리에 없어 소스를 특정할 수 없음 -- manifest에 담지 않음`
+      `${file}: 알려진 바이너리 레지스트리에 없어 소스를 특정할 수 없음 -- manifest에 담지 않음${suffix}`
     )
   }
 
