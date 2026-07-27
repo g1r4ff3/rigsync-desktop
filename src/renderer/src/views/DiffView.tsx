@@ -25,6 +25,7 @@ import {
   sectionCopy
 } from '../copy'
 import { captureAll } from '../captureAll'
+import { diffSnapshotSlot, fetchDiffSnapshot, useDiffSnapshot } from '../diffSnapshotStore'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusIcon, StatusText } from '../status'
 import { planActionStatusKind, type StatusKind } from '../statusKind'
@@ -33,13 +34,11 @@ import type {
   AppimageDiffReportDto,
   BinariesDiffReportDto,
   DotfilesDiffReport,
-  DuplicateWarningDto,
   EngineStatus,
   FontsDiffReportDto,
   PackagesDiffReport,
   PlanActionResultDto,
   PlanEvent,
-  ReclassificationEventDto,
   ReposDiffReportDto,
   ScheduledDiffReportDto,
   ServicesDiffReportDto,
@@ -231,20 +230,25 @@ interface DiffViewProps {
 }
 
 function DiffView({ status }: DiffViewProps): React.JSX.Element {
-  const [dotfilesDiff, setDotfilesDiff] = useState<DotfilesDiffReport | null>(null)
-  const [packagesDiff, setPackagesDiff] = useState<PackagesDiffReport | null>(null)
-  const [appimageDiff, setAppimageDiff] = useState<AppimageDiffReportDto | null>(null)
-  const [fontsDiff, setFontsDiff] = useState<FontsDiffReportDto | null>(null)
-  const [binariesDiff, setBinariesDiff] = useState<BinariesDiffReportDto | null>(null)
-  const [settingsDiff, setSettingsDiff] = useState<SettingsDiffReportDto | null>(null)
-  const [servicesDiff, setServicesDiff] = useState<ServicesDiffReportDto | null>(null)
-  const [scheduledDiff, setScheduledDiff] = useState<ScheduledDiffReportDto | null>(null)
-  const [toolsDiff, setToolsDiff] = useState<ToolsDiffReportDto | null>(null)
-  const [reposDiff, setReposDiff] = useState<ReposDiffReportDto | null>(null)
-  const [duplicates, setDuplicates] = useState<readonly DuplicateWarningDto[]>([])
-  const [reclassifications, setReclassifications] = useState<readonly ReclassificationEventDto[]>(
-    []
-  )
+  // 4단계(스냅샷 스토어): 탭 전환 체감 0ms — 앱 수준 스토어(diffSnapshotStore.ts)
+  // 구독으로 바꿨다. 이전 데이터가 있으면 재마운트(=탭 재방문) 즉시 그대로
+  // 렌더되고, 백그라운드에서 조용히 재검증된다(stale-while-revalidate).
+  // 아래 12개 상수는 옛 개별 useState와 같은 이름 그대로 유지해 이후 렌더
+  // 로직(hasXDrift 등)을 건드리지 않는다.
+  const diffSnapshot = useDiffSnapshot()
+  const snapshotData = diffSnapshot.data
+  const dotfilesDiff = snapshotData?.dotfiles ?? null
+  const packagesDiff = snapshotData?.packages ?? null
+  const appimageDiff = snapshotData?.appimage ?? null
+  const fontsDiff = snapshotData?.fonts ?? null
+  const binariesDiff = snapshotData?.binaries ?? null
+  const settingsDiff = snapshotData?.settings ?? null
+  const servicesDiff = snapshotData?.services ?? null
+  const scheduledDiff = snapshotData?.scheduled ?? null
+  const toolsDiff = snapshotData?.tools ?? null
+  const reposDiff = snapshotData?.repos ?? null
+  const duplicates = snapshotData?.duplicates ?? []
+  const reclassifications = snapshotData?.reclassifications ?? []
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -263,109 +267,21 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const isReference = status?.role === 'reference'
   const summary = isReference ? diffSummaryCopy.reference : diffSummaryCopy.follower
 
+  // 4단계: 스토어의 revalidate 하나로 "마운트 시 최신화"와 "수동/변조 후
+  // 재조회"를 통일했다(옛 코드는 이 둘이 각각 별도 Promise.all 블록이었다).
+  // Slot이 이미 in-flight를 병합하므로 중복 호출은 안전하다.
   async function refreshDiff(): Promise<void> {
-    // P4: follower는 diff를 보기 전에 fetch+ff-pull을 먼저 시도한다(reference는
-    // syncNow가 commit+push라 여기서 부르면 안 됨 -- role로 가른다). 실패해도
-    // 로컬 기준으로 diff는 계속 보여준다(상태바가 오류를 표면화).
-    if (status?.role === 'follower') {
-      await window.api.engine.syncNow().catch(() => {})
-    }
-    const [
-      dotfiles,
-      packages,
-      appimage,
-      fonts,
-      binaries,
-      settings,
-      services,
-      scheduled,
-      tools,
-      repos,
-      dupes,
-      reclass
-    ] = await Promise.all([
-      window.api.engine.diffDotfiles(),
-      window.api.engine.diffPackages(),
-      window.api.engine.diffAppimage(),
-      window.api.engine.diffFonts(),
-      window.api.engine.diffBinaries(),
-      window.api.engine.diffSettings(),
-      window.api.engine.diffServices(),
-      window.api.engine.diffScheduled(),
-      window.api.engine.diffTools(),
-      window.api.engine.diffRepos(),
-      window.api.engine.detectDuplicates(),
-      window.api.engine.detectReclassifications()
-    ])
-    setDotfilesDiff(dotfiles)
-    setPackagesDiff(packages)
-    setAppimageDiff(appimage)
-    setFontsDiff(fonts)
-    setBinariesDiff(binaries)
-    setSettingsDiff(settings)
-    setServicesDiff(services)
-    setScheduledDiff(scheduled)
-    setToolsDiff(tools)
-    setReposDiff(repos)
-    setDuplicates(dupes)
-    setReclassifications(reclass)
+    await diffSnapshotSlot.revalidate(() => fetchDiffSnapshot(status))
   }
 
   useEffect(() => {
-    // P4: follower는 초기 로드 때도 pull을 먼저 시도한다 (refreshDiff와 동일한
-    // 판단 -- 인라인하는 이유는 기존 react-hooks/set-state-in-effect 회피 패턴 유지).
-    const presync =
-      status?.role === 'follower' ? window.api.engine.syncNow().catch(() => {}) : Promise.resolve()
-    presync
-      .then(() =>
-        Promise.all([
-          window.api.engine.diffDotfiles(),
-          window.api.engine.diffPackages(),
-          window.api.engine.diffAppimage(),
-          window.api.engine.diffFonts(),
-          window.api.engine.diffBinaries(),
-          window.api.engine.diffSettings(),
-          window.api.engine.diffServices(),
-          window.api.engine.diffScheduled(),
-          window.api.engine.diffTools(),
-          window.api.engine.diffRepos(),
-          window.api.engine.detectDuplicates(),
-          window.api.engine.detectReclassifications()
-        ])
-      )
-      .then(
-        ([
-          dotfiles,
-          packages,
-          appimage,
-          fonts,
-          binaries,
-          settings,
-          services,
-          scheduled,
-          tools,
-          repos,
-          dupes,
-          reclass
-        ]) => {
-          setDotfilesDiff(dotfiles)
-          setPackagesDiff(packages)
-          setAppimageDiff(appimage)
-          setFontsDiff(fonts)
-          setBinariesDiff(binaries)
-          setSettingsDiff(settings)
-          setServicesDiff(services)
-          setScheduledDiff(scheduled)
-          setToolsDiff(tools)
-          setReposDiff(repos)
-          setDuplicates(dupes)
-          setReclassifications(reclass)
-        },
-        (err: unknown) => setError(err instanceof Error ? err.message : String(err))
-      )
-    // status가 null -> 실제 EngineStatus로 바뀌는 순간 follower 여부를 다시
-    // 반영해 한 번 더 부른다(마운트 시 status가 아직 로딩 중일 수 있어서) --
-    // 약간의 중복 조회는 있지만 안전한 read-only 호출이라 감수한다.
+    // P4: follower는 diff 전에 fetch+ff-pull을 먼저 시도한다(fetchDiffSnapshot
+    // 내부 -- role로 가른다). status가 null -> 실제 EngineStatus로 바뀌는 순간
+    // follower 여부를 다시 반영해 한 번 더 부른다(마운트 시 status가 아직
+    // 로딩 중일 수 있어서) -- 스토어가 in-flight를 병합하므로 안전하다.
+    diffSnapshotSlot
+      .revalidate(() => fetchDiffSnapshot(status))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }, [status])
 
   const hasDrift = useMemo(() => {
@@ -683,6 +599,12 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
                 ? summary.matched
                 : summary.drift}
           </span>
+          {/* 4단계 SWR: 이전 데이터를 보여주는 동안 조용히 재검증 중임을 미세
+              표시 — 스토어가 스켈레톤 대신 이전 값을 그대로 렌더하므로, 지금
+              보는 값이 갱신 중일 수 있다는 신호가 없으면 오해할 수 있다. */}
+          {totalDrift !== null && diffSnapshot.revalidating && (
+            <span className="text-[11px] text-muted-foreground">갱신 중…</span>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {driftCounts.map((c) => (
@@ -762,9 +684,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         </StatusText>
       )}
 
-      {error && (
+      {(error ?? diffSnapshot.error) && (
         <StatusText kind="error" className="mb-2">
-          {error}
+          {error ?? diffSnapshot.error}
         </StatusText>
       )}
 

@@ -3,8 +3,11 @@ import { HelpPopover } from '@/components/HelpPopover'
 import { TitleBar } from '@/components/TitleBar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { helpCopy, tabCopy } from './copy'
+import { diffSnapshotSlot, fetchDiffSnapshot } from './diffSnapshotStore'
+import { doctorSnapshotSlot, fetchDoctorSnapshot } from './doctorSnapshotStore'
 import { SCREENSHOT_GOTO_EVENT } from './screenshotBus'
 import { syncStatusKind } from './statusKind'
+import { fetchSyncItemsSnapshot, syncItemsSnapshotSlot } from './syncItemsSnapshotStore'
 import type {
   EngineStatus,
   ManifestSourceMode,
@@ -48,6 +51,19 @@ function App(): React.JSX.Element {
     fetchStatus()
   }, [])
 
+  // 4단계(스냅샷 스토어): 세 스토어(diff·syncItems·doctor)를 status가 준비되는
+  // 즉시 백그라운드로 채워둔다 — 그래야 사용자가 아직 방문 안 한 탭으로
+  // 전환해도 "탭 전환 체감 0ms"가 성립한다(안 그러면 diff 탭만 자동
+  // 프리페치되고 items·doctor는 첫 방문 때 여전히 스켈레톤을 본다). 3개 모두
+  // read 전용이라 동시 실행 안전(2단계 워커 스케줄러가 이미 보장) + 병렬로
+  // 쏘는 게 순차보다 빠르다(1단계 실측 — 기동 시나리오 참조).
+  useEffect(() => {
+    if (!status || status.firstRun) return
+    diffSnapshotSlot.revalidate(() => fetchDiffSnapshot(status)).catch(() => {})
+    syncItemsSnapshotSlot.revalidate(fetchSyncItemsSnapshot).catch(() => {})
+    doctorSnapshotSlot.revalidate(fetchDoctorSnapshot).catch(() => {})
+  }, [status])
+
   // P4: 상태바의 git 전송 상태(동기화됨/뒤처짐/로컬 전용/오류) — 부작용 없는
   // 조회라 탭 전환과 무관하게 주기적으로 다시 물어도 안전하다.
   useEffect(() => {
@@ -67,9 +83,17 @@ function App(): React.JSX.Element {
   }, [status])
 
   // P3: 트레이 알림 클릭 -> main이 창을 보여준 뒤 이 push로 Diff 탭을 연다.
+  // 4단계: 이미 Diff 탭이 활성 상태였다면 setTab('diff')는 no-op이라
+  // DiffView가 리마운트되지 않고, 마운트 효과로 걸려 있던 자동 재검증도
+  // 트리거되지 않는다 — 백그라운드 drift 체크가 뭔가를 발견해 알림까지 왔는데
+  // 스토어는 그걸 모르는 상태로 남는 셈이다. diffSnapshotSlot을 직접
+  // revalidate해 스케줄러가 찾아낸 변화가 항상 스토어로 흘러들게 한다.
   useEffect(() => {
-    return window.api.engine.onFocusDiffTab(() => setTab('diff'))
-  }, [])
+    return window.api.engine.onFocusDiffTab(() => {
+      setTab('diff')
+      void diffSnapshotSlot.revalidate(() => fetchDiffSnapshot(status))
+    })
+  }, [status])
 
   // R4: 스크린샷 하네스 -- main이 지시한 화면으로 강제 전환한다. 'apply-dialog'는
   // DiffView 내부 상태라 window CustomEvent로 다시 뿌려 DiffView가 직접 듣는다.

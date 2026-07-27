@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { Skeleton } from '@/components/ui/skeleton'
 import { buttonCopy, doctorCopy, emptyStateCopy } from '../copy'
+import { doctorSnapshotSlot, fetchDoctorSnapshot, useDoctorSnapshot } from '../doctorSnapshotStore'
 import { StatusIcon, StatusText } from '../status'
 import { doctorResultKind, type StatusKind } from '../statusKind'
 import type { DoctorReportDto } from '../../../shared/ipc'
@@ -269,28 +270,25 @@ function DoctorGroup({
 }
 
 function DoctorView(): React.JSX.Element {
-  const [report, setReport] = useState<DoctorReportWithSelfUpdate | null>(null)
+  // 4단계(스냅샷 스토어): 탭 전환 체감 0ms — doctorSnapshotStore.ts 구독으로
+  // 바꿨다. 이전 데이터가 있으면 재마운트(=탭 재방문) 즉시 그대로 렌더되고,
+  // 백그라운드에서 조용히 재검증된다(revalidating이 아래 Recheck 버튼의
+  // busy와 같은 자리를 대신한다).
+  const doctorSnapshot = useDoctorSnapshot()
+  const report = doctorSnapshot.data as DoctorReportWithSelfUpdate | null
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Record<string, boolean>>({})
-  const [refreshing, setRefreshing] = useState(false)
+  const refreshing = doctorSnapshot.loading || doctorSnapshot.revalidating
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null)
 
   async function refresh(): Promise<void> {
-    setRefreshing(true)
-    try {
-      setReport((await window.api.engine.getDoctorReport()) as DoctorReportWithSelfUpdate)
-      setLastCheckedAt(new Date())
-    } finally {
-      setRefreshing(false)
-    }
+    await doctorSnapshotSlot.revalidate(fetchDoctorSnapshot)
+    setLastCheckedAt(new Date())
   }
 
   useEffect(() => {
-    window.api.engine.getDoctorReport().then(
-      (r) => {
-        setReport(r as DoctorReportWithSelfUpdate)
-        setLastCheckedAt(new Date())
-      },
+    doctorSnapshotSlot.revalidate(fetchDoctorSnapshot).then(
+      () => setLastCheckedAt(new Date()),
       (err: unknown) => setError(err instanceof Error ? err.message : String(err))
     )
   }, [])
@@ -299,7 +297,7 @@ function DoctorView(): React.JSX.Element {
     setPending((prev) => ({ ...prev, [name]: true }))
     try {
       const next = await window.api.engine.ignoreDoctorCheck({ name, ignored: true })
-      setReport(next as DoctorReportWithSelfUpdate)
+      doctorSnapshotSlot.set(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -310,8 +308,8 @@ function DoctorView(): React.JSX.Element {
   if (!report) {
     return (
       <div className="flex h-full flex-col">
-        {error ? (
-          <StatusText kind="error">{error}</StatusText>
+        {(error ?? doctorSnapshot.error) ? (
+          <StatusText kind="error">{error ?? doctorSnapshot.error}</StatusText>
         ) : (
           // UI 정돈(v0.1.16): Doctor는 preflight·secret scan·portability 등
           // 여러 검사를 순차로 돌아 다른 탭보다 초기 로딩이 길다(실측: 수

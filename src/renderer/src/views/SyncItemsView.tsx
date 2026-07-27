@@ -35,6 +35,11 @@ import {
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusText } from '../status'
 import {
+  fetchSyncItemsSnapshot,
+  syncItemsSnapshotSlot,
+  useSyncItemsSnapshot
+} from '../syncItemsSnapshotStore'
+import {
   isHostLayerCapability,
   isIgnoreUnsupportedCapability,
   type EngineStatus,
@@ -272,7 +277,11 @@ interface SyncItemsViewProps {
 }
 
 function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
-  const [groups, setGroups] = useState<SyncItemGroupDto[] | null>(null)
+  // 4단계(스냅샷 스토어): 탭 전환 체감 0ms — syncItemsSnapshotStore.ts 구독으로
+  // 바꿨다(옛 주석 그대로: "이 화면은 탭이 바뀔 때마다 언마운트/재마운트되므로
+  // 매번 listSyncItems()를 새로 기다려야 한다"던 지적을 여기서 해소한다).
+  const syncItemsSnapshot = useSyncItemsSnapshot()
+  const groups = syncItemsSnapshot.data
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
@@ -307,7 +316,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const isFollower = isFollowerToggleDisabled(status?.role)
 
   async function refresh(): Promise<void> {
-    setGroups(await window.api.engine.listSyncItems())
+    await syncItemsSnapshotSlot.revalidate(fetchSyncItemsSnapshot)
   }
 
   useEffect(() => {
@@ -504,7 +513,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       // refactor-spec-v0.2 §1: apt-distro면 main이 ignore 대신 include 예외
       // 경로로 라우팅한다(요청의 subgroup 필드 — shared/ipc.ts 참조).
       const next = await window.api.engine.toggleIgnore({ capability, key, ignored, subgroup })
-      setGroups(next)
+      syncItemsSnapshotSlot.set(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -525,7 +534,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       const next = nextHostOnly
         ? await window.api.engine.moveEntryToHostLayer({ capability, key })
         : await window.api.engine.moveEntryToCommonLayer({ capability, key })
-      setGroups(next)
+      syncItemsSnapshotSlot.set(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -552,7 +561,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         ignored: nextIgnored,
         subgroup
       })
-      setGroups(next)
+      syncItemsSnapshotSlot.set(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -697,7 +706,9 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         </div>
       )}
 
-      {error && <StatusText kind="error">{error}</StatusText>}
+      {(error ?? syncItemsSnapshot.error) && (
+        <StatusText kind="error">{error ?? syncItemsSnapshot.error}</StatusText>
+      )}
 
       {groups === null ? (
         // UI 정돈(v0.1.16): 로딩 완료 후 나타날 가상 스크롤 목록과 같은
