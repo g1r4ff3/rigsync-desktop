@@ -49,7 +49,6 @@ export function makeFixture(
     manifestDir,
     homeDir,
     backupRoot: path.join(homeDir, '.rigsync-backup'),
-    aptBaselinePath: path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'apt-baseline.txt'),
     settings: options.settings ?? {},
     autostartEnabled: false,
     ...(options.profile ? { profile: options.profile } : {})

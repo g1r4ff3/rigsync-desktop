@@ -26,6 +26,20 @@ export interface FakeAptProviderOptions {
   readonly descriptions?: Readonly<Record<string, string>>
   /** `removeDryRun()`이 그대로 돌려줄 원문 stdout+stderr (기본 빈 문자열). */
   readonly removeDryRunOutput?: string
+  /**
+   * refactor-spec-v0.2 §1 분류 픽스처의 지름길 — 패키지명 -> 원하는 분류.
+   * distro는 priority=required, user는 priority=optional인 `prioritiesRaw`
+   * 원문을 합성해(분류 규칙 3 경유) 그 분류가 나오게 한다. 파서 자체를
+   * 검증하는 테스트는 이 지름길 대신 아래 raw 4종을 직접 준다. 기본(전부
+   * 미지정)은 원료가 전부 빈 문자열 -> 모든 이름이 규칙 4(기본값 사용자)로
+   * 떨어진다 — 분류에 관심 없는 기존 캡처/디프 테스트가 그대로 동작하는
+   * 안전 기본값(classify.ts의 "안전한 실패 방향"과 같은 성질).
+   */
+  readonly classify?: Readonly<Record<string, 'user' | 'distro'>>
+  readonly policySourcesRaw?: string
+  readonly policyPackagesRaw?: string
+  readonly dependsClosureRaw?: string
+  readonly prioritiesRaw?: string
 }
 
 export interface FakeAptProvider extends AptProvider {
@@ -52,6 +66,16 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): FakeAptP
     removeDryRun: (names) => {
       removeDryRunCalls.push([...names])
       return opts.removeDryRunOutput ?? ''
+    },
+    policySourcesRaw: () => opts.policySourcesRaw ?? '',
+    policyPackagesRaw: () => opts.policyPackagesRaw ?? '',
+    dependsClosureRaw: () => opts.dependsClosureRaw ?? '',
+    prioritiesRaw: () => {
+      if (opts.prioritiesRaw !== undefined) return opts.prioritiesRaw
+      if (!opts.classify) return ''
+      return Object.entries(opts.classify)
+        .map(([name, cls]) => `${name}\t${cls === 'distro' ? 'required' : 'optional'}\tinstalled`)
+        .join('\n')
     },
     removeDryRunCalls
   }

@@ -80,3 +80,69 @@ export function setIgnoredBulk(
     [capability]: { ...section, [kind]: [...current].sort() }
   })
 }
+
+// ---------------------------------------------------------------------------
+// apt include 예외 — refactor-spec-v0.2 §1 "예외만 기록"의 나머지 반쪽.
+// ignore("사용자 판정인데 안 보냄")의 대칭으로, include는 "배포판 판정인데
+// 보냄"이다. 저장 위치는 같은 ignore.toml의 `[apt] include = [...]` — 별도
+// 파일 대신 기존 레이어 병합·bulk 쓰기 기계를 그대로 재사용한다(값 아닌
+// 패키지명만 기록 — 스펙 요구).
+// ---------------------------------------------------------------------------
+
+export const APT_INCLUDE_KIND = 'include'
+
+/** 배포판 판정인데 동기화에 포함(include)하기로 한 apt 패키지명 집합. */
+export function readAptIncludeSet(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>
+): Set<string> {
+  return readIgnoreSet(ctx, 'apt', APT_INCLUDE_KIND)
+}
+
+export interface AptDistroToggleItem {
+  readonly key: string
+  /** manifest(effective)에 이미 있는 항목인지 — 켬/끔이 건드릴 예외 종류가 갈린다. */
+  readonly managed: boolean
+}
+
+/**
+ * "배포판 기본" 그룹의 동기화 스위치 의미론 — 항목의 managed 여부에 따라
+ * 건드릴 예외 리스트가 다르다 (한 번의 읽기-수정-쓰기로 두 kind를 함께 갱신):
+ *
+ * - 켬(synced=true): managed면 ignore 해제(다음 Capture가 제거하지 않게),
+ *   미관리면 include 추가(다음 Capture가 담게). 어느 쪽이든 ignore는 지운다.
+ * - 끔(synced=false): managed면 ignore 추가(다음 Capture가 제거) **그리고
+ *   include도 제거** — 제거된 뒤 include가 남아 있으면 그다음 Capture가 도로
+ *   담는 진동이 생긴다. 미관리면 include만 제거(안정 상태로 복귀).
+ */
+export function applyAptDistroToggle(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
+  items: readonly AptDistroToggleItem[],
+  synced: boolean
+): void {
+  if (items.length === 0) return
+  const doc = readCommonLayer(ctx, IGNORE_LAYER)
+  const section = (doc.apt as ManifestDocument | undefined) ?? {}
+  const readKind = (kind: string): Set<string> =>
+    new Set(Array.isArray(section[kind]) ? (section[kind] as string[]) : [])
+  const ignore = readKind('packages')
+  const include = readKind(APT_INCLUDE_KIND)
+
+  for (const item of items) {
+    if (synced) {
+      ignore.delete(item.key)
+      if (!item.managed) include.add(item.key)
+    } else {
+      include.delete(item.key)
+      if (item.managed) ignore.add(item.key)
+    }
+  }
+
+  writeCommonLayer(ctx, IGNORE_LAYER, {
+    ...doc,
+    apt: {
+      ...section,
+      packages: [...ignore].sort(),
+      [APT_INCLUDE_KIND]: [...include].sort()
+    }
+  })
+}

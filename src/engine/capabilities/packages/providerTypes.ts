@@ -42,6 +42,25 @@ export interface AptProvider {
    * 담당한다 — provider는 원문만 돌려줘 실행을 격리한다.
    */
   removeDryRun(names: readonly string[]): string
+  /**
+   * refactor-spec-v0.2 §1: 무상태 분류의 원료 4종 — 전부 read-only 조회의
+   * **원문 stdout**을 그대로 돌려주고, 파싱은 capability 레이어의 순수 함수
+   * (`classify.ts`)가 담당한다(`removeDryRun` 전례). 배치 1회 호출 원칙 유지.
+   */
+  /** `apt-cache policy` (인자 없음) — 소스 테이블 + `release o=` 라벨 원문. */
+  policySourcesRaw(): string
+  /** `apt-cache policy <names…>` 배치 — 패키지별 설치본 소스 라인 원문. */
+  policyPackagesRaw(names: readonly string[]): string
+  /**
+   * `apt-cache depends --recurse --installed --no-suggests --no-conflicts
+   * --no-breaks --no-replaces --no-enhances <metapackages…>` 원문 — 의존+추천
+   * 폐포만. **엄격 플래그가 정확성의 핵심**: 기본값은 Conflicts/Replaces까지
+   * 재귀해 폐포가 부푼다(실측 2026-07-27: 기본 1494 → 엄격 1422, 분류 결과
+   * 스펙 실측 28/131과 일치는 엄격 쪽만).
+   */
+  dependsClosureRaw(metapackages: readonly string[]): string
+  /** `dpkg-query -W -f='${Package}\t${Priority}\t${db:Status-Status}\n'` 원문 — 설치본 전체 priority. */
+  prioritiesRaw(): string
 }
 
 export interface SnapListRow {

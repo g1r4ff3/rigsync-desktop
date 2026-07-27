@@ -82,4 +82,44 @@ export class LinuxAptProvider implements AptProvider {
     const result = run(['apt-get', 'remove', '--dry-run', ...names], 30_000)
     return result.stdout + result.stderr
   }
+
+  policySourcesRaw(): string {
+    const result = run(['apt-cache', 'policy'], 30_000)
+    return result.code === 0 ? result.stdout : ''
+  }
+
+  policyPackagesRaw(names: readonly string[]): string {
+    if (names.length === 0) return ''
+    // 배치 1회 호출 -- 실측 159개 수십 ms.
+    const result = run(['apt-cache', 'policy', ...names], 30_000)
+    return result.stdout
+  }
+
+  dependsClosureRaw(metapackages: readonly string[]): string {
+    if (metapackages.length === 0) return ''
+    const result = run(
+      [
+        'apt-cache',
+        'depends',
+        '--recurse',
+        '--installed',
+        '--no-suggests',
+        '--no-conflicts',
+        '--no-breaks',
+        '--no-replaces',
+        '--no-enhances',
+        ...metapackages
+      ],
+      30_000
+    )
+    return result.code === 0 ? result.stdout : ''
+  }
+
+  prioritiesRaw(): string {
+    const result = run(
+      ['dpkg-query', '-W', '-f=${Package}\\t${Priority}\\t${db:Status-Status}\\n'],
+      30_000
+    )
+    return result.code === 0 ? result.stdout : ''
+  }
 }

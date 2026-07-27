@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, MinusCircle, PlusCircle } from 'lucide-react'
+import { CheckCircle2, Circle, MinusCircle, Package, PlusCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SyncItemState } from '../../../shared/ipc'
 
@@ -17,7 +17,11 @@ const ICON_BY_STATE = {
   // R7: detection-only(snap) 항목 — excluded와 같은 중립 모양(Circle)을 쓰지만
   // 별개 개념이다(excluded=ignore로 안정적으로 빠짐, detected=애초에 동기화
   // 대상권 밖). 색은 같은 muted라 라벨/툴팁 문구로 구분한다(syncItemStateCopy).
-  detected: Circle
+  detected: Circle,
+  // refactor-spec-v0.2 §1: 배포판 기본 판정 — 분류가 뺀 안정 상태. excluded/
+  // detected와 같은 muted 색이지만 모양(Package)으로 "배포판 구성물"임을 가른다
+  // (색만으로 구분 금지 규칙).
+  'distro-default': Package
 } as const
 
 const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
@@ -25,7 +29,8 @@ const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
   'pending-add': 'text-status-warn',
   'pending-remove': 'text-status-warn',
   excluded: 'text-status-muted',
-  detected: 'text-status-muted'
+  detected: 'text-status-muted',
+  'distro-default': 'text-status-muted'
 }
 
 export function CandidateStateIcon({

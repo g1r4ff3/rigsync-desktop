@@ -3,7 +3,6 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFakeGearLeverProvider } from './capabilities/appimage/testHelpers'
 import { captureApt } from './capabilities/packages/apt'
-import { writeAptBaseline } from './capabilities/packages/aptBaseline'
 import {
   makeFakeAptProvider,
   makeFakeFlatpakProvider,
@@ -16,6 +15,7 @@ import {
   computeSyncItemState,
   isPendingSyncItemState,
   listSyncItemGroups,
+  toggleAptDistroSyncedBulk,
   toggleSyncItemIgnore,
   toggleSyncItemIgnoreBulk,
   withSyncItemState
@@ -137,7 +137,6 @@ describe('Capture flips a candidate from pending-add to synced', () => {
   })
 
   it('an uncaptured apt package is pending-add before Capture and synced after', async () => {
-    writeAptBaseline(fixture.ctx, []) // 첫 capture가 배포판 기본분 스냅샷만 하고 끝나지 않게.
     const aptProvider = makeFakeAptProvider({ manual: ['ripgrep'] })
 
     const before = await listSyncItemGroups(
@@ -182,7 +181,6 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
   })
 
   it('combines dotfiles + package groups, dotfiles first', async () => {
-    writeAptBaseline(fixture.ctx, []) // P2c: baseline 없으면 첫 capture가 스냅샷만 하고 끝난다
     const aptProvider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, aptProvider, { dryRun: false })
 
@@ -380,5 +378,83 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
   it('toggleSyncItemIgnoreBulk on a detection-only capability (snap) still writes ignore.toml', () => {
     toggleSyncItemIgnoreBulk(fixture.ctx, 'snap', ['code', 'discord'], true)
     expect(readIgnoreSet(fixture.ctx, 'snap', 'packages')).toEqual(new Set(['code', 'discord']))
+  })
+})
+
+// refactor-spec-v0.2 §1: apt-distro 그룹의 상태 계산(include가 셋째 축)과
+// 스위치 라우팅(toggleAptDistroSyncedBulk — ignore 대신 include를 움직인다).
+describe('apt-distro subgroup state & toggle routing', () => {
+  it('withSyncItemState maps an apt-distro group with the include axis', () => {
+    const groups = withSyncItemState([
+      {
+        capability: 'apt',
+        title: 'apt — 배포판 기본',
+        subgroup: 'apt-distro',
+        collapsedByDefault: true,
+        items: [
+          { key: 'a', label: 'a', managed: false, ignored: false, included: false },
+          { key: 'b', label: 'b', managed: false, ignored: false, included: true },
+          { key: 'c', label: 'c', managed: true, ignored: false, included: false },
+          { key: 'd', label: 'd', managed: true, ignored: true, included: false }
+        ]
+      }
+    ])
+    const states = groups[0].items.map((i) => i.state)
+    expect(states).toEqual(['distro-default', 'pending-add', 'synced', 'pending-remove'])
+  })
+
+  it('a plain (apt-user) group never yields distro-default', () => {
+    const groups = withSyncItemState([
+      {
+        capability: 'apt',
+        title: 'apt — 사용자 설치',
+        subgroup: 'apt-user',
+        items: [{ key: 'a', label: 'a', managed: false, ignored: false, included: false }]
+      }
+    ])
+    expect(groups[0].items[0].state).toBe('pending-add')
+  })
+
+  describe('toggleAptDistroSyncedBulk', () => {
+    let fixture: TestFixture
+
+    beforeEach(() => {
+      fixture = makeFixture('reference')
+    })
+
+    afterEach(() => {
+      fixture.cleanup()
+    })
+
+    it('records include for unmanaged keys and clears ignore for managed keys, by manifest lookup', async () => {
+      // wpasupplicant는 manifest에 이미 있고(managed) ignore돼 있다;
+      // ubuntu-wallpapers는 미관리다. 켬 한 번이 각각 ignore 해제/include 기록이
+      // 되는지 — managed 판정은 renderer가 아니라 엔진이 manifest에서 한다.
+      const provider = makeFakeAptProvider({
+        manual: ['wpasupplicant'],
+        classify: { wpasupplicant: 'distro' }
+      })
+      await captureApt(fixture.ctx, provider, { dryRun: false })
+      // capture는 distro를 안 담으므로 직접 managed 상태를 만든다.
+      const { writeCommonAptSection } = await import('./capabilities/packages/io')
+      writeCommonAptSection(fixture.ctx, { packages: ['wpasupplicant'] })
+      toggleSyncItemIgnoreBulk(fixture.ctx, 'apt', ['wpasupplicant'], true)
+
+      toggleAptDistroSyncedBulk(fixture.ctx, ['wpasupplicant', 'ubuntu-wallpapers'], true)
+
+      expect(readIgnoreSet(fixture.ctx, 'apt', 'packages')).toEqual(new Set())
+      expect(readIgnoreSet(fixture.ctx, 'apt', 'include')).toEqual(new Set(['ubuntu-wallpapers']))
+    })
+
+    it('turning off removes include for unmanaged and sets ignore for managed', async () => {
+      const { writeCommonAptSection } = await import('./capabilities/packages/io')
+      writeCommonAptSection(fixture.ctx, { packages: ['wpasupplicant'] })
+      toggleAptDistroSyncedBulk(fixture.ctx, ['ubuntu-wallpapers'], true)
+
+      toggleAptDistroSyncedBulk(fixture.ctx, ['wpasupplicant', 'ubuntu-wallpapers'], false)
+
+      expect(readIgnoreSet(fixture.ctx, 'apt', 'packages')).toEqual(new Set(['wpasupplicant']))
+      expect(readIgnoreSet(fixture.ctx, 'apt', 'include')).toEqual(new Set())
+    })
   })
 })

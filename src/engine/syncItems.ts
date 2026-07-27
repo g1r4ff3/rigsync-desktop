@@ -10,13 +10,19 @@ import { buildBinariesSyncGroup } from './capabilities/binaries/candidates'
 import { buildDotfilesSyncGroup } from './capabilities/dotfiles/syncItems'
 import { buildFontsSyncGroup } from './capabilities/fonts/candidates'
 import { buildPackageSyncGroups } from './capabilities/packages/candidates'
+import { readEffectivePackages } from './capabilities/packages/io'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
 import { buildReposSyncGroup } from './capabilities/repos/candidates'
 import type { GitProvider } from './capabilities/repos/providerTypes'
 import { buildToolsSyncGroup } from './capabilities/tools/candidates'
 import type { ToolsProvider } from './capabilities/tools/providerTypes'
 import type { RigsyncContext } from './context'
-import { setIgnored, setIgnoredBulk } from './ignore'
+import {
+  applyAptDistroToggle,
+  setIgnored,
+  setIgnoredBulk,
+  type AptDistroToggleItem
+} from './ignore'
 
 export interface SyncItem {
   readonly key: string
@@ -24,6 +30,12 @@ export interface SyncItem {
   /** manifest(effective)에 있으면 true — 실제로 동기화 대상이라는 뜻. */
   readonly managed: boolean
   readonly ignored: boolean
+  /**
+   * refactor-spec-v0.2 §1: apt "배포판 기본" 판정 항목의 include 예외 여부 —
+   * 켜져 있으면 배포판 판정이어도 다음 Capture가 manifest에 담는다.
+   * apt 그룹에서만 채워진다 (다른 capability엔 분류 개념이 없음).
+   */
+  readonly included?: boolean
   /**
    * R6 R2: 항목이 무엇인지 사람이 읽는 한 줄 — apt(Description-en)/
    * flatpak(name+description)/appimage(Gear Lever `name`)/dotfiles(잘 알려진
@@ -57,11 +69,21 @@ export interface SyncItem {
  *   모른다 — 소비 지점(`withSyncItemState`)이 그룹의 `detectionOnly` 플래그를
  *   보고 이 단일 상태로 덮어쓴다.
  */
-export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected'
+/**
+ * refactor-spec-v0.2 §1이 더한 여섯째 상태 `distro-default`: apt "배포판 기본"
+ * 그룹의 미관리·미포함(include 안 됨) 항목. `excluded`(사용자가 ignore로 명시
+ * 제외)와 달리 **분류가** 제외한 안정 상태다 — 스위치를 켜면 include 예외가
+ * 되어 pending-add로 간다. 4상태에 욱여넣지 않는 이유는 snap의 `detected`와
+ * 같은 구조: 이 그룹에선 "다음 Capture가 뭘 할 것인가"의 답이 managed×ignored
+ * 만으로 안 나온다(include가 셋째 축 — `withSyncItemState`가 그룹의
+ * `subgroup: 'apt-distro'`를 보고 별도 계산).
+ */
+export type SyncItemState =
+  'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected' | 'distro-default'
 
 export function computeSyncItemState(
   item: Pick<SyncItem, 'managed' | 'ignored'>
-): Exclude<SyncItemState, 'detected'> {
+): Exclude<SyncItemState, 'detected' | 'distro-default'> {
   if (item.managed && !item.ignored) return 'synced'
   if (!item.managed && !item.ignored) return 'pending-add'
   if (item.managed && item.ignored) return 'pending-remove'
@@ -84,6 +106,15 @@ export interface SyncItemGroup {
    * 눌러도 apply에 아무 영향이 없다는 걸 이 플래그로 표시한다.
    */
   readonly detectionOnly?: boolean
+  /**
+   * refactor-spec-v0.2 §1: apt는 무상태 분류로 두 그룹으로 갈라진다 —
+   * `apt-user`(사용자 설치)와 `apt-distro`(배포판 기본, 접힌 그룹). 상태
+   * 계산(`withSyncItemState`)과 토글 라우팅(`toggleSyncItemIgnore*`)이 이
+   * 값으로 갈린다. 없으면 기존 단일 그룹 의미론 그대로.
+   */
+  readonly subgroup?: 'apt-user' | 'apt-distro'
+  /** UI가 처음에 접어서 보여줄 그룹 (펼치기 가능 — 절대 숨기지 않는다, 스펙 판단 원칙 2). */
+  readonly collapsedByDefault?: boolean
 }
 
 export interface SyncItemWithState extends SyncItem {
@@ -103,6 +134,18 @@ export interface SyncItemGroupWithState extends Omit<SyncItemGroup, 'items'> {
  * R7: `detectionOnly` 그룹(snap)의 항목은 managed×ignored 4상태를 계산하지
  * 않고 전부 `detected`로 덮어쓴다 — 위 `SyncItemState` 주석 참조.
  */
+/**
+ * apt-distro 그룹 전용 상태 계산 — managed×ignored 위에 include가 셋째 축.
+ * managed 항목은 일반 의미론과 같고(ignore가 제거를 결정), 미관리 항목만
+ * include가 pending-add ↔ distro-default를 가른다.
+ */
+function computeDistroItemState(
+  item: Pick<SyncItem, 'managed' | 'ignored' | 'included'>
+): SyncItemState {
+  if (item.managed) return item.ignored ? 'pending-remove' : 'synced'
+  return item.included ? 'pending-add' : 'distro-default'
+}
+
 export function withSyncItemState(
   groups: readonly SyncItemGroup[]
 ): readonly SyncItemGroupWithState[] {
@@ -110,7 +153,11 @@ export function withSyncItemState(
     ...group,
     items: group.items.map((item) => ({
       ...item,
-      state: group.detectionOnly ? ('detected' as const) : computeSyncItemState(item)
+      state: group.detectionOnly
+        ? ('detected' as const)
+        : group.subgroup === 'apt-distro'
+          ? computeDistroItemState(item)
+          : computeSyncItemState(item)
     }))
   }))
 }
@@ -169,4 +216,23 @@ export function toggleSyncItemIgnoreBulk(
   ignored: boolean
 ): void {
   setIgnoredBulk(ctx, capability, IGNORE_KIND_BY_CAPABILITY[capability], keys, ignored)
+}
+
+/**
+ * refactor-spec-v0.2 §1: "배포판 기본" 그룹의 스위치는 ignore가 아니라
+ * include 예외를 움직인다(managed 항목만 ignore 의미론 유지 —
+ * `applyAptDistroToggle` 주석 참조). 각 키의 managed 여부는 renderer가 보낸
+ * 상태를 믿지 않고 여기서 manifest(effective)로 다시 판정한다.
+ */
+export function toggleAptDistroSyncedBulk(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId' | 'profile'>,
+  keys: readonly string[],
+  synced: boolean
+): void {
+  const managedSet = new Set(readEffectivePackages(ctx).apt?.packages ?? [])
+  const items: AptDistroToggleItem[] = keys.map((key) => ({
+    key,
+    managed: managedSet.has(key)
+  }))
+  applyAptDistroToggle(ctx, items, synced)
 }

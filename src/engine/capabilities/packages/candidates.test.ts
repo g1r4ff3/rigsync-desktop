@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
 import { buildPackageSyncGroups } from './candidates'
 import { captureApt } from './apt'
-import { writeAptBaseline } from './aptBaseline'
 import { makeFakeAptProvider, makeFakeFlatpakProvider, makeFakeSnapProvider } from './testHelpers'
 
 // 신규 테스트 (구 repo엔 이 화면이 없었음) — P2a 결정 ⑤ "동기화 항목" 화면의
 // 데이터 소스. 관건: diff와 달리 ignore된 항목도 **보여야** 한다(토글 대상이므로).
+// refactor-spec-v0.2 §1부터 apt는 무상태 분류로 "사용자 설치"/"배포판 기본"
+// 두 그룹으로 갈라진다 — 배포판 기본도 숨기지 않고 접힌 그룹으로 보인다.
 
 describe('buildPackageSyncGroups', () => {
   let fixture: TestFixture
@@ -20,7 +21,6 @@ describe('buildPackageSyncGroups', () => {
   })
 
   it('groups managed + unmanaged items per provider, marking ignored ones (not hiding them)', async () => {
-    writeAptBaseline(fixture.ctx, []) // P2c: baseline 없으면 첫 capture가 스냅샷만 하고 끝난다
     const aptProvider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, aptProvider, { dryRun: false }) // "git" becomes managed
 
@@ -41,15 +41,80 @@ describe('buildPackageSyncGroups', () => {
     expect(aptGroup).toBeDefined()
     const byKey = new Map(aptGroup!.items.map((i) => [i.key, i]))
 
-    expect(byKey.get('git')).toEqual({ key: 'git', label: 'git', managed: true, ignored: false })
+    expect(byKey.get('git')).toEqual({
+      key: 'git',
+      label: 'git',
+      managed: true,
+      ignored: false,
+      included: false
+    })
     expect(byKey.get('curl')).toEqual({
       key: 'curl',
       label: 'curl',
       managed: false,
-      ignored: false
+      ignored: false,
+      included: false
     })
     // ignore된 항목도 화면엔 나타나야 한다 (diff와 다르게 숨기지 않는다).
-    expect(byKey.get('zoom')).toEqual({ key: 'zoom', label: 'zoom', managed: false, ignored: true })
+    expect(byKey.get('zoom')).toEqual({
+      key: 'zoom',
+      label: 'zoom',
+      managed: false,
+      ignored: true,
+      included: false
+    })
+  })
+
+  // refactor-spec-v0.2 §1: 분류가 apt를 두 그룹으로 가른다 — 배포판 기본은
+  // 접힌 그룹(collapsedByDefault)이되 절대 숨기지 않는다(판단 원칙 2).
+  it('splits apt into a user subgroup and a collapsed distro subgroup', async () => {
+    const aptProvider = makeFakeAptProvider({
+      manual: ['zotero', 'wpasupplicant', 'ubuntu-wallpapers'],
+      classify: { zotero: 'user', wpasupplicant: 'distro', 'ubuntu-wallpapers': 'distro' }
+    })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: aptProvider,
+      snap: makeFakeSnapProvider([], false),
+      flatpak: makeFakeFlatpakProvider({ available: false })
+    })
+
+    const userGroup = groups.find((g) => g.subgroup === 'apt-user')
+    const distroGroup = groups.find((g) => g.subgroup === 'apt-distro')
+    expect(userGroup).toBeDefined()
+    expect(distroGroup).toBeDefined()
+    expect(userGroup!.collapsedByDefault).toBeUndefined()
+    expect(distroGroup!.collapsedByDefault).toBe(true)
+    expect(userGroup!.items.map((i) => i.key)).toEqual(['zotero'])
+    expect(distroGroup!.items.map((i) => i.key)).toEqual(['ubuntu-wallpapers', 'wpasupplicant'])
+  })
+
+  it('marks include-excepted distro packages with included=true', async () => {
+    writeIgnore(fixture, { apt: { include: ['wpasupplicant'] } })
+    const aptProvider = makeFakeAptProvider({
+      manual: ['wpasupplicant', 'ubuntu-wallpapers'],
+      classify: { wpasupplicant: 'distro', 'ubuntu-wallpapers': 'distro' }
+    })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: aptProvider,
+      snap: makeFakeSnapProvider([], false),
+      flatpak: makeFakeFlatpakProvider({ available: false })
+    })
+
+    const distroGroup = groups.find((g) => g.subgroup === 'apt-distro')!
+    const byKey = new Map(distroGroup.items.map((i) => [i.key, i]))
+    expect(byKey.get('wpasupplicant')?.included).toBe(true)
+    expect(byKey.get('ubuntu-wallpapers')?.included).toBe(false)
+  })
+
+  it('omits the distro subgroup entirely when nothing classifies as distro', async () => {
+    const aptProvider = makeFakeAptProvider({ manual: ['git'] })
+    const groups = await buildPackageSyncGroups(fixture.ctx, {
+      apt: aptProvider,
+      snap: makeFakeSnapProvider([], false),
+      flatpak: makeFakeFlatpakProvider({ available: false })
+    })
+    expect(groups.filter((g) => g.capability === 'apt')).toHaveLength(1)
+    expect(groups[0].subgroup).toBe('apt-user')
   })
 
   it('omits a provider group entirely when it has no items', async () => {

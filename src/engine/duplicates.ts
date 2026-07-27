@@ -7,7 +7,7 @@
  * 순수 판정 로직(`detectDuplicateApps`)과 라이브 조회 배선(`detectDuplicates`)
  * 을 분리했다 — 판정 알고리즘 자체는 fake 데이터로 결정적으로 테스트한다.
  */
-import { readAptBaseline } from './capabilities/packages/aptBaseline'
+import { classifyAptPackages } from './capabilities/packages/classify'
 import type { GearLeverProvider } from './capabilities/appimage/providerTypes'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
 import type { RigsyncContext } from './context'
@@ -72,7 +72,7 @@ export function detectDuplicateApps(
   return warnings
 }
 
-/** 라이브 조회 배선 — apt(baseline 제외)/snap/flatpak/appimage 전부 모아 판정한다. */
+/** 라이브 조회 배선 — apt(배포판 기본 판정 제외)/snap/flatpak/appimage 전부 모아 판정한다. */
 export async function detectDuplicates(
   ctx: RigsyncContext,
   providers: PackageProviders,
@@ -81,9 +81,12 @@ export async function detectDuplicates(
   const items: DuplicateSourceItem[] = []
 
   if (providers.apt.isAvailable()) {
-    const baseline = readAptBaseline(ctx)
-    for (const name of providers.apt.manualInstalled()) {
-      if (baseline.has(name)) continue
+    // 무상태 분류(refactor-spec-v0.2 §1) -- 배포판 기본분은 사용자가 겹치게
+    // 설치한 앱이 아니므로 구 baseline 필터와 같은 취지로 후보에서 뺀다.
+    const manual = providers.apt.manualInstalled()
+    const classification = classifyAptPackages(providers.apt, manual)
+    for (const name of manual) {
+      if (classification.get(name) === 'distro') continue
       items.push({ capability: 'apt', label: name })
     }
   }

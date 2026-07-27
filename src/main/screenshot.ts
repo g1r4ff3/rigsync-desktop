@@ -46,6 +46,17 @@ const SCREENSHOT_STEPS: readonly ScreenshotStep[] = [
   // 일괄 삭제 체크리스트. planUninstall dry-run은 apply보다 훨씬 가벼워
   // (capability 하나·항목 소수) 9000ms까지는 필요 없지만 여유를 둔다. 기존
   // 01~07 파일명은 그대로 두고 새 화면이라 08/09로 이어 붙인다.
+  // refactor-spec-v0.2 §1 검증용 — apt "배포판 기본" 접힌 그룹은 목록 하단이라
+  // 기본 스크린샷(03)엔 안 잡힌다. 그룹 헤더로 스크롤한 접힌 상태(10)와
+  // 펼친 상태(11)를 캡처한다. **다이얼로그 단계(08/09)보다 먼저 실행해야
+  // 한다** — 실측(2026-07-27): GPU 비활성 캡처 모드에서 Radix 모달이 한 번
+  // 뜨면 그 뒤 리페인트가 멈춰(상태는 닫혔는데 픽셀이 이전 프레임에 고정)
+  // 이후 목록 캡처가 전부 다이얼로그 잔상으로 나온다. 파일명 번호는 촬영
+  // 순서가 아니라 화면 정체성이므로 그대로 둔다.
+  // 10은 직전 단계(온보딩)에서 탭이 재마운트된 직후라 listSyncItems 전체
+  // (apt 분류 조회 포함)를 다시 기다려야 한다 — 넉넉히 둔다.
+  { file: '10-candidates-distro.png', route: 'items-distro', delayMs: 6000 },
+  { file: '11-candidates-distro-open.png', route: 'items-distro-open', delayMs: 2000 },
   { file: '08-candidates-delete-confirm.png', route: 'items-delete-confirm', delayMs: 3000 },
   { file: '09-candidates-bulk-delete.png', route: 'items-bulk-delete', delayMs: 1500 }
 ]
@@ -76,6 +87,12 @@ export async function runScreenshotHarness(
     try {
       win.webContents.send(IPC_CHANNELS.engineScreenshotGoto, step.route)
       await delay(step.delayMs ?? 1200)
+      // 실측(2026-07-27): GPU 비활성 모드에서 compositor가 상태 변경(다이얼로그
+      // 닫힘·스크롤)을 새 프레임으로 커밋하지 않아 capturePage()가 이전 프레임을
+      // 돌려주는 경우가 있다 — 캡처 직전에 강제 리페인트를 요청하고 한 박자
+      // 기다린다.
+      win.webContents.invalidate()
+      await delay(300)
       const image = await win.webContents.capturePage()
       const outPath = path.join(outDir, step.file)
       fs.writeFileSync(outPath, image.toPNG())

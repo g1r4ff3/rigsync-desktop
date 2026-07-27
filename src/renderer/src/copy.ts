@@ -28,7 +28,7 @@ export const candidatesIntroCopy = {
   reference:
     '이 머신에 설치·존재하는 항목을 모아, manifest(동기화 기준)에 이미 들어있는 것과 아직 안 들어있는 것을 보여줍니다 — 아직 안 들어있는 항목은 Capture하면 manifest에 추가됩니다.',
   follower:
-    '이 머신에 설치·존재하는 항목을 모아, manifest(동기화 기준)에 이미 들어있는 것과 아직 안 들어있는 것을 보여줍니다 — 아직 안 들어있는 항목은 이 머신에만 있는 것이며, follower는 Capture할 수 없어 manifest에 넣으려면 reference 머신에서 해야 합니다.'
+    '이 머신에 설치·존재하는 항목을 모아, manifest(동기화 기준)에 이미 들어있는 것과 아직 안 들어있는 것을 보여줍니다 — 아직 안 들어있는 항목은 동기화되지 않으며, follower는 Capture할 수 없어 manifest에 넣으려면 reference 머신에서 해야 합니다.'
 } as const
 
 /**
@@ -94,6 +94,18 @@ export const syncItemStateCopy = {
     label: '검출됨',
     description:
       '이 머신에서 발견됐습니다 — snap은 동기화 대상이 아니라 중복 설치 검출(INV-1)에만 쓰입니다.'
+  },
+  /**
+   * refactor-spec-v0.2 §1: apt "배포판 기본" 그룹의 미관리·미포함 항목 전용
+   * 상태. `excluded`(사용자가 ignore로 직접 제외)와 달리 분류가 자동으로 뺀
+   * 것이므로 문구도 "판정"을 주어로 말한다 — 배포판 기본분을 소리 없이
+   * 삼키던 구 baseline과 달리, 여기 보이면서 스위치로 되살릴 수 있다는 것이
+   * 이 상태의 존재 이유(스펙 판단 원칙 2: 보이지 않는 필터링 금지).
+   */
+  'distro-default': {
+    label: '배포판 기본',
+    description:
+      '배포판 기본 구성(메타패키지 의존·표준 priority)으로 판정되어 자동 추가 대상이 아닙니다 — 스위치를 켜면 예외(include)로 기록되어 다음 Capture가 manifest에 담습니다.'
   }
 } as const
 
@@ -115,10 +127,21 @@ export function describeSyncItemState(
 ): { readonly label: string; readonly description: string } {
   if (role !== 'follower') return syncItemStateCopy[state]
   if (state === 'pending-add') {
+    // refactor-spec-v0.2 F1 후속: 구 라벨 "이 머신에만 있음"은 follower가 알 수
+    // 없는 단정이었다(reference에도 설치돼 있는데 baseline이 삼켜 manifest에
+    // 못 들어간 실사고에서 거짓이 됨 — 스펙 판단 원칙 3 "화면은 머신이 아는
+    // 것만 말한다"). manifest에 없다는 사실만 말한다.
     return {
-      label: '이 머신에만 있음',
+      label: 'manifest에 없음',
       description:
-        '이 머신에서 발견됐지만 manifest(동기화 기준)엔 없습니다 — 기준에 넣으려면 reference 머신에서 Capture해야 합니다.'
+        '이 머신에서 발견됐지만 manifest(동기화 기준)엔 없어 동기화되지 않습니다 — reference 머신에 있는지는 이 화면에서 알 수 없고, 기준에 넣으려면 reference 머신에서 Capture해야 합니다.'
+    }
+  }
+  if (state === 'distro-default') {
+    return {
+      label: syncItemStateCopy['distro-default'].label,
+      description:
+        '배포판 기본 구성으로 판정되어 자동 추가 대상이 아닙니다 — 포함하려면 reference 머신에서 스위치를 켜 예외(include)로 기록하세요.'
     }
   }
   if (state === 'pending-remove') {
@@ -150,6 +173,8 @@ export function formatSyncItemStateSummary(
     readonly pendingAdd: number
     readonly pendingRemove: number
     readonly excluded: number
+    /** refactor-spec-v0.2 §1: apt-distro 그룹만 0이 아닐 수 있다. */
+    readonly distroDefault?: number
   },
   role: EngineRole | undefined
 ): string {
@@ -162,6 +187,9 @@ export function formatSyncItemStateSummary(
     parts.push(`${syncItemStateCopy['pending-remove'].label} ${counts.pendingRemove}`)
   }
   if (counts.excluded > 0) parts.push(`${syncItemStateCopy.excluded.label} ${counts.excluded}`)
+  if ((counts.distroDefault ?? 0) > 0) {
+    parts.push(`${syncItemStateCopy['distro-default'].label} ${counts.distroDefault}`)
+  }
   return parts.join(' · ')
 }
 
@@ -318,7 +346,8 @@ export const helpCopy = {
   ].join(' '),
   items: [
     'Candidates는 이 머신에 설치·존재하는 항목을 provider(apt/flatpak/appimage/fonts/binaries/dotfiles/tools/repos)별로 모아, manifest(동기화 기준)에 이미 들어있는(managed) 항목과 아직 안 들어있는(unmanaged) 항목을 함께 보여줍니다.',
-    '각 항목은 4가지 상태 중 하나입니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(이 머신엔 있지만 manifest엔 아직 없음 — reference에서 Capture하면 추가됨)/제거 예정(지금은 manifest에 있지만 ignore돼 있어 Capture하면 빠짐)/제외됨(ignore돼 안정적으로 빠진 상태). follower 머신에서는 "추가 예정"이 "이 머신에만 있음"으로 표시됩니다 — follower는 Capture를 할 수 없어 "예정"이라는 말 자체가 성립하지 않고, 실제로는 "reference의 manifest엔 없는, 이 머신만의 항목"이라는 뜻이기 때문입니다.',
+    '각 항목은 다음 상태 중 하나입니다: 동기화 중(manifest에 있고 계속 유지)/추가 예정(이 머신엔 있지만 manifest엔 아직 없음 — reference에서 Capture하면 추가됨)/제거 예정(지금은 manifest에 있지만 ignore돼 있어 Capture하면 빠짐)/제외됨(ignore돼 안정적으로 빠진 상태)/배포판 기본(apt 분류가 자동 추가 대상에서 뺀 상태 — 아래 참조). follower 머신에서는 "추가 예정"이 "manifest에 없음"으로 표시됩니다 — follower는 Capture를 할 수 없어 "예정"이라는 말 자체가 성립하지 않고, 화면이 확실히 아는 사실은 "manifest에 없어 동기화되지 않는다"뿐이기 때문입니다(reference 머신에 있는지는 이 머신에서 알 수 없습니다).',
+    'apt는 두 그룹으로 나뉩니다 — "사용자 설치"는 서드파티 저장소·수동 설치 등 사용자가 추가한 패키지, "배포판 기본"은 Ubuntu 기본 구성(메타패키지 의존·표준 priority)으로 판정된 패키지입니다. 배포판 기본 그룹은 접혀 있지만 펼쳐서 전부 볼 수 있고, 스위치를 켜면 예외(include)로 기록되어 다음 Capture부터 동기화에 포함됩니다. 이 판정은 상태 파일 없이 매번 다시 계산되므로 어느 머신에서나 동일합니다.',
     '스위치는 켜짐 = 동기화 대상에 포함입니다 — 끄면 ignore 처리하지만, manifest 반영(추가/제거)은 그 자리에서 즉시 일어나지 않고 reference의 다음 Capture 때 일어납니다 — 그래서 reference 머신에서 보류 중 변경이 있으면 배너로 Capture를 안내합니다.',
     'follower 머신에서는 이 스위치·그룹 체크박스가 모두 비활성화되어 있습니다 — follower는 capture가 막혀 있어 이 화면에서 바꾼 값이 다시 커밋되지 않고, 이 머신에만 남아 효과가 없거나 reference가 나중에 같은 항목을 바꾸면 오히려 이 머신의 다음 동기화를 막을 수 있기 때문입니다. 바꾸려면 reference 머신에서 하세요.',
     '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정 또는 이 머신에만 있음/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',

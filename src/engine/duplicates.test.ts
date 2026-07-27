@@ -4,7 +4,6 @@ import {
   makeFakeFlatpakProvider,
   makeFakeSnapProvider
 } from './capabilities/packages/testHelpers'
-import { writeAptBaseline } from './capabilities/packages/aptBaseline'
 import { makeFakeGearLeverProvider } from './capabilities/appimage/testHelpers'
 import { detectDuplicateApps, detectDuplicates, type DuplicateSourceItem } from './duplicates'
 import { makeFixture, type TestFixture } from './testFixtures'
@@ -63,8 +62,9 @@ describe('detectDuplicates (live wiring)', () => {
   let fixture: TestFixture
 
   beforeEach(() => {
+    // 무상태 분류(refactor-spec-v0.2 §1): fake provider 기본값은 전부
+    // "사용자" 분류라 apt 항목이 걸러지지 않는다 — 구 baseline 프리셋 불필요.
     fixture = makeFixture('reference')
-    writeAptBaseline(fixture.ctx, []) // baseline 없으면 apt 쪽이 전부 걸러진다
   })
 
   afterEach(() => {
@@ -87,10 +87,9 @@ describe('detectDuplicates (live wiring)', () => {
     expect(warnings[0].ignored).toBe(false)
   })
 
-  it('excludes baseline apt packages from duplicate detection', async () => {
-    writeAptBaseline(fixture.ctx, ['bash'])
+  it('excludes distro-classified apt packages from duplicate detection', async () => {
     const providers = {
-      apt: makeFakeAptProvider({ manual: ['bash'] }),
+      apt: makeFakeAptProvider({ manual: ['bash'], classify: { bash: 'distro' } }),
       snap: makeFakeSnapProvider([{ name: 'bash', notes: '-' }]),
       flatpak: makeFakeFlatpakProvider()
     }

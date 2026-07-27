@@ -107,7 +107,9 @@ function App(): React.JSX.Element {
       if (
         route === 'apply-dialog' ||
         route === 'items-delete-confirm' ||
-        route === 'items-bulk-delete'
+        route === 'items-bulk-delete' ||
+        route === 'items-distro' ||
+        route === 'items-distro-open'
       ) {
         setTab(route === 'apply-dialog' ? 'diff' : 'items')
         setTimeout(() => {

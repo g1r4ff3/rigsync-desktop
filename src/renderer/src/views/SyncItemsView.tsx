@@ -1,4 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { BulkDeleteChecklistDialog } from '@/components/BulkDeleteChecklistDialog'
@@ -79,6 +80,16 @@ interface StateCounts {
   readonly pendingAdd: number
   readonly pendingRemove: number
   readonly excluded: number
+  /** refactor-spec-v0.2 §1: apt-distro 그룹에서만 0이 아닐 수 있다. */
+  readonly distroDefault: number
+}
+
+const EMPTY_STATE_COUNTS: StateCounts = {
+  synced: 0,
+  pendingAdd: 0,
+  pendingRemove: 0,
+  excluded: 0,
+  distroDefault: 0
 }
 
 type Row =
@@ -87,7 +98,15 @@ type Row =
       readonly key: string
       readonly title: string
       readonly capability: SyncItemGroupDto['capability']
+      /**
+       * refactor-spec-v0.2 §1: apt가 두 그룹(apt-user/apt-distro)으로 갈라져
+       * capability만으로는 그룹이 유일하지 않다 — 접기/busy 상태의 키는 이걸 쓴다.
+       */
+      readonly groupId: string
+      readonly subgroup?: SyncItemGroupDto['subgroup']
       readonly detectionOnly: boolean
+      /** 접힌 상태(기본 collapsedByDefault, 사용자가 펼치면 해제 — 검색 중엔 항상 펼침). */
+      readonly collapsed: boolean
       readonly groupState: GroupToggleState
       /** 그룹 전체 항목의 key 목록(검색 필터와 무관 — 그룹 토글은 항상 전체 대상). */
       readonly allItemKeys: readonly string[]
@@ -105,11 +124,13 @@ type Row =
       readonly kind: 'item'
       readonly key: string
       readonly capability: SyncItemGroupDto['capability']
+      readonly subgroup?: SyncItemGroupDto['subgroup']
       readonly itemKey: string
       readonly label: string
       readonly description?: string
       readonly managed: boolean
       readonly ignored: boolean
+      readonly included: boolean
       readonly state: SyncItemState
       /** R7: 소속 그룹이 detectionOnly면 스위치를 비활성화한다. */
       readonly detectionOnly: boolean
@@ -118,28 +139,44 @@ type Row =
       readonly deleteDisabledReason?: string
     }
 
-function computeGroupState(items: SyncItemGroupDto['items']): GroupToggleState {
+/**
+ * 항목의 스위치가 "켜짐(동기화 대상)"인지 — 일반 그룹은 !ignored 하나로
+ * 충분하지만, apt-distro 그룹의 미관리 항목은 include 예외가 켜짐을 뜻한다
+ * (engine `computeDistroItemState`와 같은 축 — refactor-spec-v0.2 §1).
+ */
+function isItemOn(
+  item: Pick<SyncItemGroupDto['items'][number], 'managed' | 'ignored' | 'included'>,
+  subgroup: SyncItemGroupDto['subgroup']
+): boolean {
+  if (subgroup === 'apt-distro' && !item.managed) return !!item.included
+  return !item.ignored
+}
+
+function computeGroupState(
+  items: SyncItemGroupDto['items'],
+  subgroup: SyncItemGroupDto['subgroup']
+): GroupToggleState {
   if (items.length === 0) return 'all-synced'
-  const ignoredCount = items.filter((i) => i.ignored).length
-  if (ignoredCount === 0) return 'all-synced'
-  if (ignoredCount === items.length) return 'all-ignored'
+  const onCount = items.filter((i) => isItemOn(i, subgroup)).length
+  if (onCount === items.length) return 'all-synced'
+  if (onCount === 0) return 'all-ignored'
   return 'mixed'
 }
 
 /**
- * R7: 4상태 집계 — detectionOnly 그룹(항목이 전부 `detected`)에는 호출하지
+ * R7: 상태 집계 — detectionOnly 그룹(항목이 전부 `detected`)에는 호출하지
  * 않는다(호출부는 `detectedCount`를 쓴다). `detected`를 여기 섞으면 else
  * 분기가 그걸 `excluded`로 잘못 세므로, 안전하게 명시 분기로 막아둔다.
  */
 function computeStateCounts(items: SyncItemGroupDto['items']): StateCounts {
-  const counts: StateCounts = { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
   return items.reduce((acc, item) => {
     if (item.state === 'synced') return { ...acc, synced: acc.synced + 1 }
     if (item.state === 'pending-add') return { ...acc, pendingAdd: acc.pendingAdd + 1 }
     if (item.state === 'pending-remove') return { ...acc, pendingRemove: acc.pendingRemove + 1 }
     if (item.state === 'excluded') return { ...acc, excluded: acc.excluded + 1 }
+    if (item.state === 'distro-default') return { ...acc, distroDefault: acc.distroDefault + 1 }
     return acc
-  }, counts)
+  }, EMPTY_STATE_COUNTS)
 }
 
 function mergeStateCounts(groups: readonly StateCounts[]): StateCounts {
@@ -148,13 +185,31 @@ function mergeStateCounts(groups: readonly StateCounts[]): StateCounts {
       synced: acc.synced + c.synced,
       pendingAdd: acc.pendingAdd + c.pendingAdd,
       pendingRemove: acc.pendingRemove + c.pendingRemove,
-      excluded: acc.excluded + c.excluded
+      excluded: acc.excluded + c.excluded,
+      distroDefault: acc.distroDefault + c.distroDefault
     }),
-    { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
+    EMPTY_STATE_COUNTS
   )
 }
 
-function groupCheckboxLabel(state: GroupToggleState): string {
+/** 그룹의 유일 식별자 — apt는 subgroup까지 필요(두 그룹), 나머지는 capability. */
+function groupIdOf(group: SyncItemGroupDto): string {
+  return group.subgroup ?? group.capability
+}
+
+function groupCheckboxLabel(
+  state: GroupToggleState,
+  subgroup?: SyncItemGroupDto['subgroup']
+): string {
+  // refactor-spec-v0.2 §1: apt-distro 그룹의 스위치는 ignore가 아니라 include
+  // 예외를 움직이므로 문구도 그 의미로 말한다(real-world match).
+  if (subgroup === 'apt-distro') {
+    if (state === 'all-synced')
+      return '전체 포함됨 — 클릭하면 그룹 전체의 include 예외를 해제합니다'
+    if (state === 'all-ignored')
+      return '전체 제외됨(배포판 기본) — 클릭하면 그룹 전체를 include 예외로 포함합니다'
+    return '일부만 포함됨(혼합) — 클릭하면 그룹 전체를 include 예외로 포함합니다'
+  }
   if (state === 'all-synced') return '전체 동기화 대상 — 클릭하면 그룹 전체를 ignore 처리합니다'
   if (state === 'all-ignored')
     return '전체 ignore됨 — 클릭하면 그룹 전체를 동기화 대상으로 되돌립니다'
@@ -170,11 +225,13 @@ function groupCheckboxLabel(state: GroupToggleState): string {
  */
 function GroupCheckbox({
   state,
+  subgroup,
   disabled,
   disabledReason,
   onClick
 }: {
   readonly state: GroupToggleState
+  readonly subgroup?: SyncItemGroupDto['subgroup']
   readonly disabled: boolean
   readonly disabledReason?: string
   readonly onClick: () => void
@@ -193,7 +250,7 @@ function GroupCheckbox({
           aria-label="그룹 전체 토글"
         />
       </TooltipTrigger>
-      <TooltipContent>{disabledReason ?? groupCheckboxLabel(state)}</TooltipContent>
+      <TooltipContent>{disabledReason ?? groupCheckboxLabel(state, subgroup)}</TooltipContent>
     </Tooltip>
   )
 }
@@ -208,6 +265,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
   const [pendingGroups, setPendingGroups] = useState<Record<string, boolean>>({})
+  // refactor-spec-v0.2 §1: 그룹 접기 상태 — 명시 오버라이드만 저장하고,
+  // 없으면 그룹의 collapsedByDefault를 따른다(refresh로 groups가 갈려도
+  // 사용자가 펼친 상태가 유지된다). 검색 중엔 접힘을 무시한다 — 접힌 그룹
+  // 안의 매치가 소리 없이 숨는 것은 스펙 판단 원칙 2 위반.
+  const [collapsedOverrides, setCollapsedOverrides] = useState<Record<string, boolean>>({})
   const [captureBusy, setCaptureBusy] = useState(false)
   // 항목 삭제(uninstall) 다이얼로그 상태 — 단건(행의 Delete)·일괄(체크리스트
   // "Continue") 둘 다 같은 DeleteConfirmDialog를 연다. `deleteRowKey`는 단건
@@ -267,12 +329,20 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const [pendingScreenshotRoute, setPendingScreenshotRoute] = useState<
     'items-delete-confirm' | 'items-bulk-delete' | null
   >(null)
+  // refactor-spec-v0.2 §1 검증용 — "배포판 기본" 그룹으로 스크롤(+선택 펼침).
+  // 삭제 다이얼로그 루트와 같은 "요청 기억 후 데이터 로딩 뒤 실행" 패턴.
+  const [pendingDistroRoute, setPendingDistroRoute] = useState<
+    'items-distro' | 'items-distro-open' | null
+  >(null)
 
   useEffect(() => {
     const listener = (event: Event): void => {
       const route = (event as CustomEvent<ScreenshotRoute>).detail
       if (route === 'items-bulk-delete' || route === 'items-delete-confirm') {
         setPendingScreenshotRoute(route)
+      }
+      if (route === 'items-distro' || route === 'items-distro-open') {
+        setPendingDistroRoute(route)
       }
     }
     window.addEventListener(SCREENSHOT_GOTO_EVENT, listener)
@@ -307,22 +377,28 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       const items = q ? group.items.filter((i) => i.label.toLowerCase().includes(q)) : group.items
       if (items.length === 0) continue
       const detectionOnly = !!group.detectionOnly
+      const groupId = groupIdOf(group)
+      // 검색 중엔 접힘을 무시한다 — 접힌 그룹 안의 매치를 소리 없이 숨기지
+      // 않는다(스펙 판단 원칙 2). 평상시엔 오버라이드 > collapsedByDefault.
+      const collapsed = q ? false : (collapsedOverrides[groupId] ?? !!group.collapsedByDefault)
       out.push({
         kind: 'header',
-        key: `h:${group.capability}`,
+        key: `h:${groupId}`,
         title: `${group.title} (${items.length})`,
         capability: group.capability,
+        groupId,
+        subgroup: group.subgroup,
         detectionOnly,
+        collapsed,
         // 그룹 토글·집계는 검색 필터와 무관하게 항상 그룹 전체를 대상으로 한다.
-        groupState: computeGroupState(group.items),
+        groupState: computeGroupState(group.items, group.subgroup),
         allItemKeys: group.items.map((i) => i.key),
         // R7: detectionOnly면 stateCounts는 무의미하니 안 채우고(0으로 둠)
         // detectedCount만 채운다 — 렌더가 detectionOnly 분기에서 골라 쓴다.
-        stateCounts: detectionOnly
-          ? { synced: 0, pendingAdd: 0, pendingRemove: 0, excluded: 0 }
-          : computeStateCounts(group.items),
+        stateCounts: detectionOnly ? EMPTY_STATE_COUNTS : computeStateCounts(group.items),
         detectedCount: detectionOnly ? group.items.length : 0
       })
+      if (collapsed) continue
       for (const item of items) {
         const eligibility = computeDeleteEligibility({
           capability: group.capability,
@@ -334,11 +410,13 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
           kind: 'item',
           key: `${group.capability}:${item.key}`,
           capability: group.capability,
+          subgroup: group.subgroup,
           itemKey: item.key,
           label: item.label,
           description: item.description,
           managed: item.managed,
           ignored: item.ignored,
+          included: !!item.included,
           state: item.state,
           detectionOnly,
           deleteEligible: eligibility.eligible,
@@ -347,7 +425,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       }
     }
     return out
-  }, [groups, query])
+  }, [groups, query, collapsedOverrides])
 
   const parentRef = useRef<HTMLDivElement | null>(null)
   const virtualizer = useVirtualizer({
@@ -357,15 +435,58 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     overscan: 16
   })
 
+  // 스크린샷 하네스 전용 — rows가 채워진 뒤 "배포판 기본" 그룹 헤더로 스크롤
+  // 한다('open'이면 먼저 펼침 오버라이드를 넣고, 펼쳐진 rows로 다시 이 effect가
+  // 돌 때 스크롤). 평상시 앱 동작에는 전혀 관여하지 않는다.
+  useEffect(() => {
+    if (!pendingDistroRoute) return
+    // 직전 스크린샷 단계가 열어둔 다이얼로그를 먼저 닫는다 — 안 닫으면
+    // 스크린샷에 다이얼로그가 겹쳐 목록이 안 보인다(items-bulk-delete 단계와
+    // 같은 회피, 그 effect의 closeDeleteDialog() 주석 참조).
+    setBulkChecklistOpen(false)
+    closeDeleteDialog()
+    const idx = rows.findIndex((r) => r.kind === 'header' && r.subgroup === 'apt-distro')
+    if (idx < 0) return // groups 로딩 대기 — 다음 렌더에서 다시 시도
+    const header = rows[idx]
+    if (
+      pendingDistroRoute === 'items-distro-open' &&
+      header.kind === 'header' &&
+      header.collapsed
+    ) {
+      setCollapsedOverrides((prev) => ({ ...prev, [header.groupId]: false }))
+      return // 펼쳐진 rows로 재계산된 뒤 스크롤
+    }
+    // 리스트 컨테이너가 스크롤 주체가 아닐 수도 있다(스크린샷 창처럼 창이
+    // 콘텐츠보다 크면 페이지가 스크롤 주체) — virtualizer 스크롤에 더해 실제
+    // 헤더 DOM 요소를 scrollIntoView로 데려온다(어느 조상이 스크롤하든 동작).
+    // fresh mount 직후엔 가상 스크롤러가 그 행의 DOM을 아직 안 그렸을 수
+    // 있어(ResizeObserver 측정 전) 짧게 폴링한다.
+    virtualizer.scrollToIndex(idx, { align: 'start' })
+    // 캡처 시점까지 주기적으로 재적용한다 — fresh mount 직후엔 늦은 레이아웃
+    // 변동이 스크롤을 되돌릴 수 있어 한 번의 scrollIntoView로는 안정적이지
+    // 않았다(실측). effect cleanup으로 타이머를 취소하면 안 된다 — 바로 아래
+    // setPendingDistroRoute(null)이 같은 틱에 cleanup을 돌려 재시도가 전부
+    // 죽는다(실측). 하네스 전용 경로 + 상한 있는 타이머라 누수 걱정은 없다.
+    const attempt = (tries: number): void => {
+      document.querySelector('[data-row-key="h:apt-distro"]')?.scrollIntoView({ block: 'start' })
+      if (tries > 0) setTimeout(() => attempt(tries - 1), 500)
+    }
+    attempt(14)
+    setPendingDistroRoute(null)
+  }, [pendingDistroRoute, rows, virtualizer])
+
   async function toggle(
     capability: SyncItemGroupDto['capability'],
     key: string,
-    ignored: boolean
+    ignored: boolean,
+    subgroup?: SyncItemGroupDto['subgroup']
   ): Promise<void> {
     const rowKey = `${capability}:${key}`
     setPendingKeys((prev) => ({ ...prev, [rowKey]: true }))
     try {
-      const next = await window.api.engine.toggleIgnore({ capability, key, ignored })
+      // refactor-spec-v0.2 §1: apt-distro면 main이 ignore 대신 include 예외
+      // 경로로 라우팅한다(요청의 subgroup 필드 — shared/ipc.ts 참조).
+      const next = await window.api.engine.toggleIgnore({ capability, key, ignored, subgroup })
       setGroups(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -375,26 +496,29 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   }
 
   async function toggleGroup(
+    groupId: string,
     capability: SyncItemGroupDto['capability'],
     state: GroupToggleState,
-    allItemKeys: readonly string[]
+    allItemKeys: readonly string[],
+    subgroup?: SyncItemGroupDto['subgroup']
   ): Promise<void> {
     // 클릭 시 항상 "전부 동기화 대상"을 향해 움직인다: 이미 전부 동기화
     // 대상이면 전부 ignore로, 그 외(전부 ignore 또는 혼합)면 전부 동기화
     // 대상으로 — 표준 "전체 선택" 체크박스 관례.
     const nextIgnored = state === 'all-synced'
-    setPendingGroups((prev) => ({ ...prev, [capability]: true }))
+    setPendingGroups((prev) => ({ ...prev, [groupId]: true }))
     try {
       const next = await window.api.engine.toggleIgnoreBulk({
         capability,
         keys: allItemKeys,
-        ignored: nextIgnored
+        ignored: nextIgnored,
+        subgroup
       })
       setGroups(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setPendingGroups((prev) => ({ ...prev, [capability]: false }))
+      setPendingGroups((prev) => ({ ...prev, [groupId]: false }))
     }
   }
 
@@ -551,6 +675,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
               return (
                 <div
                   key={row.key}
+                  data-row-key={row.key}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -569,13 +694,40 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                     <>
                       <GroupCheckbox
                         state={row.groupState}
-                        disabled={
-                          row.detectionOnly || isFollower || !!pendingGroups[row.capability]
-                        }
+                        subgroup={row.subgroup}
+                        disabled={row.detectionOnly || isFollower || !!pendingGroups[row.groupId]}
                         disabledReason={toggleDisabledReason(row.detectionOnly, status?.role)}
-                        onClick={() => toggleGroup(row.capability, row.groupState, row.allItemKeys)}
+                        onClick={() =>
+                          toggleGroup(
+                            row.groupId,
+                            row.capability,
+                            row.groupState,
+                            row.allItemKeys,
+                            row.subgroup
+                          )
+                        }
                       />
-                      <span className="font-mono">{row.title}</span>
+                      {/* refactor-spec-v0.2 §1: 접을 수 있는 그룹(배포판 기본)은
+                          헤더 전체가 아니라 명시적 chevron 버튼으로 펼친다 —
+                          접혀 있어도 헤더·집계는 항상 보인다(절대 숨기지 않는다). */}
+                      <button
+                        onClick={() =>
+                          setCollapsedOverrides((prev) => ({
+                            ...prev,
+                            [row.groupId]: !row.collapsed
+                          }))
+                        }
+                        className="flex items-center gap-1 hover:text-foreground"
+                        title={row.collapsed ? '그룹 펼치기' : '그룹 접기'}
+                        aria-label={row.collapsed ? '그룹 펼치기' : '그룹 접기'}
+                      >
+                        {row.collapsed ? (
+                          <ChevronRight className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="size-3.5" aria-hidden="true" />
+                        )}
+                        <span className="font-mono">{row.title}</span>
+                      </button>
                       {row.detectionOnly && (
                         <span className="text-status-muted">— detection-only</span>
                       )}
@@ -592,12 +744,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                     </>
                   ) : (
                     <>
-                      {/* R6 R1: managed/unmanaged 아이콘 하나였던 것을 4상태
+                      {/* R6 R1: managed/unmanaged 아이콘 하나였던 것을 상태
                           아이콘+라벨로 넓힌다 — "내가 고른 스위치가 실제로 manifest에
                           반영됐는지"를 상태 이름으로 직접 말해준다(색+형태 병행:
                           pending-add/remove는 같은 warn 색이지만 +/− 모양으로 구분).
                           R8: 라벨·설명은 role-aware(describeSyncItemState) — follower의
-                          pending-add는 "추가 예정"이 아니라 "이 머신에만 있음"으로 보인다. */}
+                          pending-add는 "추가 예정"이 아니라 "manifest에 없음"으로 보인다. */}
                       <span
                         className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
                         title={`${describeSyncItemState(row.state, status?.role).label} — ${describeSyncItemState(row.state, status?.role).description}`}
@@ -619,8 +771,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         // 계산됨)을 쓴다 — follower에서도 Delete는 로컬
                         // 시스템 변경이라 비활성화하지 않는다(비대칭, 위 안내
                         // 문구 참조).
+                        // refactor-spec-v0.2 §1: apt-distro 그룹의 미관리 항목은
+                        // ignored가 아니라 include가 켬/끔을 결정한다(isItemOn).
                         value={
-                          deleteRowKey === row.key ? 'delete' : controlValueForItem(row.ignored)
+                          deleteRowKey === row.key
+                            ? 'delete'
+                            : controlValueForItem(!isItemOn(row, row.subgroup))
                         }
                         ariaLabel={row.label}
                         syncPauseDisabled={row.detectionOnly || isFollower || pendingKeys[row.key]}
@@ -631,7 +787,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         deleteEligible={row.deleteEligible}
                         deleteDisabledReason={row.deleteDisabledReason}
                         onSyncPauseChange={(next) =>
-                          toggle(row.capability, row.itemKey, next === 'pause')
+                          toggle(row.capability, row.itemKey, next === 'pause', row.subgroup)
                         }
                         onDeleteRequest={() => openRowDelete(row)}
                       />

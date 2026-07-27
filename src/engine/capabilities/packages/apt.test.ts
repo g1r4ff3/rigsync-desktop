@@ -10,7 +10,6 @@ import {
   planApt,
   planAptUninstall
 } from './apt'
-import { writeAptBaseline } from './aptBaseline'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import { makeFakeAptProvider } from './testHelpers'
 
@@ -43,12 +42,12 @@ describe('captureApt / diffApt / planApt', () => {
   let fixture: TestFixture
 
   beforeEach(() => {
+    // 무상태 분류(refactor-spec-v0.2 §1) 이후 baseline 프리셋은 없다 —
+    // fake provider의 분류 원료 기본값(빈 문자열)은 모든 이름을 "사용자"로
+    // 분류하므로(안전 기본값) 이 describe의 기존 케이스들은 분류와 무관하게
+    // 그대로 동작한다. 분류 자체는 classify.test.ts와 아래 stateless
+    // classification describe가 검증한다.
     fixture = makeFixture('reference')
-    // 대부분의 기존 케이스는 "capture가 그냥 캡처한다"는 전제라, baseline
-    // 스냅샷 자체를 다루는 케이스만 빼고 여기서 빈 baseline을 미리 심어
-    // 첫 capture부터 정상적으로 캡처되게 한다 (P2c apt baseline 필터 전용
-    // 테스트는 아래 별도 describe에서 이 프리셋 없이 검증한다).
-    writeAptBaseline(fixture.ctx, [])
   })
 
   afterEach(() => {
@@ -201,11 +200,10 @@ describe('captureApt / diffApt / planApt', () => {
   })
 })
 
-// 신규 — FORWARD.md §7/정책 §8-B apt baseline 필터. 구 repo엔 이 개념이 없다
-// (§8-B는 "확정 필요" 항목으로만 남아 있었다) — 이 fixture는 위 describe의
-// `beforeEach`가 빈 baseline을 미리 심어두는 것과 달리, 진짜 "첫 capture"
-// 상황(baseline 파일이 아예 없음)을 그대로 검증한다.
-describe('apt baseline filter (first capture snapshots the distro-default set)', () => {
+// refactor-spec-v0.2 §1 — 무상태 분류가 capture/diff에서 "배포판 기본분"을
+// 어떻게 거르는지. 구 baseline 스냅샷(첫 capture 시점 이력)은 은퇴했다 —
+// 분류는 상태 파일 없이 매 조회 계산되고, include 예외만 기록된다.
+describe('apt stateless classification (capture/diff filter distro-default packages)', () => {
   let fixture: TestFixture
 
   beforeEach(() => {
@@ -216,43 +214,114 @@ describe('apt baseline filter (first capture snapshots the distro-default set)',
     fixture.cleanup()
   })
 
-  it('first capture snapshots everything as baseline and captures nothing new', async () => {
-    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(false)
-
-    const provider = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git'] })
+  it('capture adds only user-classified packages and reports the distro filter in notes', async () => {
+    const provider = makeFakeAptProvider({
+      manual: ['bash', 'coreutils', 'git', 'zotero'],
+      classify: { bash: 'distro', coreutils: 'distro', git: 'user', zotero: 'user' }
+    })
     const report = await captureApt(fixture.ctx, provider, { dryRun: false })
 
-    expect(report.manualInstalled).toBe(3) // 원본 apt-mark 총계는 그대로 보고
-    expect(report.packagesInManifest).toBe(0) // 하지만 baseline 자체라 manifest엔 아무것도 안 남는다
-    expect(report.notes.some((n) => n.includes('baseline'))).toBe(true)
-    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(true)
-    expect(fs.readFileSync(fixture.ctx.aptBaselinePath, 'utf-8')).toContain('git')
-  })
-
-  it('a second capture only picks up packages installed after the baseline snapshot', async () => {
-    const first = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git'] })
-    await captureApt(fixture.ctx, first, { dryRun: false })
-
-    const second = makeFakeAptProvider({ manual: ['bash', 'coreutils', 'git', 'ripgrep'] })
-    const report = await captureApt(fixture.ctx, second, { dryRun: false })
-
-    expect(report.packagesInManifest).toBe(1)
+    expect(report.manualInstalled).toBe(4) // 원본 apt-mark 총계는 그대로 보고
+    expect(report.packagesInManifest).toBe(2)
+    expect(report.notes.some((n) => n.includes('배포판 기본 판정 2개'))).toBe(true)
     const apt = readEffectivePackages(fixture.ctx).apt
-    expect(apt?.packages).toEqual(['ripgrep'])
+    expect(apt?.packages).toEqual(['git', 'zotero'])
   })
 
-  it('dry-run on the first capture does not write the baseline file', async () => {
-    const provider = makeFakeAptProvider({ manual: ['bash'] })
+  it('capture honors the include exception for a distro-classified package', async () => {
+    writeIgnore(fixture, { apt: { include: ['wpasupplicant'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['wpasupplicant', 'ubuntu-wallpapers'],
+      classify: { wpasupplicant: 'distro', 'ubuntu-wallpapers': 'distro' }
+    })
+    await captureApt(fixture.ctx, provider, { dryRun: false })
+
+    const apt = readEffectivePackages(fixture.ctx).apt
+    expect(apt?.packages).toEqual(['wpasupplicant'])
+  })
+
+  it('ignore still beats include on capture (no oscillation)', async () => {
+    writeIgnore(fixture, { apt: { packages: ['wpasupplicant'], include: ['wpasupplicant'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['wpasupplicant'],
+      classify: { wpasupplicant: 'distro' }
+    })
+    await captureApt(fixture.ctx, provider, { dryRun: false })
+
+    const apt = readEffectivePackages(fixture.ctx).apt
+    expect(apt?.packages ?? []).not.toContain('wpasupplicant')
+  })
+
+  it('capture deletes a leftover legacy apt-baseline.txt and says so', async () => {
+    const legacy = path.join(
+      fixture.homeDir,
+      '.local',
+      'share',
+      'rigsync-desktop',
+      'apt-baseline.txt'
+    )
+    fs.mkdirSync(path.dirname(legacy), { recursive: true })
+    fs.writeFileSync(legacy, 'bash\ncoreutils\n')
+
+    const provider = makeFakeAptProvider({ manual: ['git'] })
+    const report = await captureApt(fixture.ctx, provider, { dryRun: false })
+
+    expect(fs.existsSync(legacy)).toBe(false)
+    expect(report.notes.some((n) => n.includes('apt-baseline.txt'))).toBe(true)
+  })
+
+  it('dry-run capture does not delete the legacy baseline file', async () => {
+    const legacy = path.join(
+      fixture.homeDir,
+      '.local',
+      'share',
+      'rigsync-desktop',
+      'apt-baseline.txt'
+    )
+    fs.mkdirSync(path.dirname(legacy), { recursive: true })
+    fs.writeFileSync(legacy, 'bash\n')
+
+    const provider = makeFakeAptProvider({ manual: ['git'] })
     await captureApt(fixture.ctx, provider, { dryRun: true })
-    expect(fs.existsSync(fixture.ctx.aptBaselinePath)).toBe(false)
+
+    expect(fs.existsSync(legacy)).toBe(true)
   })
 
-  it('diff also excludes baseline packages from uncaptured candidates', async () => {
-    const provider = makeFakeAptProvider({ manual: ['bash', 'coreutils'] })
-    await captureApt(fixture.ctx, provider, { dryRun: false }) // baseline = {bash, coreutils}
-
+  it('diff excludes distro-classified packages from uncaptured unless included', async () => {
+    writeIgnore(fixture, { apt: { include: ['wpasupplicant'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['bash', 'wpasupplicant', 'zotero'],
+      classify: { bash: 'distro', wpasupplicant: 'distro', zotero: 'user' }
+    })
     const diff = await diffApt(fixture.ctx, provider)
-    expect(diff.uncaptured).toEqual([]) // 둘 다 baseline이라 후보로 안 뜬다
+
+    expect(diff.uncaptured).toEqual(['wpasupplicant', 'zotero'])
+  })
+
+  it('diff does not list an installed managed package as toInstall even if distro-classified', async () => {
+    // 구 baseline 구현의 함정 재발 방지: manifest에 있으면서 기준선에도 들던
+    // 설치본이 영원히 "설치 예정"으로 보이던 케이스 (zotero 사고의 이웃).
+    writeCommonAptSection(fixture.ctx, { packages: ['wpasupplicant'] })
+    const provider = makeFakeAptProvider({
+      manual: ['wpasupplicant'],
+      classify: { wpasupplicant: 'distro' }
+    })
+    const diff = await diffApt(fixture.ctx, provider)
+
+    expect(diff.toInstall).toEqual([])
+    expect(diff.uncaptured).toEqual([])
+  })
+
+  it('converges: capture then re-diff shows zero drift (uncaptured/toInstall empty)', async () => {
+    const provider = makeFakeAptProvider({
+      manual: ['bash', 'git', 'zotero'],
+      classify: { bash: 'distro', git: 'user', zotero: 'user' }
+    })
+    await captureApt(fixture.ctx, provider, { dryRun: false })
+    const diff = await diffApt(fixture.ctx, provider)
+
+    expect(diff.toInstall).toEqual([])
+    expect(diff.uncaptured).toEqual([])
   })
 })
 
@@ -340,7 +409,6 @@ describe('planAptUninstall', () => {
 
   beforeEach(() => {
     fixture = makeFixture('reference')
-    writeAptBaseline(fixture.ctx, [])
   })
 
   afterEach(() => {
@@ -377,6 +445,17 @@ describe('planAptUninstall', () => {
     const result = planAptUninstall(fixture.ctx, provider, ['ghost-package'])
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  it('rejects a distro-classified package (stateless classification replaces the old baseline guard)', async () => {
+    writeIgnore(fixture, { apt: { packages: ['wpasupplicant'] } })
+    const provider = makeFakeAptProvider({
+      manual: ['wpasupplicant'],
+      classify: { wpasupplicant: 'distro' }
+    })
+    const result = planAptUninstall(fixture.ctx, provider, ['wpasupplicant'])
+    expect(result.actions).toEqual([])
+    expect(result.excluded[0].reason).toContain('배포판 기본')
   })
 
   it('bundles multiple valid packages into a single apt-get remove command (no --auto-remove/purge)', async () => {

@@ -126,6 +126,10 @@ export type ScreenshotRoute =
   | 'items-delete-confirm'
   /** 항목 삭제 검증 전용 — Candidates의 일괄 삭제 체크리스트를 강제로 연다. */
   | 'items-bulk-delete'
+  /** refactor-spec-v0.2 §1 검증 전용 — Candidates를 "배포판 기본" 그룹 헤더로 스크롤(접힌 상태). */
+  | 'items-distro'
+  /** 위와 같되 그룹을 펼친 상태로 — distro-default 상태 행들이 보이게. */
+  | 'items-distro-open'
 
 export interface EnginePingRequest {
   readonly message?: string
@@ -693,7 +697,14 @@ export type SyncItemCapability =
  * 빠져 있어 나머지 네 상태의 "다음 Capture가 어떻게 바꿀지" 질문 자체가
  * 성립하지 않는다).
  */
-export type SyncItemState = 'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected'
+/**
+ * refactor-spec-v0.2 §1이 더한 `distro-default`: apt "배포판 기본" 그룹의
+ * 미관리·미포함 항목 — **분류가** 자동 추가 대상에서 뺀 안정 상태(사용자
+ * ignore인 `excluded`와 구분). 스위치를 켜면 include 예외가 되어
+ * pending-add로 간다.
+ */
+export type SyncItemState =
+  'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected' | 'distro-default'
 
 export interface SyncItemDto {
   readonly key: string
@@ -701,10 +712,15 @@ export interface SyncItemDto {
   /** manifest(effective)에 있으면 true. */
   readonly managed: boolean
   readonly ignored: boolean
+  /** refactor-spec-v0.2 §1: apt 배포판 판정 항목의 include 예외 여부 (apt 그룹만). */
+  readonly included?: boolean
   readonly state: SyncItemState
   /** R6 R2: 이 항목이 무엇인지 한 줄 설명 — 출처가 없으면 undefined(추측하지 않는다). */
   readonly description?: string
 }
+
+/** refactor-spec-v0.2 §1: apt가 무상태 분류로 갈라진 두 그룹의 식별자. */
+export type SyncItemSubgroup = 'apt-user' | 'apt-distro'
 
 export interface SyncItemGroupDto {
   readonly capability: SyncItemCapability
@@ -712,12 +728,21 @@ export interface SyncItemGroupDto {
   readonly items: readonly SyncItemDto[]
   /** P2c: snap처럼 동기화 plan/apply에서 빠지고 INV-1 중복 검출용으로만 조회되는 그룹. */
   readonly detectionOnly?: boolean
+  /** refactor-spec-v0.2 §1: 있으면 apt 분류 그룹 — 토글 라우팅·상태 의미가 갈린다. */
+  readonly subgroup?: SyncItemSubgroup
+  /** UI가 처음에 접어서 보여줄 그룹 (펼치기 가능 — 절대 숨기지 않는다). */
+  readonly collapsedByDefault?: boolean
 }
 
 export interface ToggleIgnoreRequest {
   readonly capability: SyncItemCapability
   readonly key: string
   readonly ignored: boolean
+  /**
+   * refactor-spec-v0.2 §1: `apt-distro` 그룹에서 온 토글이면 main이 ignore
+   * 대신 include 예외 경로(`toggleAptDistroSyncedBulk`)로 라우팅한다.
+   */
+  readonly subgroup?: SyncItemSubgroup
 }
 
 /**
@@ -729,6 +754,8 @@ export interface ToggleIgnoreBulkRequest {
   readonly capability: SyncItemCapability
   readonly keys: readonly string[]
   readonly ignored: boolean
+  /** ToggleIgnoreRequest.subgroup과 동일 — apt-distro면 include 경로로 라우팅. */
+  readonly subgroup?: SyncItemSubgroup
 }
 
 // ---------------------------------------------------------------------------

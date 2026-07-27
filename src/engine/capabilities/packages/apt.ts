@@ -9,10 +9,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
-import { readIgnoreSet } from '../../ignore'
+import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { PlanAction } from '../../plan'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
-import { aptBaselineExists, readAptBaseline, writeAptBaseline } from './aptBaseline'
+import { classifyAptPackages } from './classify'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import type { AptProvider } from './providerTypes'
 import type {
@@ -80,20 +80,33 @@ export async function captureApt(
   const manualAll = provider.manualInstalled()
   const notes: string[] = []
 
-  // 첫 capture -- 지금 상태 전체를 "배포판 기본분" 기준선으로 스냅샷한다
-  // (정책 §8-B 답). 이후부터는 이 기준선과의 차집합만 사용자가 추가한
-  // 패키지로 본다.
-  let baseline = readAptBaseline(ctx)
-  if (!aptBaselineExists(ctx)) {
-    if (!options.dryRun) {
-      writeAptBaseline(ctx, manualAll)
-    }
-    baseline = new Set(manualAll)
+  // 무상태 분류(refactor-spec-v0.2 §1) -- "배포판 기본분인가"를 상태 파일
+  // 없이 매 조회 계산한다. 사용자 판정 + include 예외만 자동 추가 대상
+  // (기존 additive-only·ignore 규약은 그대로).
+  const classification = classifyAptPackages(provider, manualAll)
+  const include = readAptIncludeSet(ctx)
+  const manual = manualAll.filter((p) => classification.get(p) === 'user' || include.has(p))
+  const distroFiltered = manualAll.length - manual.length
+  if (distroFiltered > 0) {
     notes.push(
-      `apt baseline 스냅샷: 배포판 기본분 ${manualAll.length}개 기록 -- 다음 capture부터 차집합만 후보`
+      `배포판 기본 판정 ${distroFiltered}개는 자동 추가 대상에서 제외 -- ` +
+        'Candidates의 "배포판 기본" 그룹에서 확인·포함(include) 가능'
     )
   }
-  const manual = manualAll.filter((p) => !baseline.has(p))
+
+  // 구 apt-baseline.txt 은퇴(스펙 §1 마이그레이션) -- 발견되면 삭제하고 알린다.
+  // 스냅샷 시점 이력이 분류를 대신하던 파일이라 남겨두면 혼동만 남는다.
+  const legacyBaseline = path.join(
+    ctx.homeDir,
+    '.local',
+    'share',
+    'rigsync-desktop',
+    'apt-baseline.txt'
+  )
+  if (fs.existsSync(legacyBaseline)) {
+    if (!options.dryRun) fs.rmSync(legacyBaseline)
+    notes.push('구 apt-baseline.txt 발견 -- 무상태 분류로 대체되어 삭제함 (기준선 스냅샷 은퇴)')
+  }
 
   const existing = readCommonPackages(ctx).apt ?? {}
   const existingPackages = existing.packages ?? []
@@ -182,17 +195,25 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
     }
   }
 
-  const baseline = readAptBaseline(ctx)
-  const manual = new Set(provider.manualInstalled().filter((p) => !baseline.has(p)))
+  const manualAll = provider.manualInstalled()
+  const classification = classifyAptPackages(provider, manualAll)
+  const include = readAptIncludeSet(ctx)
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
   const ignoreSources = readIgnoreSet(ctx, 'apt', 'sources')
 
   const manifestPackages = new Set((manifest.packages ?? []).filter((p) => !ignorePackages.has(p)))
-  for (const p of ignorePackages) manual.delete(p)
 
-  const toInstall = [...manifestPackages].filter((p) => !manual.has(p)).sort()
-  const uncaptured = [...manual].filter((p) => !manifestPackages.has(p)).sort()
+  // toInstall은 분류와 무관하게 "설치돼 있는가"만 본다 -- 구 baseline 구현은
+  // 기준선 차집합과 비교해서, manifest에 있으면서 기준선에도 든 설치본이
+  // 영원히 "설치 예정"으로 보이는 함정이 있었다(무상태 재설계에서 제거).
+  const installed = new Set(manualAll)
+  const toInstall = [...manifestPackages].filter((p) => !installed.has(p)).sort()
+  // 후보(uncaptured)는 capture와 같은 규칙: 사용자 판정 + include 예외만.
+  const uncaptured = manualAll
+    .filter((p) => classification.get(p) === 'user' || include.has(p))
+    .filter((p) => !ignorePackages.has(p) && !manifestPackages.has(p))
+    .sort()
 
   const sourcesMissing: string[] = []
   const sourcesContentChanged: string[] = []
@@ -366,7 +387,7 @@ export function planAptUninstall(
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const managedSet = new Set(manifest.packages ?? [])
   const ignore = readIgnoreSet(ctx, 'apt', 'packages')
-  const baseline = readAptBaseline(ctx)
+  const classification = classifyAptPackages(provider, requestedNames)
   const installedSet = new Set(provider.manualInstalled())
 
   const excluded: UninstallExclusion[] = []
@@ -389,7 +410,7 @@ export function planAptUninstall(
       })
       continue
     }
-    if (!installedSet.has(name) || baseline.has(name)) {
+    if (!installedSet.has(name) || classification.get(name) === 'distro') {
       excluded.push({
         capability: 'apt',
         key: name,

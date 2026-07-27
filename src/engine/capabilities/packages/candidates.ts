@@ -7,10 +7,10 @@
  * 하므로 diffPackages()의 필터링(ignore된 항목은 안 보임)을 그대로 쓸 수 없다:
  * 여기서는 ignore 여부를 **표시**해야지 **숨기면 안 된다**.
  */
-import { readIgnoreSet } from '../../ignore'
+import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
-import type { SyncItemGroup } from '../../syncItems'
-import { readAptBaseline } from './aptBaseline'
+import type { SyncItem, SyncItemGroup } from '../../syncItems'
+import { classifyAptPackages } from './classify'
 import { readEffectivePackages } from './io'
 import type { PackageProviders } from './providerTypes'
 
@@ -23,28 +23,45 @@ export async function buildPackageSyncGroups(
 
   if (providers.apt.isAvailable()) {
     const ignore = readIgnoreSet(ctx, 'apt', 'packages')
-    const baseline = readAptBaseline(ctx)
+    const include = readAptIncludeSet(ctx)
     const managedSet = new Set(manifest.apt?.packages ?? [])
-    // baseline(배포판 기본분)은 managed가 아닌 이상 후보 목록에서도 뺀다 --
-    // 안 그러면 158개짜리 배포판 기본 패키지가 전부 "미관리 후보"로 보인다.
-    const liveSet = new Set(
-      providers.apt.manualInstalled().filter((p) => managedSet.has(p) || !baseline.has(p))
-    )
+    const liveSet = new Set(providers.apt.manualInstalled())
     const names = [...new Set([...managedSet, ...liveSet])].sort()
     if (names.length > 0) {
-      // R6 R2: 이름 전부를 한 번에 배치 조회한다(158개도 프로세스 1회).
+      // 무상태 분류(refactor-spec-v0.2 §1)로 두 그룹으로 가른다. 배포판
+      // 기본분도 **절대 숨기지 않는다** -- 접힌 그룹으로 보여주고 펼칠 수
+      // 있어야 한다(스펙 판단 원칙 2: "보이지 않는 필터링 금지". 구 baseline
+      // 구현은 이 목록을 소리 없이 삼켰다).
+      const classification = classifyAptPackages(providers.apt, names)
+      // R6 R2: 이름 전부를 한 번에 배치 조회한다(159개도 프로세스 1회).
       const descriptions = providers.apt.descriptions(names)
-      groups.push({
-        capability: 'apt',
-        title: 'apt',
-        items: names.map((name) => ({
-          key: name,
-          label: name,
-          managed: managedSet.has(name),
-          ignored: ignore.has(name),
-          description: descriptions[name]
-        }))
+      const toItem = (name: string): SyncItem => ({
+        key: name,
+        label: name,
+        managed: managedSet.has(name),
+        ignored: ignore.has(name),
+        included: include.has(name),
+        description: descriptions[name]
       })
+      const userNames = names.filter((n) => classification.get(n) !== 'distro')
+      const distroNames = names.filter((n) => classification.get(n) === 'distro')
+      if (userNames.length > 0) {
+        groups.push({
+          capability: 'apt',
+          title: 'apt — 사용자 설치',
+          subgroup: 'apt-user',
+          items: userNames.map(toItem)
+        })
+      }
+      if (distroNames.length > 0) {
+        groups.push({
+          capability: 'apt',
+          title: 'apt — 배포판 기본',
+          subgroup: 'apt-distro',
+          collapsedByDefault: true,
+          items: distroNames.map(toItem)
+        })
+      }
     }
   }
 

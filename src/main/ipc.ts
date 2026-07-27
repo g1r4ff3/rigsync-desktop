@@ -94,6 +94,7 @@ import {
 import { detectReclassifications } from '../engine/reclassification'
 import {
   listSyncItemGroups,
+  toggleAptDistroSyncedBulk,
   toggleSyncItemIgnore,
   toggleSyncItemIgnoreBulk,
   withSyncItemState
@@ -660,7 +661,14 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
-      toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
+      // refactor-spec-v0.2 §1: "배포판 기본" 그룹의 스위치는 ignore가 아니라
+      // include 예외를 움직인다 -- 스위치 의미(켬=동기화)는 같으므로
+      // synced = !ignored로 번역해 라우팅한다.
+      if (request.subgroup === 'apt-distro') {
+        toggleAptDistroSyncedBulk(getContext(), [request.key], !request.ignored)
+      } else {
+        toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
+      }
       autoSyncAfterWrite(getContext(), gitTransportProvider)
       return listSyncItemGroupsForRenderer()
     }
@@ -672,7 +680,11 @@ export function registerEngineIpc(
       // R5: 그룹 전체 토글 -- ignore.toml 1회 읽기/쓰기(toggleSyncItemIgnoreBulk
       // 내부)에 이어 자동 commit+push도 정확히 1번만 트리거한다(항목별 루프로
       // 얹으면 커밋 폭탄이 되므로 절대 반복 호출하지 않는다).
-      toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
+      if (request.subgroup === 'apt-distro') {
+        toggleAptDistroSyncedBulk(getContext(), request.keys, !request.ignored)
+      } else {
+        toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
+      }
       autoSyncAfterWrite(getContext(), gitTransportProvider)
       return listSyncItemGroupsForRenderer()
     }

@@ -38,12 +38,18 @@ describe('describeSyncItemState', () => {
     )
   })
 
-  it('follower의 pending-add는 라벨까지 "이 머신에만 있음"으로 바뀐다 — 실사용 실패 재현 방지', () => {
+  it('follower의 pending-add는 라벨까지 "manifest에 없음"으로 바뀐다 — 실사용 실패 + F1 거짓 단정 재현 방지', () => {
+    // refactor-spec-v0.2 F1 후속: 구 라벨 "이 머신에만 있음"은 follower가 알 수
+    // 없는 단정이라(reference에도 있는데 baseline이 삼킨 실사고에서 거짓)
+    // "manifest에 없음"으로 바뀌었다 — 판단 원칙 3 "화면은 머신이 아는 것만".
     const result = describeSyncItemState('pending-add', 'follower')
-    expect(result.label).toBe('이 머신에만 있음')
+    expect(result.label).toBe('manifest에 없음')
     expect(result.label).not.toBe(syncItemStateCopy['pending-add'].label)
-    // "추가 예정"(밀린 할 일로 오독됐던 문구)이 어떤 형태로도 다시 나오면 안 된다.
+    // "추가 예정"(밀린 할 일로 오독됐던 문구)도, "이 머신에만"(알 수 없는
+    // 단정)도 어떤 형태로도 다시 나오면 안 된다.
     expect(result.label).not.toContain('추가 예정')
+    expect(result.label).not.toContain('이 머신에만')
+    expect(result.description).not.toContain('이 머신에만')
     expect(result.description).toContain('reference')
     expect(result.description).not.toContain('다음 Capture')
   })
@@ -72,11 +78,19 @@ describe('formatSyncItemStateSummary', () => {
     expect(summary).toContain('추가 예정 99')
   })
 
-  it('follower 집계는 같은 수치에 "이 머신에만 있음"을 쓴다 — "전체: 동기화 중 26 · 추가 예정 99" 재발 방지', () => {
+  it('follower 집계는 같은 수치에 "manifest에 없음"을 쓴다 — "전체: 동기화 중 26 · 추가 예정 99" 재발 방지', () => {
     const summary = formatSyncItemStateSummary(counts, 'follower')
-    expect(summary).toContain('이 머신에만 있음 99')
+    expect(summary).toContain('manifest에 없음 99')
     expect(summary).not.toContain('추가 예정')
+    expect(summary).not.toContain('이 머신에만')
     expect(summary).toContain('동기화 중 26')
+  })
+
+  it('apt-distro 그룹 집계에는 "배포판 기본" 카운트가 붙는다 (있을 때만)', () => {
+    const summary = formatSyncItemStateSummary({ ...counts, distroDefault: 28 }, 'reference')
+    expect(summary).toContain('배포판 기본 28')
+    const without = formatSyncItemStateSummary(counts, 'reference')
+    expect(without).not.toContain('배포판 기본')
   })
 
   it('0건인 상태는 생략한다', () => {

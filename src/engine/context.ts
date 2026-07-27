@@ -64,12 +64,6 @@ export interface RigsyncContext {
    * 기존 common→host 2단 그대로(하위 호환).
    */
   readonly profile?: string
-  /**
-   * P2c apt baseline 필터: `apt-mark showmanual` 전체 스냅샷을 저장하는 경로.
-   * 기본은 `<homeDir>/.local/share/rigsync-desktop/apt-baseline.txt`지만
-   * 테스트가 temp 경로로 주입할 수 있어야 한다(안전선 — 실제 홈을 안 건드림).
-   */
-  readonly aptBaselinePath: string
   /** P2d: 사용자 조정 설정 묶음 (없으면 모든 capability가 빈 배열/기본값으로 취급). */
   readonly settings: RigsyncSettings
   /** P4: 로그인 자동 시작(XDG autostart) 활성 여부 — 온보딩 위저드/트레이 메뉴가 토글. */
@@ -90,10 +84,6 @@ export function defaultManifestDir(homeDir: string): string {
   return path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'manifest')
 }
 
-function defaultAptBaselinePath(homeDir: string): string {
-  return path.join(homeDir, '.local', 'share', 'rigsync-desktop', 'apt-baseline.txt')
-}
-
 function devDefaultContext(homeDir: string): RigsyncContext {
   return {
     machineId: os.hostname(),
@@ -101,7 +91,6 @@ function devDefaultContext(homeDir: string): RigsyncContext {
     manifestDir: defaultManifestDir(homeDir),
     homeDir,
     backupRoot: path.join(homeDir, '.rigsync-backup'),
-    aptBaselinePath: defaultAptBaselinePath(homeDir),
     settings: {},
     autostartEnabled: false
   }
@@ -149,10 +138,6 @@ export function resolveContext(
     typeof raw.backupRoot === 'string' && raw.backupRoot
       ? raw.backupRoot
       : path.join(homeDir, '.rigsync-backup')
-  const aptBaselinePath =
-    typeof raw.aptBaselinePath === 'string' && raw.aptBaselinePath
-      ? raw.aptBaselinePath
-      : defaultAptBaselinePath(homeDir)
   const profile = typeof raw.profile === 'string' && raw.profile ? raw.profile : undefined
   const settings = readSettings(raw)
   const autostartEnabled = raw.autostartEnabled === true
@@ -164,7 +149,6 @@ export function resolveContext(
       manifestDir,
       homeDir,
       backupRoot,
-      aptBaselinePath,
       profile,
       settings,
       autostartEnabled

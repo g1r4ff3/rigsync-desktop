@@ -3,7 +3,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RigsyncContext } from './context'
-import { readIgnoreSet, setIgnored, setIgnoredBulk } from './ignore'
+import {
+  applyAptDistroToggle,
+  readAptIncludeSet,
+  readIgnoreSet,
+  setIgnored,
+  setIgnoredBulk
+} from './ignore'
 import { readCommonLayer, writeCommonLayer, writeManifestFile, hostLayerPath } from './manifest'
 
 // 케이스 출처: 구 repo tests/test_ignore.py TestIgnoreHostOverlayUnion
@@ -21,14 +27,6 @@ describe('readIgnoreSet', () => {
       manifestDir: path.join(root, 'manifest'),
       homeDir: path.join(root, 'home'),
       backupRoot: path.join(root, 'home', '.rigsync-backup'),
-      aptBaselinePath: path.join(
-        root,
-        'home',
-        '.local',
-        'share',
-        'rigsync-desktop',
-        'apt-baseline.txt'
-      ),
       settings: {},
       autostartEnabled: false
     }
@@ -73,14 +71,6 @@ describe('setIgnoredBulk', () => {
       manifestDir: path.join(root, 'manifest'),
       homeDir: path.join(root, 'home'),
       backupRoot: path.join(root, 'home', '.rigsync-backup'),
-      aptBaselinePath: path.join(
-        root,
-        'home',
-        '.local',
-        'share',
-        'rigsync-desktop',
-        'apt-baseline.txt'
-      ),
       settings: {},
       autostartEnabled: false
     }
@@ -131,5 +121,74 @@ describe('setIgnoredBulk', () => {
     setIgnoredBulk(ctx, 'apt', 'packages', ['git'], true)
     const doc = readCommonLayer(ctx, 'ignore') as { apt?: { packages?: string[] } }
     expect(doc.apt?.packages).toEqual(['git'])
+  })
+})
+
+// refactor-spec-v0.2 §1: "배포판 기본" 그룹 스위치의 include/ignore 의미론 —
+// managed 여부에 따라 건드리는 예외 리스트가 갈리고, 끔이 include를 함께
+// 지워 캡처 진동(제거 -> 재추가)을 막는다.
+describe('applyAptDistroToggle', () => {
+  let root: string
+  let ctx: RigsyncContext
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-distro-toggle-test-'))
+    ctx = {
+      machineId: 'testhost',
+      role: 'reference',
+      manifestDir: path.join(root, 'manifest'),
+      homeDir: path.join(root, 'home'),
+      backupRoot: path.join(root, 'home', '.rigsync-backup'),
+      settings: {},
+      autostartEnabled: false
+    }
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('turning on an unmanaged distro item records an include exception', () => {
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: false }], true)
+    expect(readAptIncludeSet(ctx)).toEqual(new Set(['wpasupplicant']))
+    expect(readIgnoreSet(ctx, 'apt', 'packages')).toEqual(new Set())
+  })
+
+  it('turning off an unmanaged distro item just removes the include exception', () => {
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: false }], true)
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: false }], false)
+    expect(readAptIncludeSet(ctx)).toEqual(new Set())
+    expect(readIgnoreSet(ctx, 'apt', 'packages')).toEqual(new Set())
+  })
+
+  it('turning off a managed distro item sets ignore AND clears include (no capture oscillation)', () => {
+    // include로 들어와 managed가 된 항목을 끄는 시나리오: ignore만 넣고
+    // include를 남기면 다음 capture가 제거한 뒤 그다음 capture가 도로 담는다.
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: false }], true)
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: true }], false)
+    expect(readIgnoreSet(ctx, 'apt', 'packages')).toEqual(new Set(['wpasupplicant']))
+    expect(readAptIncludeSet(ctx)).toEqual(new Set())
+  })
+
+  it('turning a managed-but-ignored distro item back on clears the ignore', () => {
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: true }], false)
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: true }], true)
+    expect(readIgnoreSet(ctx, 'apt', 'packages')).toEqual(new Set())
+  })
+
+  it('preserves unrelated ignore/include entries and other capabilities', () => {
+    setIgnoredBulk(ctx, 'apt', 'packages', ['zoom'], true)
+    setIgnoredBulk(ctx, 'flatpak', 'apps', ['org.example.App'], true)
+    applyAptDistroToggle(ctx, [{ key: 'wpasupplicant', managed: false }], true)
+    expect(readIgnoreSet(ctx, 'apt', 'packages')).toEqual(new Set(['zoom']))
+    expect(readIgnoreSet(ctx, 'flatpak', 'apps')).toEqual(new Set(['org.example.App']))
+    expect(readAptIncludeSet(ctx)).toEqual(new Set(['wpasupplicant']))
+  })
+
+  it('is a no-op for an empty item list', () => {
+    const writeSpy = vi.spyOn(fs, 'writeFileSync')
+    applyAptDistroToggle(ctx, [], true)
+    expect(writeSpy).not.toHaveBeenCalled()
+    writeSpy.mockRestore()
   })
 })
