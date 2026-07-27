@@ -7,6 +7,7 @@ import { CandidateStateControl } from '@/components/CandidateStateControl'
 import { CandidateStateIcon } from '@/components/CandidateStateIcon'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { ViewToolbar } from '@/components/ViewToolbar'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { captureAll } from '../captureAll'
@@ -699,7 +700,14 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       {error && <StatusText kind="error">{error}</StatusText>}
 
       {groups === null ? (
-        <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
+        // UI 정돈(v0.1.16): 로딩 완료 후 나타날 가상 스크롤 목록과 같은
+        // 보더 컨테이너 모양을 미리 보여줘 레이아웃 점프를 없앤다 — 행
+        // 몇 개 분량의 스켈레톤 바로 "곧 목록이 온다"를 암시한다.
+        <div className="flex-1 space-y-2 overflow-hidden rounded border border-border p-2">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton key={i} className={i % 2 === 0 ? 'h-4 w-full' : 'h-4 w-2/3'} />
+          ))}
+        </div>
       ) : rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {query ? emptyStateCopy.noSearchResults : emptyStateCopy.noCandidates}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
+import { Skeleton } from '@/components/ui/skeleton'
 import { buttonCopy, doctorCopy, emptyStateCopy } from '../copy'
 import { StatusIcon, StatusText } from '../status'
 import { doctorResultKind, type StatusKind } from '../statusKind'
@@ -308,11 +309,34 @@ function DoctorView(): React.JSX.Element {
 
   if (!report) {
     return (
-      <div>
+      <div className="flex h-full flex-col">
         {error ? (
           <StatusText kind="error">{error}</StatusText>
         ) : (
-          <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
+          // UI 정돈(v0.1.16): Doctor는 preflight·secret scan·portability 등
+          // 여러 검사를 순차로 돌아 다른 탭보다 초기 로딩이 길다(실측: 수
+          // 초~십수 초) — 요약 히어로 카드와 이어질 섹션 목록의 모양을 미리
+          // 그려 빈 화면 대신 "뭐가 오는지"를 암시한다.
+          <>
+            <section className="mb-3 shrink-0 rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-5">
+                  <Skeleton className="h-7 w-16" />
+                  <Skeleton className="h-7 w-16" />
+                  <Skeleton className="h-7 w-16" />
+                </div>
+                <Skeleton className="h-8 w-24" />
+              </div>
+            </section>
+            <div className="flex-1 space-y-4 overflow-hidden pr-1">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="space-y-1.5">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     )

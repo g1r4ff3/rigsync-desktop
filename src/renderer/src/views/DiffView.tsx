@@ -12,6 +12,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   applyProgressCopy,
@@ -150,7 +151,14 @@ function DriftSection({
       <h2 className="text-sm font-medium text-foreground">{title}</h2>
       <p className="mb-1.5 text-xs text-muted-foreground">{description}</p>
       {loading ? (
-        <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
+        // UI 정돈(v0.1.16): "불러오는 중…" 텍스트 한 줄 대신 곧 나타날 행
+        // 모양을 암시하는 스켈레톤 두 줄 — v0.1.15 워커 분리 후 큐잉으로 이
+        // 상태가 눈에 띄게 길어질 수 있어(실측: 이 화면 8개 capability 각각이
+        // 수 초씩) 빈 텍스트보다 레이아웃 예고가 체감 대기를 줄인다.
+        <div className="space-y-1.5 py-0.5">
+          <Skeleton className="h-3.5 w-3/4" />
+          <Skeleton className="h-3.5 w-1/2" />
+        </div>
       ) : empty ? (
         <StatusText kind="ok">{matchedLabel}</StatusText>
       ) : (
