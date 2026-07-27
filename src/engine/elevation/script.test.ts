@@ -25,6 +25,18 @@ describe('buildSudoScript', () => {
     expect(script).toContain('cp /a /b')
   })
 
+  // R3: TTY 없는 pkexec 배치에서 debconf가 Dialog/Readline frontend를 못 열어
+  // 경고를 쏟아내는 것을 막는다(실사용 로그로 확인) — 스크립트 선두에
+  // 첫 명령보다 먼저 세팅되어야 한다.
+  it('sets DEBIAN_FRONTEND=noninteractive before any command runs', () => {
+    const script = buildSudoScript(CMDS)
+    const lines = script.split('\n')
+    expect(lines).toContain('export DEBIAN_FRONTEND=noninteractive')
+    expect(script.indexOf('export DEBIAN_FRONTEND=noninteractive')).toBeLessThan(
+      script.indexOf('apt-get install')
+    )
+  })
+
   // TestBuildSudoScriptCancelFile
   it('inserts a cancel-file check before each command (test_inserts_check_before_each_command)', () => {
     const script = buildSudoScript(['cmd-a', 'cmd-b'], '/tmp/x-cancel')
