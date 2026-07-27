@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
 import { diffDotfiles } from './diff'
@@ -53,5 +55,66 @@ describe('diffDotfiles', () => {
     const diff = await diffDotfiles(fixture.ctx)
     expect(diff.toLink).toEqual([])
     expect(diff.missingHome).toEqual([])
+  })
+})
+
+// F3/D2-b: follower는 entry.link 값과 무관하게 항상 link=false(복사 배포)
+// 의미론으로 판정한다 — 이미지 스냅샷 모델(follower 홈은 배포 결과물이지
+// manifest로의 라이브 뷰가 아니다).
+describe('diffDotfiles (follower role — F3/D2-b)', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('follower')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('treats a link:true file entry whose home is a symlink as contentChanged, never toLink', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.zshrc')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, 'export FOO=1\n')
+    const homePath = path.join(fixture.homeDir, '.zshrc')
+    fs.symlinkSync(path.resolve(storePath), homePath)
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.contentChanged).toContain('~/.zshrc')
+    expect(diff.toLink).toEqual([])
+  })
+
+  it('treats a link:true file entry with a missing home as missingHome, never toLink', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.zshrc')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, 'export FOO=1\n')
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.missingHome).toContain('~/.zshrc')
+    expect(diff.toLink).toEqual([])
+  })
+
+  it('treats a link:true dir entry (skills scenario) whose home is a symlink as contentChanged, never toLink', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        { home: '~/.claude/skills', store: 'dotfiles/.claude/skills', type: 'dir', link: true }
+      ]
+    })
+    const storeDir = path.join(fixture.manifestDir, 'dotfiles', '.claude', 'skills')
+    fs.mkdirSync(path.join(storeDir, 'foo'), { recursive: true })
+    fs.writeFileSync(path.join(storeDir, 'foo', 'SKILL.md'), 'content\n')
+    const homePath = path.join(fixture.homeDir, '.claude', 'skills')
+    fs.mkdirSync(path.dirname(homePath), { recursive: true })
+    fs.symlinkSync(path.resolve(storeDir), homePath)
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.contentChanged).toContain('~/.claude/skills')
+    expect(diff.toLink).toEqual([])
   })
 })

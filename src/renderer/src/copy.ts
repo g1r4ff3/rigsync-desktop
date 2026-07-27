@@ -339,6 +339,7 @@ export const helpCopy = {
     'reference 머신은 Capture로 현재 상태를 manifest에 기록하고 자동으로 commit+push합니다 — 그래서 reference의 요약은 "기준과 다른 점"이 아니라 "아직 이 머신에 반영되지 않은 항목"으로 표시됩니다.',
     'follower 머신은 저작할 수 없고 pull로 받은 manifest를 Apply로 반영만 합니다(단방향 배포) — follower의 요약은 실제로 기준과 다른 점을 보여줍니다.',
     'dotfiles는 Capture 직후에도 "스토어로 연결 필요"로 남을 수 있습니다 — Capture는 홈 파일을 스토어로 복사만 하고, 홈 파일을 스토어 심링크로 바꾸는 것은 Apply의 몫이기 때문입니다(최초 1회만 있는 정상 상태 — 이후엔 심링크라 홈을 고치면 스토어도 곧바로 바뀝니다).',
+    'dotfiles의 배포 방식은 역할마다 다릅니다 — reference는 manifest를 촬영하는 원판이라 심링크로 라이브 뷰를 유지하지만(entry의 링크 설정을 그대로 따름), follower는 manifest의 스냅샷을 그대로 복사해 배포합니다(entry 설정과 무관하게 항상 실파일 — 로컬 편집이 store를 직접 오염시켜 pull을 깨뜨리지 않도록).',
     'Fonts는 폰트 파일 자체가 아니라 다운로드 좌표(직접 URL 또는 GitHub 릴리스)만 manifest에 담습니다 — Apply 때 이 좌표로 실제 파일을 받아 설치합니다.',
     'Binaries는 `curl | sh`로 ~/.local/bin에 떨어지는 단독 실행파일(uv·micromamba 등)을 다룹니다 — 실행파일 자체가 아니라 GitHub 릴리스 좌표만 manifest에 담고, conda/micromamba 환경(~/micromamba/envs/** 등) 안의 도구는 그 환경의 스펙이 책임지므로 스캔 대상이 아닙니다.',
     'INV-1(중복 설치 경고)은 같은 앱이 apt/flatpak/snap/AppImage 중 둘 이상에 설치된 경우를 잡아냅니다.',

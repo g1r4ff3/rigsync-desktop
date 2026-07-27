@@ -7,6 +7,11 @@
  * - copy 액션 = 스토어 → 홈 파일 복사 + chmod (link:false 엔트리, 예: ~/.ssh/config).
  * - invalid_store 항목은 "always_run" 거부 액션 — dry-run에서도 조용히 생략되지
  *   않고 그대로 보고된다 (부작용이 없는 순수 리포트라 confirm 게이트를 안 탄다).
+ *
+ * F3/D2-b: follower(ctx.role)에서는 diff.ts가 이미 toLink를 비워 두므로(항상
+ * link=false 판정) makeLinkAction 경로가 자연히 죽고, missingHome도 entry.link
+ * 무관하게 makeCopyAction으로 간다 — follower는 어떤 경로로도 symlink 액션을
+ * 만들지 않는다.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -164,8 +169,13 @@ export function planDotfiles(ctx: RigsyncContext, diff: DiffReport, runTs: strin
     if (plannedHomes.has(home)) continue
     const entry = byHome.get(home)
     if (!entry) continue
+    // follower는 diff.ts와 같은 판정을 공유한다: entry.link 값과 무관하게
+    // 항상 복사 배포 (F3/D2-b).
+    const effectiveLink = ctx.role === 'follower' ? false : entry.link
     actions.push(
-      entry.link !== false ? makeLinkAction(ctx, entry, runTs) : makeCopyAction(ctx, entry, runTs)
+      effectiveLink !== false
+        ? makeLinkAction(ctx, entry, runTs)
+        : makeCopyAction(ctx, entry, runTs)
     )
     plannedHomes.add(home)
   }

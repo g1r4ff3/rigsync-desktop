@@ -1,6 +1,10 @@
 /**
  * dotfiles diff: manifest와 홈의 현재 상태를 비교한다(읽기 전용 — 부작용
  * 없음). 구 repo `diff_dotfiles` 행동을 옮긴 것(코드 복사 아님).
+ *
+ * F3/D2-b: 판정은 role(ctx.role)에 따라 갈린다 — reference는 entry.link를
+ * 그대로 따르고, follower는 entry.link 값과 무관하게 항상 link=false 의미론
+ * (복사 배포)으로 판정한다. 그래서 follower의 toLink는 항상 빈 배열이다.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -40,7 +44,14 @@ export async function diffDotfiles(ctx: RigsyncContext): Promise<DiffReport> {
       continue
     }
 
-    if (entry.link !== false) {
+    // follower는 entry.link 값과 무관하게 항상 link=false(복사 배포) 의미론으로
+    // 판정한다 (F3/D2-b — 이미지 스냅샷 모델: manifest는 reference를 촬영한
+    // 원판, follower 홈 파일은 그 배포 결과물이어야 한다. 심링크는 원판으로의
+    // 라이브 뷰라서 follower의 로컬 편집이 store를 직접 오염시켜 pull을
+    // 깨뜨린다 — reference에서는 같은 심링크가 촬영 파이프라인이라 유지한다).
+    const effectiveLink = ctx.role === 'follower' ? false : entry.link
+
+    if (effectiveLink !== false) {
       if (homeIsSymlink) {
         const real = safeRealpath(homePath)
         if (real === path.resolve(storePath)) continue

@@ -18,7 +18,14 @@ export interface DotfileEntry {
   /** manifestDir 기준 상대 스토어 경로 (예: "dotfiles/.zshrc"). */
   readonly store: string
   readonly type: 'file' | 'dir'
-  /** true(기본)=symlink apply, false=copy+chmod apply. */
+  /**
+   * true(기본)=symlink apply, false=copy+chmod apply — 단 이 의미는
+   * **reference role에서만** 유효하다. follower role에서는 이 필드 값과
+   * 무관하게 항상 copy+chmod로 배포한다(F3/D2-b, diff.ts·plan.ts 참조) —
+   * follower의 홈 파일은 manifest로의 라이브 뷰가 아니라 배포 결과물이어야
+   * 하기 때문이다. 즉 `link`는 실질적으로 "reference에서 심링크로 둘지"만
+   * 결정한다.
+   */
   readonly link?: boolean
   /** link=false일 때만 의미 있는 8진수 문자열 권한 (예: "600"). */
   readonly mode?: string

@@ -202,6 +202,137 @@ describe('planDotfiles + PlanExecutor (dotfiles walking skeleton)', () => {
   })
 })
 
+// F3/D2-b: follower는 entry.link 값과 무관하게 항상 복사 배포된다 — 이미지
+// 스냅샷 모델(manifest는 reference를 촬영한 원판, follower 홈은 그 배포
+// 결과물). reference의 기존 테스트(makeFixture('reference'))는 그대로 두어
+// reference 현행 유지를 회귀로 보증한다.
+describe('planDotfiles + PlanExecutor (follower role — F3/D2-b copy deployment)', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('follower')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('converts a link:true file home symlink into a real copy, leaving the store untouched', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.zshrc')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, 'export FOO=1\n')
+    const homePath = path.join(fixture.homeDir, '.zshrc')
+    fs.symlinkSync(path.resolve(storePath), homePath)
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.toLink).toEqual([])
+    expect(diff.contentChanged).toContain('~/.zshrc')
+
+    const plan = planDotfiles(fixture.ctx, diff, 'run-follower-convert')
+    expect(plan.every((a) => a.summary.startsWith('copy '))).toBe(true)
+    const results = await new PlanExecutor().execute(plan, { confirm: true })
+    expect(results.some((r) => r.status === 'ok')).toBe(true)
+
+    expect(fs.lstatSync(homePath).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(homePath, 'utf-8')).toBe('export FOO=1\n')
+    expect(fs.readFileSync(storePath, 'utf-8')).toBe('export FOO=1\n')
+
+    const diff2 = await diffDotfiles(fixture.ctx)
+    expect(diff2.contentChanged).toEqual([])
+  })
+
+  it('creates a real file (not a symlink) for a link:true entry missing from home', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.zshrc')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, 'export FOO=1\n')
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.toLink).toEqual([])
+    expect(diff.missingHome).toContain('~/.zshrc')
+
+    const plan = planDotfiles(fixture.ctx, diff, 'run-follower-missing')
+    const results = await new PlanExecutor().execute(plan, { confirm: true })
+    expect(results.some((r) => r.status === 'ok')).toBe(true)
+
+    const homePath = path.join(fixture.homeDir, '.zshrc')
+    expect(fs.lstatSync(homePath).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(homePath, 'utf-8')).toBe('export FOO=1\n')
+  })
+
+  // skills 시나리오: type=dir 엔트리의 홈 심링크도 실디렉터리 사본으로
+  // 전환돼야 한다 (v0.1.9의 심링크 제거가 dir에도 적용됨을 follower 경로에서
+  // 확인).
+  it('converts a link:true dir home symlink (skills) into a real directory copy, leaving the store untouched', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        { home: '~/.claude/skills', store: 'dotfiles/.claude/skills', type: 'dir', link: true }
+      ]
+    })
+    const storeDir = path.join(fixture.manifestDir, 'dotfiles', '.claude', 'skills')
+    fs.mkdirSync(path.join(storeDir, 'foo'), { recursive: true })
+    fs.writeFileSync(path.join(storeDir, 'foo', 'SKILL.md'), 'content\n')
+    const homePath = path.join(fixture.homeDir, '.claude', 'skills')
+    fs.mkdirSync(path.dirname(homePath), { recursive: true })
+    fs.symlinkSync(path.resolve(storeDir), homePath)
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.toLink).toEqual([])
+    expect(diff.contentChanged).toContain('~/.claude/skills')
+
+    const plan = planDotfiles(fixture.ctx, diff, 'run-follower-dir-convert')
+    const results = await new PlanExecutor().execute(plan, { confirm: true })
+    expect(results.some((r) => r.status === 'ok')).toBe(true)
+
+    expect(fs.lstatSync(homePath).isSymbolicLink()).toBe(false)
+    expect(fs.statSync(homePath).isDirectory()).toBe(true)
+    expect(fs.readFileSync(path.join(homePath, 'foo', 'SKILL.md'), 'utf-8')).toBe('content\n')
+    // store는 여전히 store고, 홈 디렉터리와 별개 경로다(같은 inode가 아니다).
+    expect(fs.readFileSync(path.join(storeDir, 'foo', 'SKILL.md'), 'utf-8')).toBe('content\n')
+
+    // 전환 뒤에는 조용해야 한다 (수렴 확인).
+    const diff2 = await diffDotfiles(fixture.ctx)
+    expect(diff2.contentChanged).toEqual([])
+  })
+
+  it('backs up a locally-edited real-file home and converges it back to the store content', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        {
+          home: '~/.claude/settings.json',
+          store: 'dotfiles/.claude/settings.json',
+          type: 'file',
+          link: false
+        }
+      ]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.claude', 'settings.json')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, '{"model":"ref"}\n')
+    // follower의 앱이 로컬로 effort 등을 저장해 홈이 store와 갈라진 상황을
+    // 시뮬레이션한다.
+    const homePath = writeHomeFile(fixture, '.claude/settings.json', '{"model":"local-edit"}\n')
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.contentChanged).toContain('~/.claude/settings.json')
+
+    const runTs = 'run-follower-local-edit'
+    const plan = planDotfiles(fixture.ctx, diff, runTs)
+    const results = await new PlanExecutor().execute(plan, { confirm: true })
+    expect(results.some((r) => r.status === 'ok')).toBe(true)
+
+    expect(fs.readFileSync(homePath, 'utf-8')).toBe('{"model":"ref"}\n')
+    const backupFile = path.join(fixture.ctx.backupRoot, runTs, '.claude', 'settings.json')
+    expect(fs.existsSync(backupFile)).toBe(true)
+    expect(fs.readFileSync(backupFile, 'utf-8')).toBe('{"model":"local-edit"}\n')
+  })
+})
+
 // 항목 삭제(uninstall) 엔진 — 안전 불변식 5(2026-07-26 개정).
 describe('planDotfilesUninstall', () => {
   let fixture: TestFixture
