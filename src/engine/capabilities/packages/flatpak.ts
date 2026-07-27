@@ -206,6 +206,22 @@ function makeOverrideRestoreAction(
   }
 }
 
+/**
+ * v0.1.7 수정(신선한 머신 첫 apply 실사고): capture는 `flatpak remotes`에서
+ * remote의 **repo URL만** 얻는데, 그 평문 URL로 `remote-add`하면 GPG 키 없는
+ * remote가 만들어져 이후 모든 설치가 "No remote refs found"로 죽는다
+ * (lab-main에서 실제 발생). 알려진 remote는 GPG 키가 포함된 `.flatpakrepo`
+ * 참조로 바꿔 추가한다 — 모르는 remote는 기존 동작(URL 그대로) 유지.
+ */
+export function flatpakrepoRefFor(url: string): string {
+  const normalized = url.replace(/\/+$/, '')
+  if (normalized === 'https://dl.flathub.org/repo')
+    return 'https://dl.flathub.org/repo/flathub.flatpakrepo'
+  if (normalized === 'https://dl.flathub.org/beta-repo')
+    return 'https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo'
+  return url
+}
+
 export function planFlatpak(
   ctx: RigsyncContext,
   provider: FlatpakProvider,
@@ -216,13 +232,14 @@ export function planFlatpak(
   const actions: PlanAction[] = []
 
   for (const r of diff.toAddRemotes) {
+    const addRef = flatpakrepoRefFor(r.url)
     actions.push({
       capability: 'packages',
       summary: `add flatpak remote ${r.name}`,
-      commands: [`flatpak remote-add --user --if-not-exists ${r.name} ${r.url}`],
+      commands: [`flatpak remote-add --user --if-not-exists ${r.name} ${addRef}`],
       privileged: false,
       run: async () => {
-        const result = provider.addRemoteUser(r.name, r.url)
+        const result = provider.addRemoteUser(r.name, addRef)
         return { ok: result.ok, detail: result.output }
       }
     })

@@ -120,6 +120,33 @@ describe('captureApt / diffApt / planApt', () => {
     expect(diff.uncaptured).toEqual(['unityhub'])
   })
 
+  it('plan orders source/keyring restore and apt-get update BEFORE install (fresh-machine ordering)', async () => {
+    // v0.1.7 실사고: install이 앞이면 PPA 패키지가 Ubuntu 기본 아카이브
+    // 구버전으로 설치되고, pkexec 배치의 fail-fast 때문에 sources 복원까지
+    // 연쇄 미실행이 된다.
+    writeCommonAptSection(fixture.ctx, {
+      packages: ['copyq'],
+      sources: [{ name: 'ppa.sources', file: 'packages/apt/sources/ppa.sources', keyringDest: '' }]
+    })
+    fs.mkdirSync(path.join(fixture.manifestDir, 'packages', 'apt', 'sources'), {
+      recursive: true
+    })
+    fs.writeFileSync(
+      path.join(fixture.manifestDir, 'packages', 'apt', 'sources', 'ppa.sources'),
+      'Types: deb\n'
+    )
+    const provider = makeFakeAptProvider({ manual: [] })
+    const diff = await diffApt(fixture.ctx, provider)
+    const actions = planApt(fixture.ctx, provider, diff)
+
+    const summaries = actions.map((a) => a.summary)
+    expect(summaries).toEqual([
+      'restore apt source ppa.sources',
+      'apt-get update (sources changed)',
+      'install 1 apt package(s)'
+    ])
+  })
+
   it('plan produces one privileged apt-get install action for to_install packages', async () => {
     const provider = makeFakeAptProvider({ manual: [] })
     const diff = {

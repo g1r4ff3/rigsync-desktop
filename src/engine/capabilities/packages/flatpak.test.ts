@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
-import { captureFlatpak, diffFlatpak, planFlatpak, planFlatpakUninstall } from './flatpak'
+import {
+  captureFlatpak,
+  diffFlatpak,
+  flatpakrepoRefFor,
+  planFlatpak,
+  planFlatpakUninstall
+} from './flatpak'
 import { readEffectivePackages, writeCommonFlatpakSection } from './io'
 import { makeFakeFlatpakProvider } from './testHelpers'
 
@@ -67,15 +73,16 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
     const actions = planFlatpak(fixture.ctx, provider, diff, 'run-ts')
     expect(actions).toHaveLength(2)
     expect(actions.every((a) => a.privileged === false)).toBe(true)
+    // v0.1.7: flathub은 GPG 키가 포함된 .flatpakrepo 참조로 추가된다.
     expect(actions[0].commands[0]).toBe(
-      'flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/'
+      'flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo'
     )
     expect(actions[1].commands[0]).toBe('flatpak install --user -y flathub org.deskflow.deskflow')
 
     const results = await Promise.all(actions.map((a) => a.run()))
     expect(results.every((r) => r.ok)).toBe(true)
     expect(provider.addRemoteCalls).toEqual([
-      { name: 'flathub', url: 'https://dl.flathub.org/repo/' }
+      { name: 'flathub', url: 'https://dl.flathub.org/repo/flathub.flatpakrepo' }
     ])
     expect(provider.installCalls).toEqual([
       { origin: 'flathub', application: 'org.deskflow.deskflow' }
@@ -254,5 +261,48 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
       expect(result.actions).toEqual([])
       expect(result.excluded[0].reason).toContain('flatpak')
     })
+  })
+})
+
+// v0.1.7: 평문 repo URL로 remote-add하면 GPG 키 없는 remote가 생겨 설치가
+// 전부 죽는다("No remote refs found" — lab-main 실사고). 알려진 remote는
+// .flatpakrepo 참조로 치환한다.
+describe('flatpakrepoRefFor', () => {
+  it('maps the flathub repo URL (trailing slash tolerated) to its .flatpakrepo', () => {
+    expect(flatpakrepoRefFor('https://dl.flathub.org/repo/')).toBe(
+      'https://dl.flathub.org/repo/flathub.flatpakrepo'
+    )
+    expect(flatpakrepoRefFor('https://dl.flathub.org/repo')).toBe(
+      'https://dl.flathub.org/repo/flathub.flatpakrepo'
+    )
+  })
+
+  it('leaves unknown remotes untouched (기존 동작 유지)', () => {
+    expect(flatpakrepoRefFor('https://example.com/custom-repo/')).toBe(
+      'https://example.com/custom-repo/'
+    )
+  })
+
+  it('planFlatpak adds the flathub remote via .flatpakrepo in both command text and provider call', async () => {
+    const fixture = makeFixture('reference')
+    const provider = makeFakeFlatpakProvider()
+    const diff = {
+      skipped: false,
+      toAddRemotes: [{ name: 'flathub', url: 'https://dl.flathub.org/repo/' }],
+      toInstall: [],
+      uncaptured: [],
+      overridesMissing: [],
+      overridesChanged: []
+    }
+    const actions = planFlatpak(fixture.ctx, provider, diff, 'run-ts')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].commands[0]).toBe(
+      'flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo'
+    )
+    await actions[0].run()
+    expect(provider.addRemoteCalls).toEqual([
+      { name: 'flathub', url: 'https://dl.flathub.org/repo/flathub.flatpakrepo' }
+    ])
+    fixture.cleanup()
   })
 })

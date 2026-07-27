@@ -246,18 +246,13 @@ export function planApt(
   diff: AptDiffReport
 ): PlanAction[] {
   if (diff.skipped) return []
+  // v0.1.7 순서 수정(신선한 머신 첫 apply 실사고): install은 sources 복원·
+  // keyring 복원·apt-get update **뒤**에 와야 한다 — 앞에 두면 PPA/서드파티
+  // repo에서 와야 할 패키지가 Ubuntu 기본 아카이브의 구버전으로 설치되거나
+  // 실패하고, pkexec 배치는 첫 실패에서 멈추므로 sources 복원까지 연쇄
+  // 미실행이 된다(lab-main 프로비저닝에서 실제 발생). 정책 §6의 순서 보장
+  // (sources 변경 → update → install)을 plan 순서로 구현한다.
   const actions: PlanAction[] = []
-
-  if (diff.toInstall.length > 0) {
-    const cmd = ['sudo', 'apt-get', 'install', '-y', ...diff.toInstall]
-    actions.push({
-      capability: 'packages',
-      summary: `install ${diff.toInstall.length} apt package(s)`,
-      commands: [cmd.join(' ')],
-      privileged: true,
-      run: notExecutedUntilP2b
-    })
-  }
 
   const manifest = readEffectivePackages(ctx).apt ?? {}
   let anySourceChange = false
@@ -299,6 +294,17 @@ export function planApt(
       capability: 'packages',
       summary: 'apt-get update (sources changed)',
       commands: ['sudo apt-get update'],
+      privileged: true,
+      run: notExecutedUntilP2b
+    })
+  }
+
+  if (diff.toInstall.length > 0) {
+    const cmd = ['sudo', 'apt-get', 'install', '-y', ...diff.toInstall]
+    actions.push({
+      capability: 'packages',
+      summary: `install ${diff.toInstall.length} apt package(s)`,
+      commands: [cmd.join(' ')],
       privileged: true,
       run: notExecutedUntilP2b
     })
