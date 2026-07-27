@@ -2,9 +2,16 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LinuxGitTransportProvider } from '../providers/linux/gitTransport'
-import { getSyncStatus, syncFollower, syncReference } from './sync'
+import { makeFakeGitTransportProvider } from './testHelpers'
+import {
+  getSyncStatus,
+  LIVE_EDIT_COMMIT_MESSAGE,
+  sweepLiveEditsIfDirty,
+  syncFollower,
+  syncReference
+} from './sync'
 
 // 픽스처 주의(★): public repo -- 실제 토큰 형식을 흉내내지 않도록 `.repeat()`로
 // 조립한 반복 단어 더미만 쓴다(engine/safety/secretScan.test.ts와 동일 원칙).
@@ -216,5 +223,133 @@ describe('git transport (real local git, no network)', () => {
       encoding: 'utf-8'
     })
     expect(log.stdout.trim()).toBe('local divergent commit')
+  })
+})
+
+// P4(F4/D3-a): reference에서 심링크 너머 라이브 편집이 다음 capture/toggle의
+// commit과 섞이지 않고 별도 커밋으로 분리되는지 -- sweepLiveEditsIfDirty를
+// syncReference와 조합해 withAutoSync(main/ipc.ts)가 실제로 만드는 "쓰기 전
+// 스윕 → 쓰기 → 쓰기 후 커밋" 순서를 재현한다.
+describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () => {
+  let fixture: GitFixture
+
+  beforeEach(() => {
+    fixture = makeGitFixture()
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('is a no-op when the tree is clean', async () => {
+    const status = await sweepLiveEditsIfDirty(
+      { manifestDir: fixture.referenceDir, role: 'reference' },
+      provider
+    )
+    expect(status).toBeNull()
+  })
+
+  it('commits and pushes pre-existing dirt under the live-edit message, separate from a later write', async () => {
+    // 라이브 편집 시뮬레이션 -- withAutoSync가 실제 capability write를 부르기
+    // 전 시점의 dirty 상태.
+    fs.writeFileSync(path.join(fixture.referenceDir, 'dotfiles-zshrc.txt'), 'live edit\n')
+    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(true)
+
+    const sweepStatus = await sweepLiveEditsIfDirty(
+      { manifestDir: fixture.referenceDir, role: 'reference' },
+      provider
+    )
+    expect(sweepStatus).toEqual({ kind: 'synced' })
+    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+
+    // 이제 (withAutoSync의 run()에 해당하는) 캡처 자신의 쓰기가 일어난다 --
+    // 트리는 스윕 덕분에 깨끗한 상태에서 시작했다.
+    fs.writeFileSync(path.join(fixture.referenceDir, 'apt.toml'), 'packages = ["git"]\n')
+    const captureStatus = await syncReference(
+      { manifestDir: fixture.referenceDir, machineId: 'testhost' },
+      provider
+    )
+    expect(captureStatus).toEqual({ kind: 'synced' })
+
+    const log = spawnSync(
+      'git',
+      ['-C', fixture.referenceDir, 'log', '--pretty=%s', '-2', '--reverse'],
+      { encoding: 'utf-8' }
+    )
+    const messages = log.stdout.trim().split('\n')
+    expect(messages[0]).toBe(LIVE_EDIT_COMMIT_MESSAGE)
+    expect(messages[1]).toMatch(/^capture: testhost \d{4}-\d{2}-\d{2}$/)
+
+    // 두 번째(capture) 커밋의 diff엔 apt.toml만 있어야 한다 -- 라이브 편집과
+    // 섞이지 않았다는 증거.
+    const showFiles = spawnSync(
+      'git',
+      ['-C', fixture.referenceDir, 'show', '--name-only', '--pretty=', 'HEAD'],
+      { encoding: 'utf-8' }
+    )
+    expect(showFiles.stdout.trim().split('\n')).toEqual(['apt.toml'])
+  })
+
+  it('follower is never swept, even if the tree is dirty (역할 가드)', async () => {
+    const followerDir = cloneFollower(fixture, 'follower-live-edit')
+    fs.writeFileSync(path.join(followerDir, 'local.conf'), 'edited locally\n')
+    expect(provider.hasUncommittedChanges(followerDir)).toBe(true)
+
+    const status = await sweepLiveEditsIfDirty(
+      { manifestDir: followerDir, role: 'follower' },
+      provider
+    )
+
+    expect(status).toBeNull()
+    // 커밋되지 않은 채 그대로 dirty해야 한다 -- follower는 절대 저작하지 않는다.
+    expect(provider.hasUncommittedChanges(followerDir)).toBe(true)
+  })
+
+  it('does not call the provider at all for a follower role (fake provider spy)', async () => {
+    const fakeProvider = makeFakeGitTransportProvider({
+      isGitRepo: true,
+      hasRemote: true,
+      hasUncommittedChanges: true
+    })
+    const commitSpy = vi.spyOn(fakeProvider, 'addAllAndCommit')
+    const pushSpy = vi.spyOn(fakeProvider, 'push')
+
+    const status = await sweepLiveEditsIfDirty(
+      { manifestDir: '/irrelevant', role: 'follower' },
+      fakeProvider
+    )
+
+    expect(status).toBeNull()
+    expect(commitSpy).not.toHaveBeenCalled()
+    expect(pushSpy).not.toHaveBeenCalled()
+  })
+
+  it('commits locally but refuses to push when the swept dirt contains a secret (push 게이트 우회 금지)', async () => {
+    fs.mkdirSync(path.join(fixture.referenceDir, 'common'), { recursive: true })
+    fs.writeFileSync(
+      path.join(fixture.referenceDir, 'common', 'leaky.toml'),
+      `token = "${FAKE_GITHUB_PAT}"\n`
+    )
+
+    const status = await sweepLiveEditsIfDirty(
+      { manifestDir: fixture.referenceDir, role: 'reference' },
+      provider
+    )
+
+    expect(status?.kind).toBe('error')
+    if (status?.kind === 'error') {
+      expect(status.message).toContain('push 중단')
+      expect(status.message).not.toContain(FAKE_GITHUB_PAT)
+    }
+    // 커밋은 로컬에 남아있어야 한다(회수 가능) -- push만 막힌다.
+    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
+      encoding: 'utf-8'
+    })
+    expect(log.stdout.trim()).toBe(LIVE_EDIT_COMMIT_MESSAGE)
+    const remoteLog = spawnSync('git', ['-C', fixture.bareDir, 'log', '-1', '--pretty=%s'], {
+      encoding: 'utf-8'
+    })
+    expect(remoteLog.stdout.trim()).not.toBe(LIVE_EDIT_COMMIT_MESSAGE)
   })
 })

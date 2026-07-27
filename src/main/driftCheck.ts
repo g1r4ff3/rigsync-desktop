@@ -31,7 +31,7 @@ import {
   linuxSystemdUserProvider,
   linuxToolsProvider
 } from '../engine/providers/linux'
-import { triggerSync } from './gitSync'
+import { sweepLiveEditsBeforeWrite, triggerSync } from './gitSync'
 
 /** 전 capability를 read-only diff만으로 조회해 drift 항목 목록을 조립한다. */
 export async function buildDriftInput(ctx: RigsyncContext): Promise<DriftInput> {
@@ -83,16 +83,25 @@ export async function buildDriftInput(ctx: RigsyncContext): Promise<DriftInput> 
 
 /**
  * `buildDriftInput` + `summarizeDrift`를 한데 묶은, 스케줄러가 직접 주입하는
- * 엔트리포인트. follower면 diff를 읽기 전에 fetch+ff-pull을 먼저 시도한다
- * (코디네이터 지시) — **실패해도 절대 여기서 멈추지 않는다**: 로컬 기준으로
- * drift 체크를 계속 진행하고, 실패 자체는 `triggerSync`가 이미
- * `getLastSyncStatus()`용 상태로 남겨(main/gitSync.ts) 상태바에 표면화된다.
+ * 엔트리포인트. **실패해도 절대 여기서 멈추지 않는다**: 로컬 기준으로 drift
+ * 체크를 계속 진행하고, 실패 자체는 `triggerSync`/`sweepLiveEditsBeforeWrite`가
+ * 이미 `getLastSyncStatus()`용 상태로 남겨(main/gitSync.ts) 상태바에 표면화된다.
+ *
+ * - follower면 diff를 읽기 전에 fetch+ff-pull을 먼저 시도한다(코디네이터 지시).
+ * - reference면 P4(F4/D3-a) 라이브 편집 스윕을 먼저 시도한다 -- 캡처/토글
+ *   경로(ipc.ts `withAutoSync`)와 별개로, 사용자가 아무 조작도 하지 않고
+ *   심링크 너머로 dotfiles만 편집한 채 시간이 지나도(다음 capture/toggle이
+ *   한동안 없어도) 이 주기적 체크가 그 dirt를 `live-edit: …` 커밋으로 분리해
+ *   push한다 -- F4가 "다음 아무 capture/토글"에만 의존하지 않게 하는 두 번째
+ *   경로.
  */
 export async function runDriftCheck(ctx: RigsyncContext): Promise<DriftSummary> {
   if (ctx.role === 'follower') {
     await triggerSync(ctx, linuxGitTransportProvider).catch(() => {
       // 의도적으로 무시 -- 실패해도 로컬 기준으로 계속 진행한다.
     })
+  } else if (ctx.role === 'reference') {
+    await sweepLiveEditsBeforeWrite(ctx, linuxGitTransportProvider)
   }
   const input = await buildDriftInput(ctx)
   return summarizeDrift(input, new Date().toISOString())

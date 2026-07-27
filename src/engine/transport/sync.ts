@@ -21,8 +21,6 @@ export function getSyncStatus(
 }
 
 /**
- * reference: 미커밋 변경이 있으면 커밋(`capture: <machineId> <ISO date>`) 후 push.
- *
  * ⑤ push 직전 재검사(이중 안전망) — 각 capability의 capture 관문을 어떤 경로로든
  * 우회해 manifest에 비밀이 실렸을 가능성(수동 편집, 관문 도입 전 캡처분 등)에
  * 대비해 **push 바로 직전**에 manifest 전체를 다시 스캔한다. 커밋까지는 허용한다
@@ -31,21 +29,13 @@ export function getSyncStatus(
  * 지시). 새 SyncStatus kind를 만들지 않고 기존 'error' kind를 재사용한다 --
  * 렌더러의 에러 상태 렌더링(상태바 메시지)이 이미 "무엇을 해야 하는지"를
  * 그대로 보여주므로 렌더러 쪽 변경 없이 Explanability contract의 State 층을
- * 만족한다.
+ * 만족한다. syncReference와 P4(F4/D3-a) `sweepLiveEditsIfDirty` 둘 다 이 게이트를
+ * 거친다 -- push 경로가 하나뿐이라 우회할 수 없다.
  */
-export async function syncReference(
-  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
+async function pushAfterSecretScan(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
   provider: GitTransportProvider
 ): Promise<SyncStatus> {
-  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) {
-    return { kind: 'local-only' }
-  }
-  if (provider.hasUncommittedChanges(ctx.manifestDir)) {
-    const message = `capture: ${ctx.machineId} ${new Date().toISOString().slice(0, 10)}`
-    const commit = provider.addAllAndCommit(ctx.manifestDir, message)
-    if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
-  }
-
   const scan = scanManifestForSecrets(ctx)
   if (scan.blocked) {
     const paths = [...new Set(scan.findings.map((f) => f.path))]
@@ -63,6 +53,60 @@ export async function syncReference(
   if (!push.ok)
     return { kind: 'error', message: push.output || 'push 실패 -- "지금 동기화"로 재시도하세요' }
   return getSyncStatus(ctx, provider)
+}
+
+/**
+ * reference: 미커밋 변경이 있으면 커밋(`capture: <machineId> <ISO date>`) 후 push.
+ */
+export async function syncReference(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
+  provider: GitTransportProvider
+): Promise<SyncStatus> {
+  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) {
+    return { kind: 'local-only' }
+  }
+  if (provider.hasUncommittedChanges(ctx.manifestDir)) {
+    const message = `capture: ${ctx.machineId} ${new Date().toISOString().slice(0, 10)}`
+    const commit = provider.addAllAndCommit(ctx.manifestDir, message)
+    if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
+  }
+
+  return pushAfterSecretScan(ctx, provider)
+}
+
+/**
+ * P4(F4/D3-a) 라이브 편집 스윕 커밋 — F4 병인: reference에서 심링크 너머로
+ * dotfiles를 직접 편집하면 store 파일은 즉시 바뀌지만, commit+push는 **다음
+ * 아무 capture/토글**이 `syncReference`(위)의 addAllAndCommit을 돌릴 때
+ * 우연히 실린다 — 커밋 메시지("capture: …")와 실제 내용이 어긋나고 전파가
+ * 비결정적이다.
+ *
+ * 해소: capture/토글 등 쓰기 경로가 **시작되기 전에**(main/gitSync.ts의
+ * `sweepLiveEditsBeforeWrite`가 이 함수를 그 지점에서 호출한다) 작업 트리가
+ * 이미 dirty했다면, 그 dirt를 이번 쓰기와 섞이기 전에 별도의
+ * `live-edit: dotfiles 라이브 편집` 커밋으로 먼저 분리해 push한다. 그러면
+ * 뒤이어 실제 쓰기가 일어난 뒤 `syncReference`가 만드는 "capture: …" 커밋은
+ * 그 쓰기 자신의 diff만 담게 된다. 드리프트 스케줄러(main/driftCheck.ts)도
+ * 캡처/토글과 무관하게 주기적으로 이 함수를 불러 같은 정리를 한다.
+ *
+ * follower는 저작하지 않는다(불변식 ⑦) -- follower의 dirty는 이 함수가 아니라
+ * doctor/manifestDirtyCheck(P3)의 경고 영역이다. 호출자가 role을 가리지 않고
+ * 불러도 안전하도록 역할 가드를 이 함수 안에 둔다(호출부 실수에 대한 방어선).
+ */
+export const LIVE_EDIT_COMMIT_MESSAGE = 'live-edit: dotfiles 라이브 편집'
+
+export async function sweepLiveEditsIfDirty(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'role'>,
+  provider: GitTransportProvider
+): Promise<SyncStatus | null> {
+  if (ctx.role !== 'reference') return null
+  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) return null
+  if (!provider.hasUncommittedChanges(ctx.manifestDir)) return null
+
+  const commit = provider.addAllAndCommit(ctx.manifestDir, LIVE_EDIT_COMMIT_MESSAGE)
+  if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
+
+  return pushAfterSecretScan(ctx, provider)
 }
 
 /** follower: fetch 후 뒤처졌으면 fast-forward pull만. 비FF/충돌은 자동 해결 절대 금지. */

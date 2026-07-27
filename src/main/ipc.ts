@@ -56,7 +56,12 @@ import {
 } from '../engine/context'
 import { guardedSetAutostart } from './autostartGuard'
 import { orderCombinedPlan } from './planOrder'
-import { autoSyncAfterWrite, getLastSyncStatus, triggerSync } from './gitSync'
+import {
+  autoSyncAfterWrite,
+  getLastSyncStatus,
+  sweepLiveEditsBeforeWrite,
+  triggerSync
+} from './gitSync'
 import { completeOnboarding, expandTilde } from './onboarding'
 import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
@@ -202,13 +207,22 @@ function runTimestamp(): string {
 }
 
 /**
- * manifest 쓰기 경로(capture·ignore 토글) 뒤에 자동 commit+push를 붙인다
- * (코디네이터 지시 "reference: manifest 변경 후 자동 commit+push"). dry-run이면
- * 아무것도 쓰지 않았으니 동기화도 트리거하지 않는다. fire-and-forget이라 이
- * 핸들러의 응답을 블로킹하지 않는다 -- push 실패는 engine:getSyncStatus로
- * 표면화된다.
+ * manifest 쓰기 경로(capture·ignore 토글) 앞뒤에 P4(F4/D3-a) 라이브 편집 스윕 +
+ * 자동 commit+push를 붙인다(코디네이터 지시 "reference: manifest 변경 후 자동
+ * commit+push"). dry-run이면 아무것도 쓰지 않았으니 스윕도 동기화도 트리거하지
+ * 않는다.
+ *
+ * 쓰기 **전** `sweepLiveEditsBeforeWrite`를 await하는 이유: 이 시점에 작업
+ * 트리가 이미 dirty했다면(사용자가 심링크 너머로 직접 편집한 라이브 편집)
+ * 그 dirt를 이번 쓰기 자신의 diff와 섞이기 전에 별도 `live-edit: …` 커밋으로
+ * 먼저 분리해야, 쓰기 뒤 `autoSyncAfterWrite`가 만드는 "capture: …" 커밋이
+ * 이번 쓰기만 담는다(F4 해소 -- run() 시작 전에 완료돼야 하므로 fire-and-forget
+ * 불가, 반드시 await). 쓰기 **뒤**의 `autoSyncAfterWrite`는 기존 그대로
+ * fire-and-forget이라 이 핸들러의 응답을 블로킹하지 않는다 -- push 실패는
+ * engine:getSyncStatus로 표면화된다.
  */
 async function withAutoSync<T>(dryRun: boolean, run: () => Promise<T>): Promise<T> {
+  if (!dryRun) await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
   const result = await run()
   if (!dryRun) autoSyncAfterWrite(getContext(), gitTransportProvider)
   return result
@@ -453,6 +467,7 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineIgnoreDoctorCheck,
     async (_event, request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> => {
+      await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
       ignoreDoctorCheck(getContext(), request.name, request.ignored)
       autoSyncAfterWrite(getContext(), gitTransportProvider)
       return buildDoctorReport(
@@ -661,6 +676,7 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
+      await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
       // refactor-spec-v0.2 §1: "배포판 기본" 그룹의 스위치는 ignore가 아니라
       // include 예외를 움직인다 -- 스위치 의미(켬=동기화)는 같으므로
       // synced = !ignored로 번역해 라우팅한다.
@@ -677,6 +693,7 @@ export function registerEngineIpc(
   ipcMain.handle(
     IPC_CHANNELS.engineToggleIgnoreBulk,
     async (_event, request: ToggleIgnoreBulkRequest): Promise<SyncItemGroupDto[]> => {
+      await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
       // R5: 그룹 전체 토글 -- ignore.toml 1회 읽기/쓰기(toggleSyncItemIgnoreBulk
       // 내부)에 이어 자동 commit+push도 정확히 1번만 트리거한다(항목별 루프로
       // 얹으면 커밋 폭탄이 되므로 절대 반복 호출하지 않는다).
