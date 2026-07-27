@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from '../../testFixtures'
-import { readCommonLayer } from '../../manifest'
+import { hostLayerPath, readCommonLayer, readManifestFile, writeManifestFile } from '../../manifest'
 import { captureServices, FollowerServicesCaptureBlockedError } from './capture'
 import { SERVICES_LAYER } from './constants'
 import { makeFakeSystemdUserProvider } from './testHelpers'
@@ -88,6 +88,64 @@ describe('captureServices', () => {
     expect(
       fs.existsSync(path.join(fixture.ctx.manifestDir, 'services', 'systemd-user', 'leaky.service'))
     ).toBe(false)
+    fixture.cleanup()
+  })
+})
+
+// refactor-spec-v0.2 P2 (F2 host 라우팅): 이 호스트 오버레이에 있는 유닛은
+// capture가 common에 되돌리지 않는다 — F1(cliproxyapi 재유입) 재발 방지.
+describe('captureServices — host layer routing', () => {
+  it('refreshes a host-layer unit in the host layer only, never re-adding it to common', async () => {
+    const fixture = makeFixture('reference')
+    writeManifestFile(hostLayerPath(fixture.ctx, SERVICES_LAYER), {
+      unit: [
+        { name: 'labonly.service', file: 'services/systemd-user/labonly.service', enabled: false }
+      ]
+    })
+    const provider = makeFakeSystemdUserProvider({
+      units: [
+        { name: 'labonly.service', content: '[Service]\nExecStart=/opt/lab\n' },
+        { name: 'shared.service', content: '[Service]\nExecStart=/usr/bin/shared\n' }
+      ],
+      enabled: { 'labonly.service': true, 'shared.service': true }
+    })
+
+    const report = await captureServices(fixture.ctx, provider, { dryRun: false })
+    expect(report.captured).toBe(2)
+
+    const common = readCommonLayer(fixture.ctx, SERVICES_LAYER) as ServicesManifest
+    expect((common.unit ?? []).map((u) => u.name)).toEqual(['shared.service'])
+
+    const host = readManifestFile(hostLayerPath(fixture.ctx, SERVICES_LAYER)) as ServicesManifest
+    expect(host.unit).toHaveLength(1)
+    // 페이로드(enabled 상태·파일)는 host 계층에서 갱신된다.
+    expect(host.unit?.[0]).toEqual({
+      name: 'labonly.service',
+      file: 'services/systemd-user/labonly.service',
+      enabled: true
+    })
+    fixture.cleanup()
+  })
+
+  it('converges: a second capture with a host-layer unit changes nothing', async () => {
+    const fixture = makeFixture('reference')
+    writeManifestFile(hostLayerPath(fixture.ctx, SERVICES_LAYER), {
+      unit: [
+        { name: 'labonly.service', file: 'services/systemd-user/labonly.service', enabled: true }
+      ]
+    })
+    const provider = makeFakeSystemdUserProvider({
+      units: [{ name: 'labonly.service', content: '[Service]\nExecStart=/opt/lab\n' }],
+      enabled: { 'labonly.service': true }
+    })
+    await captureServices(fixture.ctx, provider, { dryRun: false })
+    const commonAfterFirst = readCommonLayer(fixture.ctx, SERVICES_LAYER)
+    await captureServices(fixture.ctx, provider, { dryRun: false })
+
+    expect(readCommonLayer(fixture.ctx, SERVICES_LAYER)).toEqual(commonAfterFirst)
+    expect((readCommonLayer(fixture.ctx, SERVICES_LAYER) as ServicesManifest).unit ?? []).toEqual(
+      []
+    )
     fixture.cleanup()
   })
 })

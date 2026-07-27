@@ -109,6 +109,16 @@ function secretScanKinds(secretScan: DoctorReportDto['secretScan']): StatusKind[
   return secretScan.blockedFindings.map((): StatusKind => 'error')
 }
 
+/**
+ * refactor-spec-v0.2 P2 이식성 검사 -- 파일 단위 경고(warnings)로 센다.
+ * 한 dotfile에서 수십 참조가 나와도(F1의 .zshrc처럼) 문제는 파일 하나다.
+ * 'warn'인 이유: 지금 이 머신이 깨진 게 아니라 "적용되면 깨질" 예고라서
+ * (비밀 잔존=현재 사고인 secret scan의 'error'와 구분).
+ */
+function portabilityKinds(portability: DoctorReportDto['portability']): StatusKind[] {
+  return portability.warnings.map((): StatusKind => 'warn')
+}
+
 function checklistKinds(checks: DoctorReportDto['checks']): StatusKind[] {
   return checks.map((c) => doctorResultKind(c.result))
 }
@@ -276,6 +286,7 @@ function DoctorView(): React.JSX.Element {
   const fontsCounts = countKinds(fontsKinds(report.fonts))
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
+  const portabilityCounts = countKinds(portabilityKinds(report.portability))
   const selfUpdateCounts = countKinds(selfUpdateKinds(selfUpdate))
   const checklistCounts = report.checksVisible
     ? countKinds(checklistKinds(report.checks))
@@ -286,6 +297,7 @@ function DoctorView(): React.JSX.Element {
     fontsCounts,
     nvidiaCounts,
     secretScanCounts,
+    portabilityCounts,
     selfUpdateCounts,
     checklistCounts
   ].reduce(addCounts, {
@@ -480,6 +492,27 @@ function DoctorView(): React.JSX.Element {
           {report.secretScan.warnings.map((w) => (
             <DoctorActionNote key={w} kind="error" text={w} />
           ))}
+        </DoctorGroup>
+
+        <DoctorGroup
+          title="Portability"
+          description="이 머신에 적용될 manifest 콘텐츠에 다른 사용자의 /home 경로가 박혀 있는지 확인"
+          counts={portabilityCounts}
+        >
+          {report.portability.warnings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              감지된 항목 없음 -- 스토어의 dotfiles·crontab·서비스 유닛에 다른 사용자 홈 경로 참조가
+              없습니다.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {report.portability.warnings.map((w) => (
+                <li key={w} className="rounded border border-border p-2 text-xs">
+                  <StatusText kind="warn">{w}</StatusText>
+                </li>
+              ))}
+            </ul>
+          )}
         </DoctorGroup>
 
         {report.checksVisible && (

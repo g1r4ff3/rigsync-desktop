@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { makeFixture } from '../../testFixtures'
 import { captureScheduled, FollowerScheduledCaptureBlockedError } from './capture'
 import { SCHEDULED_STORE_REL_PATH } from './constants'
+import { scheduledHostStorePath } from './store'
 import { makeFakeCronProvider } from './testHelpers'
 
 // 픽스처 주의(★): public repo -- 실제 토큰 형식을 흉내내지 않도록 `.repeat()`로
@@ -92,6 +93,39 @@ describe('captureScheduled', () => {
     })
     expect(report.captured).toBe(true)
     expect(report.secretScanBlocked).toHaveLength(0)
+    fixture.cleanup()
+  })
+})
+
+// refactor-spec-v0.2 P2 (F2 host 라우팅): host 스토어가 존재하면 capture는
+// 그 파일만 갱신하고 공통 스토어를 건드리지 않는다 — 머신 고유 crontab이
+// 다른 머신으로 새지 않는 성질(F1 재발 방지의 scheduled쪽 절반).
+describe('captureScheduled — host store routing', () => {
+  it('writes to the host store when it exists, leaving the common store untouched', async () => {
+    const fixture = makeFixture('reference')
+    const hostPath = scheduledHostStorePath(fixture.ctx)
+    fs.mkdirSync(path.dirname(hostPath), { recursive: true })
+    fs.writeFileSync(hostPath, '# old host content\n')
+    const commonPath = path.join(fixture.manifestDir, SCHEDULED_STORE_REL_PATH)
+    fs.mkdirSync(path.dirname(commonPath), { recursive: true })
+    fs.writeFileSync(commonPath, '# common untouched\n')
+
+    const provider = makeFakeCronProvider({ crontab: '0 * * * * /usr/bin/true\n' })
+    const report = await captureScheduled(fixture.ctx, provider, { dryRun: false })
+
+    expect(report.captured).toBe(true)
+    expect(fs.readFileSync(hostPath, 'utf-8')).toBe('0 * * * * /usr/bin/true\n')
+    expect(fs.readFileSync(commonPath, 'utf-8')).toBe('# common untouched\n')
+    fixture.cleanup()
+  })
+
+  it('still writes to the common store when no host store exists', async () => {
+    const fixture = makeFixture('reference')
+    const provider = makeFakeCronProvider({ crontab: '1 * * * * /usr/bin/true\n' })
+    await captureScheduled(fixture.ctx, provider, { dryRun: false })
+    const commonPath = path.join(fixture.manifestDir, SCHEDULED_STORE_REL_PATH)
+    expect(fs.readFileSync(commonPath, 'utf-8')).toBe('1 * * * * /usr/bin/true\n')
+    expect(fs.existsSync(scheduledHostStorePath(fixture.ctx))).toBe(false)
     fixture.cleanup()
   })
 })

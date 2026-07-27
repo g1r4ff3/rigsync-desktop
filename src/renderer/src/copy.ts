@@ -363,6 +363,7 @@ export const helpCopy = {
     'Fonts 점검은 manifest에 선언됐지만 이 머신에 없는 폰트, 설치는 됐지만 소스가 알려지지 않아 재현 불가능한 폰트, fc-cache/fc-list 사용 가능 여부를 확인합니다.',
     'NVIDIA 항목은 커널 드라이버(NVRM)와 설치된 패키지 버전이 다르면 경고합니다 — 대개 재부팅하면 해소됩니다.',
     'Secret scan은 manifest 저장소 전체를 다시 훑어 GitHub 토큰 등 비밀로 보이는 값이 남아있는지 확인합니다 — Capture 시점에 이미 한 번 걸러졌어야 할 것들이 어떤 경로로든 남아있는지 잡는 마지막 안전망입니다.',
+    'Portability는 이 머신에 적용될 manifest 콘텐츠(dotfiles·crontab·서비스 유닛)에 다른 사용자의 /home 경로가 박혀 있는지 확인합니다 — 그런 항목이 배포되면 그 머신에서 깨진 경로가 되므로(실사고 사례), 머신 고유 항목은 host 계층으로 옮기고 공유 항목은 $HOME/~ 기반으로 고쳐야 합니다.',
     'Auto-update(self)는 AppImage로 실행 중일 때만 나타납니다 — rigsync 자신이 Gear Lever의 자동 업데이트 소스로 지정돼 있는지를 봅니다. 앱이 시작할 때 한 번 스스로 등록을 시도하지만(실패해도 반복하지 않습니다), 그마저 안 됐다면 여기에 직접 실행할 수 있는 명령 전문이 표시됩니다.',
     '체크리스트 항목은 hand-maintained 목록이며 "Dismiss"로 다시 보지 않을 수 있습니다.'
   ].join(' '),

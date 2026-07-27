@@ -10,6 +10,7 @@ import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
 import type { NvidiaDriverCheckResult } from './nvidia'
+import type { PortabilityCheckResult } from './portabilityCheck'
 import type { SecretScanPreflightCheck } from './secretScanCheck'
 import type { SelfUpdateCheck } from './selfUpdateCheck'
 
@@ -61,6 +62,8 @@ export interface DoctorReport {
   readonly nvidia: NvidiaDriverCheckResult
   /** manifest 스토어 전체 소급 시크릿 스캔(⑥) -- capture 관문 우회분을 잡는 마지막 안전망. */
   readonly secretScan: SecretScanPreflightCheck
+  /** refactor-spec-v0.2 P2: 이 머신에 적용될 스토어 콘텐츠의 다른 사용자 홈 경로 참조 탐지 (F1 재발 방지). */
+  readonly portability: PortabilityCheckResult
   /** "빈 follower" 체크 -- follower인데 manifest가 거의 비어 있거나 원격이 없는지. */
   readonly emptyFollower: EmptyFollowerCheckResult
   /**

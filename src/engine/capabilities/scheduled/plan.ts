@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import type { PlanAction } from '../../plan'
-import { SCHEDULED_STORE_REL_PATH } from './constants'
+import { scheduledStorePath } from './store'
 import type { CronProvider } from './providerTypes'
 import type { ScheduledDiffReport } from './types'
 
@@ -19,7 +19,7 @@ export function planScheduled(
 ): PlanAction[] {
   if (diff.skipped || !diff.contentChanged) return []
 
-  const storedPath = path.join(ctx.manifestDir, SCHEDULED_STORE_REL_PATH)
+  const storedPath = scheduledStorePath(ctx)
   return [
     {
       capability: 'scheduled',

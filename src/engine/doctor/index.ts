@@ -4,6 +4,8 @@ export { ignoreDoctorCheck } from './toggle'
 export { checkNvidiaDriverMismatch } from './nvidia'
 export type { NvidiaCheckProvider, NvidiaDriverCheckResult, NvidiaDriverPackage } from './nvidia'
 export { checkSecretScanPreflight } from './secretScanCheck'
+export { checkManifestPortability } from './portabilityCheck'
+export type { PortabilityCheckResult, PortabilityFinding } from './portabilityCheck'
 export type { SecretScanPreflightCheck } from './secretScanCheck'
 export {
   checkSelfUpdateStatus,

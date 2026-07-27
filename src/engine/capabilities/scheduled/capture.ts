@@ -12,6 +12,7 @@ import type { RigsyncContext } from '../../context'
 import { filterAllowlistedFindings, readSecretAllowlist } from '../../safety/secretAllowlist'
 import { scanTextForSecrets } from '../../safety/secretScan'
 import { SCHEDULED_STORE_REL_PATH } from './constants'
+import { scheduledStorePath } from './store'
 import type { CronProvider } from './providerTypes'
 import type { ScheduledCaptureReport } from './types'
 
@@ -73,7 +74,9 @@ export async function captureScheduled(
     }
   }
 
-  const dest = path.join(ctx.manifestDir, SCHEDULED_STORE_REL_PATH)
+  // F2 host 라우팅: host 스토어가 있으면 이 머신의 crontab은 거기로만 간다
+  // (공통 스토어를 건드리지 않아 다른 머신에 새지 않는다 — store.ts 주석).
+  const dest = scheduledStorePath(ctx)
   if (!options.dryRun) {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.writeFileSync(dest, tab)

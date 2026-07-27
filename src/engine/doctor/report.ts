@@ -24,6 +24,7 @@ import { evaluateCheck } from './evaluate'
 import { checkNvidiaDriverMismatch } from './nvidia'
 import type { NvidiaCheckProvider } from './nvidia'
 import type { DoctorSystemProvider } from './providerTypes'
+import { checkManifestPortability } from './portabilityCheck'
 import { checkSecretScanPreflight } from './secretScanCheck'
 import { checkSelfUpdateStatus } from './selfUpdateCheck'
 import type { ChecksManifest, DoctorReport } from './types'
@@ -67,6 +68,7 @@ export async function buildDoctorReport(
   const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
   const secretScan = checkSecretScanPreflight(ctx)
+  const portability = checkManifestPortability(ctx)
   const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
 
   const appImagePath =
@@ -90,6 +92,7 @@ export async function buildDoctorReport(
     fonts,
     nvidia,
     secretScan,
+    portability,
     emptyFollower,
     selfUpdate,
     checksVisible: activeChecks.length > 0,

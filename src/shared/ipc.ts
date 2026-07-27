@@ -617,6 +617,24 @@ export interface DoctorSecretScanPreflightDto {
 }
 
 /**
+ * refactor-spec-v0.2 P2: 이식성 검사 — 이 머신에 적용될 manifest 스토어
+ * 콘텐츠(dotfiles·crontab·services 유닛)에서 다른 사용자의 `/home/<이름>`
+ * 참조를 찾는다. F1 사고(머신 고유 절대경로가 든 cron·유닛이 follower에
+ * 배포돼 실파손) 재발 방지.
+ */
+export interface DoctorPortabilityFindingDto {
+  readonly path: string
+  readonly line: number
+  readonly foreignUser: string
+  readonly excerpt: string
+}
+
+export interface DoctorPortabilityDto {
+  readonly findings: readonly DoctorPortabilityFindingDto[]
+  readonly warnings: readonly string[]
+}
+
+/**
  * 실사용 결함 수정: follower인데 manifest가 거의 비어 있거나(선언 0건)
  * 원격이 연결돼 있지 않으면 경고한다 — reference의 빈 manifest(첫 capture 전)는
  * 정상이라 `applicable`이 role==='follower'일 때만 true다.
@@ -635,6 +653,7 @@ export interface DoctorReportDto {
   readonly fonts: DoctorFontsPreflightDto
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
+  readonly portability: DoctorPortabilityDto
   readonly emptyFollower: DoctorEmptyFollowerDto
   readonly checksVisible: boolean
   readonly exitCode: number
