@@ -635,6 +635,17 @@ export interface DoctorPortabilityDto {
 }
 
 /**
+ * 수동 동기화 체크리스트 항목 -- `common/manual-sync.toml`의 `[[note]]`
+ * 엔트리 하나. rigsync가 자동화하지 않는(런타임 변이·secret 포함 등) 설정을
+ * 사용자가 수동으로 맞춰야 한다는 것을 Doctor에 표출한다.
+ */
+export interface ManualSyncNoteDto {
+  readonly id: string
+  readonly title: string
+  readonly detail: string
+}
+
+/**
  * 실사용 결함 수정: follower인데 manifest가 거의 비어 있거나(선언 0건)
  * 원격이 연결돼 있지 않으면 경고한다 — reference의 빈 manifest(첫 capture 전)는
  * 정상이라 `applicable`이 role==='follower'일 때만 true다.
@@ -654,6 +665,7 @@ export interface DoctorReportDto {
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
   readonly portability: DoctorPortabilityDto
+  readonly manualSyncNotes: readonly ManualSyncNoteDto[]
   readonly emptyFollower: DoctorEmptyFollowerDto
   readonly checksVisible: boolean
   readonly exitCode: number

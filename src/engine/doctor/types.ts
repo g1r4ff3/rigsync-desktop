@@ -9,6 +9,7 @@ import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
+import type { ManualSyncNote } from './manualSyncNotes'
 import type { NvidiaDriverCheckResult } from './nvidia'
 import type { PortabilityCheckResult } from './portabilityCheck'
 import type { SecretScanPreflightCheck } from './secretScanCheck'
@@ -64,6 +65,13 @@ export interface DoctorReport {
   readonly secretScan: SecretScanPreflightCheck
   /** refactor-spec-v0.2 P2: 이 머신에 적용될 스토어 콘텐츠의 다른 사용자 홈 경로 참조 탐지 (F1 재발 방지). */
   readonly portability: PortabilityCheckResult
+  /**
+   * 수동 동기화 체크리스트 -- `common/manual-sync.toml`에서 정의되는, rigsync가
+   * 자동화할 수 없어 사용자가 수동으로 맞춰야 하는 항목(런타임 변이·secret
+   * 포함 설정 등). pass/fail이 없는 순수 정보성 목록이라 checks(수동 체크리스트
+   * 레이어)와 달리 doctor 요약의 통과/경고/실패 집계에 들어가지 않는다.
+   */
+  readonly manualSyncNotes: readonly ManualSyncNote[]
   /** "빈 follower" 체크 -- follower인데 manifest가 거의 비어 있거나 원격이 없는지. */
   readonly emptyFollower: EmptyFollowerCheckResult
   /**

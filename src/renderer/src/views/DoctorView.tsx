@@ -515,6 +515,34 @@ function DoctorView(): React.JSX.Element {
           )}
         </DoctorGroup>
 
+        {/*
+          수동 동기화 체크리스트 -- pass/fail이 없는 순수 정보성 목록이라
+          DoctorGroup을 쓰지 않는다: DoctorGroup은 counts.warn/error===0이면
+          "통과 — 펼쳐서 세부 항목 보기"로 접는데(allPass), 이 목록은 아무것도
+          검증하지 않으므로 "통과"라는 표현이 맞지 않는다. 항목이 없으면(파일
+          없음/이 머신에 해당 경로 없음) 섹션 자체를 숨긴다. kind="muted"는
+          위 AppImage 섹션의 "확인 불가"(gearLeverVersionOk===null)와 같은
+          기존 중립 상태 의미를 그대로 재사용한 것 -- 새 색상·아이콘 없음.
+        */}
+        {report.manualSyncNotes.length > 0 && (
+          <section className="rounded-md border border-border p-3">
+            <h2 className="text-sm font-medium text-foreground">Manual sync checklist</h2>
+            <p className="mb-1.5 text-xs text-muted-foreground">
+              rigsync가 자동 동기화할 수 없어 사용자가 직접 맞춰야 하는 항목
+            </p>
+            <ul className="space-y-2">
+              {report.manualSyncNotes.map((note) => (
+                <li key={note.id} className="rounded border border-border p-2 text-xs">
+                  <StatusText kind="muted">{note.title}</StatusText>
+                  <div className="mt-0.5 whitespace-pre-line text-muted-foreground">
+                    {note.detail}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {report.checksVisible && (
           <DoctorGroup
             title="Checklist"
