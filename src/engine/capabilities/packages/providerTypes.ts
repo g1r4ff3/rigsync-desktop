@@ -61,6 +61,15 @@ export interface AptProvider {
   dependsClosureRaw(metapackages: readonly string[]): string
   /** `dpkg-query -W -f='${Package}\t${Priority}\t${db:Status-Status}\n'` 원문 — 설치본 전체 priority. */
   prioritiesRaw(): string
+  /**
+   * `dpkg -S <absPath>` 상당 — 이 절대경로 파일이 dpkg가 관리하는 어느
+   * 패키지에든 소속돼 있는지(dpkg 자신이 설치한 것인지)만 본다. apt 설치
+   * 사전 경고(planApt) + Doctor shadowing 검사(aptShadowCheck)가 공유하는
+   * 원료 — "PATH 위 실행파일이 dpkg 밖(예: 공식 설치 스크립트·수동 설치)에서
+   * 온 것인지"를 판정하는 유일한 신호. 실기 확인(2026-07-27): 미소속 경로는
+   * `dpkg -S`가 0이 아닌 종료코드로 "no path found matching pattern"을 낸다.
+   */
+  dpkgOwnsPath(absPath: string): boolean
 }
 
 export interface SnapListRow {

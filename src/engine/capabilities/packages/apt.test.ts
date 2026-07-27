@@ -162,6 +162,74 @@ describe('captureApt / diffApt / planApt', () => {
     expect(actions[0].commands[0]).toBe('sudo apt-get install -y git curl')
   })
 
+  // 실증 사례 재발 방지(2026-07-27): rclone 공식 설치 스크립트로 깐 /usr/bin/rclone
+  // v1.74.4가 apt install로 아무 고지 없이 구버전에 덮일 뻔했다. planApt는 이제
+  // 설치 대상과 동일 이름의 dpkg 밖 실행파일이 PATH에 있으면 commands 미리보기에
+  // 경고 줄을 덧붙인다 -- 한계는 패키지명==실행파일명 가정뿐(주석·문구에 명시).
+  describe('planApt non-dpkg conflict pre-warning', () => {
+    const originalPath = process.env.PATH
+
+    afterEach(() => {
+      process.env.PATH = originalPath ?? ''
+    })
+
+    it('warns when a same-named executable exists on PATH and is not dpkg-owned', () => {
+      process.env.PATH = '/fake/bin'
+      const provider = makeFakeAptProvider({
+        manual: [],
+        files: { '/fake/bin/rclone': 'ELF' },
+        policyPackagesRaw: 'rclone:\n  Installed: (none)\n  Candidate: 1.60.1\n'
+      })
+      const diff = {
+        skipped: false,
+        toInstall: ['rclone'],
+        uncaptured: [],
+        sourcesMissing: [],
+        sourcesContentChanged: []
+      }
+      const actions = planApt(fixture.ctx, provider, diff)
+      expect(actions).toHaveLength(1)
+      expect(actions[0].commands).toHaveLength(2)
+      expect(actions[0].commands[1]).toContain('/fake/bin/rclone')
+      expect(actions[0].commands[1]).toContain('후보 1.60.1')
+      expect(actions[0].commands[1]).toContain('dpkg 밖')
+    })
+
+    it('does not warn when the same-named PATH executable is dpkg-owned', () => {
+      process.env.PATH = '/fake/bin'
+      const provider = makeFakeAptProvider({
+        manual: [],
+        files: { '/fake/bin/git': 'ELF' },
+        dpkgOwnedPaths: ['/fake/bin/git']
+      })
+      const diff = {
+        skipped: false,
+        toInstall: ['git'],
+        uncaptured: [],
+        sourcesMissing: [],
+        sourcesContentChanged: []
+      }
+      const actions = planApt(fixture.ctx, provider, diff)
+      expect(actions).toHaveLength(1)
+      expect(actions[0].commands).toHaveLength(1)
+    })
+
+    it('does not warn when no same-named executable exists on PATH', () => {
+      process.env.PATH = '/fake/bin'
+      const provider = makeFakeAptProvider({ manual: [] })
+      const diff = {
+        skipped: false,
+        toInstall: ['neofetch'],
+        uncaptured: [],
+        sourcesMissing: [],
+        sourcesContentChanged: []
+      }
+      const actions = planApt(fixture.ctx, provider, diff)
+      expect(actions).toHaveLength(1)
+      expect(actions[0].commands).toHaveLength(1)
+    })
+  })
+
   // 케이스 출처: tests/test_ignore.py TestIgnoreAptCapture
   it('never adds an ignored package (test_capture_never_adds_ignored_package)', async () => {
     writeIgnore(fixture, { apt: { packages: ['unityhub'], sources: [] } })

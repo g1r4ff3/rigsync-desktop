@@ -460,6 +460,7 @@ export function registerEngineIpc(
       linuxFontsSystemProvider,
       nvidiaCheckProvider,
       gitTransportProvider,
+      providers.apt,
       { configConfigured: !resolved.firstRun }
     )
   })
@@ -478,6 +479,7 @@ export function registerEngineIpc(
         linuxFontsSystemProvider,
         nvidiaCheckProvider,
         gitTransportProvider,
+        providers.apt,
         { configConfigured: !resolved.firstRun }
       )
     }

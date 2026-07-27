@@ -125,6 +125,17 @@ function portabilityKinds(portability: DoctorReportDto['portability']): StatusKi
 }
 
 /**
+ * apt PATH shadowing 검사 -- 관리 중인 apt 패키지가 dpkg 밖 실행파일에
+ * PATH에서 가려지고 있으면 'warn'(지금 이 머신에서 실제로 잘못된 바이너리가
+ * 쓰이고 있는 상태 -- portability의 "적용되면 깨질 예고"보다 더 즉각적이라
+ * warn으로 센다. secret scan의 'error'만큼 심각하진 않다 -- 삭제 유도가
+ * 아니라 확인 유도이므로).
+ */
+function aptShadowKinds(aptShadow: DoctorReportDto['aptShadow']): StatusKind[] {
+  return aptShadow.warnings.map((): StatusKind => 'warn')
+}
+
+/**
  * P3(D2-a) manifest dirty 검사 -- follower dirty만 'warn'으로 센다. reference
  * dirty는 P4(`sweepLiveEditsIfDirty`)가 다음 드리프트 주기에 자동 정리하므로
  * 중립 정보일 뿐 경고가 아니다(요약 카운트에 반영하지 않는다).
@@ -303,6 +314,7 @@ function DoctorView(): React.JSX.Element {
   const nvidiaCounts = countKinds(nvidiaKinds(report.nvidia))
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
   const portabilityCounts = countKinds(portabilityKinds(report.portability))
+  const aptShadowCounts = countKinds(aptShadowKinds(report.aptShadow))
   const manifestDirtyCounts = countKinds(manifestDirtyKinds(report.manifestDirty))
   const selfUpdateCounts = countKinds(selfUpdateKinds(selfUpdate))
   const checklistCounts = report.checksVisible
@@ -316,6 +328,7 @@ function DoctorView(): React.JSX.Element {
     nvidiaCounts,
     secretScanCounts,
     portabilityCounts,
+    aptShadowCounts,
     manifestDirtyCounts,
     selfUpdateCounts,
     checklistCounts
@@ -544,6 +557,32 @@ function DoctorView(): React.JSX.Element {
           ) : (
             <ul className="space-y-2">
               {report.portability.warnings.map((w) => (
+                <li key={w} className="rounded border border-border p-2 text-xs">
+                  <StatusText kind="warn">{w}</StatusText>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DoctorGroup>
+
+        {/*
+          apt PATH shadowing -- rclone 실증 사례(공식 설치 스크립트로 깐
+          /usr/bin/rclone이 apt install로 고지 없이 덮일 뻔함) 재발 방지의
+          Doctor 쪽 자매 검사. Portability와 같은 골격(findings/warnings 목록,
+          역할 구분 없음)을 그대로 재사용한다.
+        */}
+        <DoctorGroup
+          title="Apt PATH shadowing"
+          description="관리 중인 apt 패키지가 dpkg 밖 실행파일에 PATH에서 가려지고 있는지 확인"
+          counts={aptShadowCounts}
+        >
+          {report.aptShadow.warnings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              감지된 항목 없음 -- 관리 중인 apt 패키지가 PATH에서 가려지고 있지 않습니다.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {report.aptShadow.warnings.map((w) => (
                 <li key={w} className="rounded border border-border p-2 text-xs">
                   <StatusText kind="warn">{w}</StatusText>
                 </li>

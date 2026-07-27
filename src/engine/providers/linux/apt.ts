@@ -122,4 +122,9 @@ export class LinuxAptProvider implements AptProvider {
     )
     return result.code === 0 ? result.stdout : ''
   }
+
+  dpkgOwnsPath(absPath: string): boolean {
+    const result = run(['dpkg', '-S', absPath], 10_000)
+    return result.code === 0
+  }
 }

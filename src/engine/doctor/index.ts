@@ -6,6 +6,8 @@ export type { NvidiaCheckProvider, NvidiaDriverCheckResult, NvidiaDriverPackage 
 export { checkSecretScanPreflight } from './secretScanCheck'
 export { checkManifestPortability } from './portabilityCheck'
 export type { PortabilityCheckResult, PortabilityFinding } from './portabilityCheck'
+export { checkAptShadowing } from './aptShadowCheck'
+export type { AptShadowCheckResult, AptShadowFinding } from './aptShadowCheck'
 export { checkManifestDirty } from './manifestDirtyCheck'
 export type { ManifestDirtyCheckResult, ManifestDirtyFile } from './manifestDirtyCheck'
 export { readManualSyncNotes } from './manualSyncNotes'

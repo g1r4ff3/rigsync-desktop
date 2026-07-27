@@ -9,6 +9,7 @@ import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
 import type { BinariesPreflightCheck } from '../capabilities/binaries/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
+import type { AptShadowCheckResult } from './aptShadowCheck'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
 import type { ManifestDirtyCheckResult } from './manifestDirtyCheck'
 import type { ManualSyncNote } from './manualSyncNotes'
@@ -72,6 +73,12 @@ export interface DoctorReport {
   readonly secretScan: SecretScanPreflightCheck
   /** refactor-spec-v0.2 P2: 이 머신에 적용될 스토어 콘텐츠의 다른 사용자 홈 경로 참조 탐지 (F1 재발 방지). */
   readonly portability: PortabilityCheckResult
+  /**
+   * 관리(managed) apt 패키지가 dpkg로 설치돼 있는데, PATH 해석 순서상 같은
+   * 이름의 dpkg 밖 실행파일이 먼저 잡혀 가려지고 있는지 (rclone 실증 사례
+   * 재발 방지 — planApt의 설치 전 경고와 자매 검사, `aptShadowCheck.ts`).
+   */
+  readonly aptShadow: AptShadowCheckResult
   /**
    * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
    * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인을 경고로 표면화한다.

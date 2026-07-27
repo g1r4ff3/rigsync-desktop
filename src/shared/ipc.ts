@@ -644,6 +644,25 @@ export interface DoctorPortabilityDto {
 }
 
 /**
+ * apt PATH shadowing 검사 — 관리(managed) apt 패키지가 dpkg로 설치돼 있는데
+ * PATH 해석 순서상 같은 이름의 dpkg 밖(비관리) 실행파일이 먼저 잡히는 경우
+ * (rclone 공식 설치 스크립트 실증 사례 재발 방지). planApt의 설치 전 경고
+ * (Apply plan의 commands 미리보기)와 자매 기능 — 이쪽은 "이미 관리 중인
+ * 패키지가 계속 가려지고 있는" 상시 상태를 Doctor에서 본다.
+ */
+export interface DoctorAptShadowFindingDto {
+  readonly packageName: string
+  readonly shadowingPath: string
+  readonly dpkgOwnedPath: string
+  readonly resolveCommand: string
+}
+
+export interface DoctorAptShadowDto {
+  readonly findings: readonly DoctorAptShadowFindingDto[]
+  readonly warnings: readonly string[]
+}
+
+/**
  * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
  * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인. follower는 warning(경고),
  * reference는 note(P4가 자동 정리하므로 중립 정보)로 표현이 갈린다.
@@ -693,6 +712,7 @@ export interface DoctorReportDto {
   readonly nvidia: DoctorNvidiaCheckDto
   readonly secretScan: DoctorSecretScanPreflightDto
   readonly portability: DoctorPortabilityDto
+  readonly aptShadow: DoctorAptShadowDto
   readonly manifestDirty: DoctorManifestDirtyDto
   readonly manualSyncNotes: readonly ManualSyncNoteDto[]
   readonly emptyFollower: DoctorEmptyFollowerDto

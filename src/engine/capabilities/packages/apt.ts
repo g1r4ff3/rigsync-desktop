@@ -48,6 +48,77 @@ export function findKeyringRef(text: string): string {
 
 const LIVE_SOURCES_DIR = '/etc/apt/sources.list.d'
 
+/**
+ * `apt-cache policy <names…>` 원문 → 패키지 → `Candidate:` 버전 문자열.
+ * `classify.ts`의 `parsePolicyPackages`와 같은 스탠자 헤더(`^(\S+):$`)를
+ * 재사용하지만, 뽑는 필드가 다르므로(설치본 소스 목록이 아니라 후보 버전)
+ * 별도 함수로 둔다 — 목적은 dpkg 비소속 충돌 경고 문구의 "(후보 <버전>)".
+ */
+export function parsePolicyCandidates(raw: string): Map<string, string> {
+  const map = new Map<string, string>()
+  let pkg: string | null = null
+  for (const line of raw.split('\n')) {
+    const head = /^(\S+):$/.exec(line)
+    if (head) {
+      pkg = head[1]
+      continue
+    }
+    const cand = /^\s{2}Candidate:\s*(.+)$/.exec(line)
+    if (cand && pkg) map.set(pkg, cand[1].trim())
+  }
+  return map
+}
+
+export interface AptNonDpkgConflict {
+  readonly name: string
+  readonly absPath: string
+}
+
+/**
+ * 설치 예정 패키지명과 동일한 이름의 실행파일이 PATH에 이미 있고 dpkg
+ * 밖(비관리)인 경우를 찾는다 — 실증 사례(rclone 공식 스크립트로 /usr/bin에
+ * 깔린 v1.74.4가 apt 설치로 아무 고지 없이 아카이브 구버전에 덮일 뻔한 사고)
+ * 재발 방지의 일반 장치.
+ *
+ * **한계** — 패키지명과 실행파일명이 같다고 가정한다(예: `ripgrep` 패키지의
+ * 실행파일은 `rg`라 이 검사가 못 잡는다). 이 한계를 감추지 않는다: 경고
+ * 문구·이 주석 모두에 명시.
+ *
+ * 기존 설치본의 버전을 알아내려고 그 실행파일을 실행하지 않는다(신뢰할 수
+ * 없는 바이너리 실행은 안전 위험) — 정적 사실(경로 존재·dpkg 미소속)만 본다.
+ * apt 후보 버전은 별도로 `apt-cache policy`(신뢰된 시스템 조회)에서 얻는다.
+ *
+ * PATH 해석은 셸 규칙과 동일하게 **앞 디렉터리가 이긴다** — 각 이름당 첫
+ * 히트에서 멈춘다.
+ */
+export function findNonDpkgConflicts(
+  provider: Pick<AptProvider, 'fileExists' | 'dpkgOwnsPath'>,
+  names: readonly string[],
+  pathDirs: readonly string[]
+): AptNonDpkgConflict[] {
+  const out: AptNonDpkgConflict[] = []
+  for (const name of names) {
+    for (const dir of pathDirs) {
+      const candidate = path.join(dir, name)
+      if (!provider.fileExists(candidate)) continue
+      if (!provider.dpkgOwnsPath(candidate)) out.push({ name, absPath: candidate })
+      break
+    }
+  }
+  return out
+}
+
+/**
+ * PATH 디렉터리 목록 — **프로세스 PATH**(`process.env.PATH`)를 쓴다(사용자
+ * 로그인 셸의 PATH가 아니다). rigsync 앱이 실제로 관측 가능한 유일한
+ * PATH이고("앱이 아는 사실만 말한다"), 로그인 셸이 `.bashrc`/`.zshrc`에서
+ * PATH를 다르게 구성했다면 이 검사가 그 차이를 볼 수 없다는 한계는 경고
+ * 문구가 아니라 helpCopy(Doctor 쪽)에 명시한다.
+ */
+function currentPathDirs(): string[] {
+  return (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)
+}
+
 function sourcesStoreDir(ctx: Pick<RigsyncContext, 'manifestDir'>): string {
   return path.join(ctx.manifestDir, 'packages', 'apt', 'sources')
 }
@@ -301,10 +372,31 @@ export function planApt(
 
   if (diff.toInstall.length > 0) {
     const cmd = ['sudo', 'apt-get', 'install', '-y', ...diff.toInstall]
+    const commands = [cmd.join(' ')]
+
+    // 실증 사고 재발 방지(위 findNonDpkgConflicts 주석 참조) -- 설치 대상과
+    // 동일 이름의 dpkg 밖 실행파일이 PATH에 이미 있으면 사전 경고 줄을
+    // commands 미리보기에 덧붙인다. Candidate 버전은 충돌이 실제로 있을
+    // 때만 조회한다(불필요한 apt-cache 호출을 피한다).
+    const conflicts = findNonDpkgConflicts(provider, diff.toInstall, currentPathDirs())
+    if (conflicts.length > 0) {
+      const candidates = parsePolicyCandidates(
+        provider.policyPackagesRaw(conflicts.map((c) => c.name))
+      )
+      for (const c of conflicts) {
+        const version = candidates.get(c.name) ?? '알 수 없음'
+        commands.push(
+          `# 경고: ${c.absPath}에 dpkg 밖 설치본이 이미 있음 — apt 설치(후보 ${version})가 ` +
+            '이를 덮어쓰거나 PATH에서 가려질 수 있습니다. 기존 설치 방식을 확인하세요 ' +
+            '(binaries capability가 정답일 수 있음 — docs/package-policy.md)'
+        )
+      }
+    }
+
     actions.push({
       capability: 'packages',
       summary: `install ${diff.toInstall.length} apt package(s)`,
-      commands: [cmd.join(' ')],
+      commands,
       privileged: true,
       run: notExecutedUntilP2b
     })

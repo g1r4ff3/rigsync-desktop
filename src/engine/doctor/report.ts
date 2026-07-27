@@ -19,7 +19,9 @@ import { checkBinariesPreflight } from '../capabilities/binaries/checks'
 import { checkFontsPreflight } from '../capabilities/fonts/checks'
 import { diffFonts } from '../capabilities/fonts/diff'
 import type { FontsSystemProvider } from '../capabilities/fonts/providerTypes'
+import type { AptProvider } from '../capabilities/packages/providerTypes'
 import type { GitTransportProvider } from '../transport/types'
+import { checkAptShadowing } from './aptShadowCheck'
 import { checkEmptyFollower } from './emptyFollowerCheck'
 import { evaluateCheck } from './evaluate'
 import { checkManifestDirty } from './manifestDirtyCheck'
@@ -54,6 +56,7 @@ export async function buildDoctorReport(
   fontsSystemProvider: FontsSystemProvider,
   nvidiaProvider: NvidiaCheckProvider,
   gitTransportProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote' | 'changedFiles'>,
+  aptProvider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPath'>,
   options: BuildDoctorReportOptions
 ): Promise<DoctorReport> {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')
@@ -73,6 +76,7 @@ export async function buildDoctorReport(
   const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
   const secretScan = checkSecretScanPreflight(ctx)
   const portability = checkManifestPortability(ctx)
+  const aptShadow = checkAptShadowing(ctx, aptProvider)
   const manualSyncNotes = readManualSyncNotes(ctx)
   const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
   const manifestDirty = checkManifestDirty(ctx, gitTransportProvider)
@@ -100,6 +104,7 @@ export async function buildDoctorReport(
     nvidia,
     secretScan,
     portability,
+    aptShadow,
     manifestDirty,
     manualSyncNotes,
     emptyFollower,

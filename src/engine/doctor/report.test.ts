@@ -4,11 +4,16 @@ import { writeCommonLayer } from '../manifest'
 import { writeIgnore } from '../testFixtures'
 import { makeFakeGearLeverProvider } from '../capabilities/appimage/testHelpers'
 import { makeFakeFontsSystemProvider } from '../capabilities/fonts/testHelpers'
+import { makeFakeAptProvider } from '../capabilities/packages/testHelpers'
 import { makeFakeGitTransportProvider } from '../transport/testHelpers'
 import { buildDoctorReport, CHECKS_LAYER } from './report'
 import { makeFakeDoctorSystemProvider, makeFakeNvidiaProvider } from './testHelpers'
 
 const gitTransportProvider = makeFakeGitTransportProvider()
+// 이 파일의 기존 케이스들은 aptShadow 검사와 무관하다 -- apt-mark 자체를
+// 미가용으로 둬(available:false) checkAptShadowing이 즉시 skip하게 한다.
+// aptShadow 자체 행동은 aptShadowCheck.test.ts가 전담한다.
+const aptProvider = makeFakeAptProvider({ available: false })
 
 // checksVisible 케이스 출처: 구 repo gui.py `doctor_visible`(코드 복사 아님).
 
@@ -23,6 +28,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.checksVisible).toBe(false)
@@ -48,6 +54,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.checks.map((c) => c.name)).toEqual(['tailscale'])
@@ -68,6 +75,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.exitCode).toBe(1)
@@ -87,6 +95,7 @@ describe('buildDoctorReport', () => {
         packages: [{ name: 'nvidia-driver-580', version: '580.173.02' }]
       }),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.basic).toEqual({
@@ -125,6 +134,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.fonts.missingInstalled).toEqual(['MesloLGS NF'])
@@ -142,6 +152,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.binaries).toEqual({ unresolvedInstalled: [], warnings: [] })
@@ -158,6 +169,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false }),
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.emptyFollower.applicable).toBe(true)
@@ -175,6 +187,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false }),
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.emptyFollower.applicable).toBe(false)
@@ -192,6 +205,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true, appImagePath: null }
     )
     expect(report.selfUpdate).toEqual({ applicable: false, status: 'not-appimage' })
@@ -209,6 +223,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true, appImagePath }
     )
     expect(report.selfUpdate.applicable).toBe(true)
@@ -231,6 +246,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       dirtyProvider,
+      aptProvider,
       { configConfigured: true }
     )
     expect(report.manifestDirty.dirty).toBe(true)
@@ -261,6 +277,7 @@ describe('buildDoctorReport', () => {
       makeFakeFontsSystemProvider(),
       makeFakeNvidiaProvider(),
       gitTransportProvider,
+      aptProvider,
       { configConfigured: true, appImagePath }
     )
     expect(report.selfUpdate).toEqual({ applicable: true, status: 'configured' })
