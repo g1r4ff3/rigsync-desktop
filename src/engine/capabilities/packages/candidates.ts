@@ -10,7 +10,7 @@
 import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import type { SyncItem, SyncItemGroup } from '../../syncItems'
-import { classifyAptPackages } from './classify'
+import { classifyAptPackagesCached } from './aptQueryCache'
 import { readEffectivePackages } from './io'
 import type { PackageProviders } from './providerTypes'
 
@@ -32,7 +32,7 @@ export async function buildPackageSyncGroups(
       // 기본분도 **절대 숨기지 않는다** -- 접힌 그룹으로 보여주고 펼칠 수
       // 있어야 한다(스펙 판단 원칙 2: "보이지 않는 필터링 금지". 구 baseline
       // 구현은 이 목록을 소리 없이 삼켰다).
-      const classification = classifyAptPackages(providers.apt, names)
+      const classification = classifyAptPackagesCached(providers.apt, names)
       // R6 R2: 이름 전부를 한 번에 배치 조회한다(159개도 프로세스 1회).
       const descriptions = providers.apt.descriptions(names)
       const toItem = (name: string): SyncItem => ({

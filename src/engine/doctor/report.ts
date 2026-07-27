@@ -56,7 +56,7 @@ export async function buildDoctorReport(
   fontsSystemProvider: FontsSystemProvider,
   nvidiaProvider: NvidiaCheckProvider,
   gitTransportProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote' | 'changedFiles'>,
-  aptProvider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPath'>,
+  aptProvider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPaths'>,
   options: BuildDoctorReportOptions
 ): Promise<DoctorReport> {
   const ignoreNames = readIgnoreSet(ctx, 'checks', 'names')

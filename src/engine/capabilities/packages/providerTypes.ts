@@ -62,14 +62,21 @@ export interface AptProvider {
   /** `dpkg-query -W -f='${Package}\t${Priority}\t${db:Status-Status}\n'` 원문 — 설치본 전체 priority. */
   prioritiesRaw(): string
   /**
-   * `dpkg -S <absPath>` 상당 — 이 절대경로 파일이 dpkg가 관리하는 어느
-   * 패키지에든 소속돼 있는지(dpkg 자신이 설치한 것인지)만 본다. apt 설치
-   * 사전 경고(planApt) + Doctor shadowing 검사(aptShadowCheck)가 공유하는
+   * `dpkg -S <absPath…>` 배치 상당 — 주어진 절대경로들 중 dpkg가 관리하는
+   * 어느 패키지에든 소속된(dpkg 자신이 설치한) 것들의 집합만 돌려준다. apt
+   * 설치 사전 경고(planApt) + Doctor shadowing 검사(aptShadowCheck)가 공유하는
    * 원료 — "PATH 위 실행파일이 dpkg 밖(예: 공식 설치 스크립트·수동 설치)에서
-   * 온 것인지"를 판정하는 유일한 신호. 실기 확인(2026-07-27): 미소속 경로는
-   * `dpkg -S`가 0이 아닌 종료코드로 "no path found matching pattern"을 낸다.
+   * 온 것인지"를 판정하는 유일한 신호.
+   *
+   * **배치 1회 호출 원칙**(다른 원료들과 동일) — 실측(2026-07-27, 이 머신):
+   * 관리 패키지 수만큼 `dpkg -S`를 개별 spawn하던 이전 구현은 Doctor
+   * shadowing 검사 1회에 2.4초 이상 걸렸다(대부분 subprocess 기동 비용).
+   * `dpkg -S path1 path2 …`는 한 프로세스로 여러 경로를 동시에 질의할 수
+   * 있어 이 비용을 프로세스 1개분으로 줄인다. 실기 확인: 종료코드는 하나라도
+   * 못 찾으면 0이 아니게 되므로(부분 매치 포함) **종료코드가 아니라 stdout에
+   * 실제로 찍힌 경로만 소속으로 판정한다**(`package: /path` 형식 라인 파싱).
    */
-  dpkgOwnsPath(absPath: string): boolean
+  dpkgOwnsPaths(absPaths: readonly string[]): ReadonlySet<string>
 }
 
 export interface SnapListRow {

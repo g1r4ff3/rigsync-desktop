@@ -40,7 +40,7 @@ export interface FakeAptProviderOptions {
   readonly policyPackagesRaw?: string
   readonly dependsClosureRaw?: string
   readonly prioritiesRaw?: string
-  /** dpkg가 소유한 것으로 답할 절대경로 집합. `dpkgOwnsPath()`가 여기서만 답한다(기본 빈 집합 -- 전부 미소속). */
+  /** dpkg가 소유한 것으로 답할 절대경로 집합. `dpkgOwnsPaths()`가 여기서만 답한다(기본 빈 집합 -- 전부 미소속). */
   readonly dpkgOwnedPaths?: readonly string[]
 }
 
@@ -79,7 +79,10 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): FakeAptP
         .map(([name, cls]) => `${name}\t${cls === 'distro' ? 'required' : 'optional'}\tinstalled`)
         .join('\n')
     },
-    dpkgOwnsPath: (p) => (opts.dpkgOwnedPaths ?? []).includes(p),
+    dpkgOwnsPaths: (paths) => {
+      const owned = new Set(opts.dpkgOwnedPaths ?? [])
+      return new Set(paths.filter((p) => owned.has(p)))
+    },
     removeDryRunCalls
   }
 }

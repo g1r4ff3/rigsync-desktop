@@ -12,7 +12,7 @@ import type { RigsyncContext } from '../../context'
 import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { PlanAction } from '../../plan'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
-import { classifyAptPackages } from './classify'
+import { classifyAptPackagesCached } from './aptQueryCache'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
 import type { AptProvider } from './providerTypes'
 import type {
@@ -92,20 +92,26 @@ export interface AptNonDpkgConflict {
  * 히트에서 멈춘다.
  */
 export function findNonDpkgConflicts(
-  provider: Pick<AptProvider, 'fileExists' | 'dpkgOwnsPath'>,
+  provider: Pick<AptProvider, 'fileExists' | 'dpkgOwnsPaths'>,
   names: readonly string[],
   pathDirs: readonly string[]
 ): AptNonDpkgConflict[] {
-  const out: AptNonDpkgConflict[] = []
+  // 1단계: 이름당 PATH 첫 히트만 고른다(fs.stat뿐 -- subprocess 없음).
+  const firstHits: { readonly name: string; readonly absPath: string }[] = []
   for (const name of names) {
     for (const dir of pathDirs) {
       const candidate = path.join(dir, name)
       if (!provider.fileExists(candidate)) continue
-      if (!provider.dpkgOwnsPath(candidate)) out.push({ name, absPath: candidate })
+      firstHits.push({ name, absPath: candidate })
       break
     }
   }
-  return out
+  // 2단계: dpkg 소속 여부를 후보 전부에 대해 한 번에 배치 조회한다
+  // (실측 2026-07-27: 이름당 개별 `dpkg -S`는 프로세스 기동 비용이 누적된다).
+  const owned = provider.dpkgOwnsPaths(firstHits.map((h) => h.absPath))
+  return firstHits
+    .filter((h) => !owned.has(h.absPath))
+    .map((h) => ({ name: h.name, absPath: h.absPath }))
 }
 
 /**
@@ -154,7 +160,7 @@ export async function captureApt(
   // 무상태 분류(refactor-spec-v0.2 §1) -- "배포판 기본분인가"를 상태 파일
   // 없이 매 조회 계산한다. 사용자 판정 + include 예외만 자동 추가 대상
   // (기존 additive-only·ignore 규약은 그대로).
-  const classification = classifyAptPackages(provider, manualAll)
+  const classification = classifyAptPackagesCached(provider, manualAll)
   const include = readAptIncludeSet(ctx)
   const manual = manualAll.filter((p) => classification.get(p) === 'user' || include.has(p))
   const distroFiltered = manualAll.length - manual.length
@@ -267,7 +273,7 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
   }
 
   const manualAll = provider.manualInstalled()
-  const classification = classifyAptPackages(provider, manualAll)
+  const classification = classifyAptPackagesCached(provider, manualAll)
   const include = readAptIncludeSet(ctx)
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
@@ -485,7 +491,7 @@ export function planAptUninstall(
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const managedSet = new Set(manifest.packages ?? [])
   const ignore = readIgnoreSet(ctx, 'apt', 'packages')
-  const classification = classifyAptPackages(provider, requestedNames)
+  const classification = classifyAptPackagesCached(provider, requestedNames)
   const installedSet = new Set(provider.manualInstalled())
 
   const excluded: UninstallExclusion[] = []

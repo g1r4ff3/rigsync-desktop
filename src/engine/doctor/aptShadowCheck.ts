@@ -46,26 +46,43 @@ function currentPathDirs(): string[] {
 
 export function checkAptShadowing(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
-  provider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPath'>,
+  provider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPaths'>,
   pathDirs: readonly string[] = currentPathDirs()
 ): AptShadowCheckResult {
   if (!provider.isAvailable()) return { findings: [], warnings: [] }
 
   const managed = readEffectivePackages(ctx).apt?.packages ?? []
-  const findings: AptShadowFinding[] = []
 
+  // 1단계: 이름×PATH 디렉터리마다 존재하는 후보를 전부 모은다(fs.stat뿐 --
+  // subprocess 없음). 순서(패키지별로 PATH 순서대로)는 2단계 재생에 그대로 쓴다.
+  const candidatesByName = new Map<string, string[]>()
+  for (const name of managed) {
+    const hits: string[] = []
+    for (const dir of pathDirs) {
+      const candidate = path.join(dir, name)
+      if (provider.fileExists(candidate)) hits.push(candidate)
+    }
+    candidatesByName.set(name, hits)
+  }
+
+  // 2단계: 등장한 후보 경로 전부의 dpkg 소속 여부를 프로세스 1회로 배치
+  // 조회한다(실측 2026-07-27: 패키지당 개별 `dpkg -S`는 관리 패키지 100여개
+  // 기준 2.4초 이상 -- 거의 전부 subprocess 기동 비용).
+  const allCandidates = [...candidatesByName.values()].flat()
+  const owned = provider.dpkgOwnsPaths(allCandidates)
+
+  // 3단계: 원래 알고리즘을 그대로 재생한다 -- PATH 순서상 첫 dpkg 소유본을
+  // 만나면 멈추고(그 앞에 비관리본이 있었을 때만 finding), 없으면 끝까지 본다.
+  const findings: AptShadowFinding[] = []
   for (const name of managed) {
     let shadowingPath = ''
     let dpkgOwnedPath = ''
-    for (const dir of pathDirs) {
-      const candidate = path.join(dir, name)
-      if (!provider.fileExists(candidate)) continue
-      if (provider.dpkgOwnsPath(candidate)) {
+    for (const candidate of candidatesByName.get(name) ?? []) {
+      if (owned.has(candidate)) {
         dpkgOwnedPath = candidate
-        break // dpkg 소유본을 만났다 -- 그 앞에 비관리본이 없었으면 정상 상태.
+        break
       }
       if (!shadowingPath) shadowingPath = candidate
-      // 비관리본을 만나도 계속 찾아 뒤쪽의 dpkg 소유본을 확인한다.
     }
     if (shadowingPath && dpkgOwnedPath) {
       findings.push({

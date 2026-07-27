@@ -123,8 +123,29 @@ export class LinuxAptProvider implements AptProvider {
     return result.code === 0 ? result.stdout : ''
   }
 
-  dpkgOwnsPath(absPath: string): boolean {
-    const result = run(['dpkg', '-S', absPath], 10_000)
-    return result.code === 0
+  dpkgOwnsPaths(absPaths: readonly string[]): ReadonlySet<string> {
+    if (absPaths.length === 0) return new Set()
+    // 종료코드는 무시한다 -- 실기 확인(2026-07-27): 여러 경로 중 하나라도
+    // 못 찾으면 전체 종료코드가 0이 아니게 된다("no path found matching
+    // pattern" 이 stderr로만 나가고, 매치된 나머지는 그대로 stdout에 남는다).
+    const result = run(['dpkg', '-S', ...absPaths], 10_000)
+    return parseDpkgOwnedPaths(result.stdout)
   }
+}
+
+/**
+ * `dpkg -S` 배치 출력(`pkg[,pkg2]: /abs/path` 줄들, 매치 못 한 경로는 stderr로만
+ * 나가 여기 안 섞인다)에서 실제로 소유가 확인된 절대경로만 뽑는다. 패키지명이
+ * ':'를 포함할 수 있어(예: "git:amd64: /usr/bin/git" 다중 아키텍처) 줄의
+ * **마지막** ": " 뒤를 경로로 본다.
+ */
+export function parseDpkgOwnedPaths(stdout: string): ReadonlySet<string> {
+  const owned = new Set<string>()
+  for (const line of stdout.split('\n')) {
+    const idx = line.lastIndexOf(': ')
+    if (idx === -1) continue
+    const p = line.slice(idx + 2).trim()
+    if (p) owned.add(p)
+  }
+  return owned
 }
