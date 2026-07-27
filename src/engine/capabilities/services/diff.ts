@@ -31,7 +31,7 @@ export async function diffServices(
       const stored = fs.readFileSync(storedPath, 'utf-8')
       if (liveContent !== stored) contentChanged.push(u.name)
     }
-    const enabled = provider.isEnabled(u.name)
+    const enabled = await provider.isEnabled(u.name)
     if (enabled !== u.enabled) enabledMismatch.push(u.name)
   }
 

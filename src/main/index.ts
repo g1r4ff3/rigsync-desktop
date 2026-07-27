@@ -114,16 +114,19 @@ function createWindow(): void {
   })
 
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // 외부 브라우저로 여는 fire-and-forget 호출 -- 결과를 기다릴 이유가 없다
+    // (no-floating-promises 대응, 의미 변경 없음).
+    void shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    // 창 로드는 fire-and-forget(기존 동작 그대로) -- no-floating-promises 대응.
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -191,90 +194,97 @@ function notifyDrift(summary: DriftSummary): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+app
+  .whenReady()
+  .then(() => {
+    // Set app user model id for windows
+    electronApp.setAppUserModelId('com.electron')
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
-  // P3: 스케줄러 -- 판단(shouldNotify)은 engine/drift.ts, 여기는 실제
-  // read-only diff 호출(driftCheck.ts) + electron Notification 연결만.
-  scheduler = createDriftCheckScheduler({
-    runCheck: () => runEngineDriftCheck(),
-    notify: notifyDrift,
-    intervalHours:
-      getEngineContext().settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
-  })
-
-  // 한 번만 등록 -- ipcMain.handle은 같은 채널 재등록 시 던진다. 창은
-  // (macOS activate로) 다시 만들어질 수 있어 참조를 콜백으로 늦게 묶는다.
-  registerEngineIpc(() => mainWindow, {
-    getLastDriftCheck: () => scheduler?.getLastResult() ?? null,
-    onConfigChanged: refreshSchedulerAfterOnboarding,
-    getExecPath: resolveExecPath
-  })
-  registerWindowControlIpc(() => mainWindow)
-
-  createWindow()
-
-  // P4: 창이 뜬 뒤로 미뤄 자기 등록(동기 CLI 호출)이 초기 페인트를 지연시키지
-  // 않게 한다 (runSelfUpdateRegistration 주석 참조). 스크린샷 하네스 실행 중엔
-  // Gear Lever/flatpak이 없는 CI 환경일 수 있어(그리고 실제 앱 상태를 흔들 수
-  // 있어) 건너뛴다.
-  if (!screenshotDir) {
-    setTimeout(runSelfUpdateRegistration, 3000)
-  }
-
-  // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". P4: 자동 시작
-  // 체크박스도 여기 추가(온보딩 ⑤와 같은 토글). 아이콘은 placeholder(design
-  // pass 예정, trayIcon.ts 주석 참조).
-  tray = createAppTray({
-    showWindow: showMainWindow,
-    runCheckNow: () => scheduler?.runNow() ?? Promise.resolve(),
-    quit: () => app.quit(),
-    getLastResult: () => scheduler?.getLastResult() ?? null,
-    isAutostartEnabled: () => isAutostartEnabled(getEngineContext().homeDir),
-    toggleAutostart: (enabled) =>
-      guardedSetAutostart(getEngineContext().homeDir, enabled, resolveExecPath(), is.dev)
-  })
-
-  scheduler.start()
-
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    else showMainWindow()
-  })
-
-  if (screenshotDir) {
-    const win = mainWindow
-    win?.webContents.once('did-finish-load', () => {
-      // renderer가 첫 status/config를 IPC로 받아올 시간을 조금 더 준다.
-      setTimeout(() => {
-        runScreenshotHarness(win, screenshotDir)
-          .then((results) => {
-            for (const r of results) {
-              console.log(`[screenshot] ${r.file}: ${r.ok ? 'ok' : `FAILED (${r.error})`}`)
-            }
-          })
-          .catch((err: unknown) => console.error('[screenshot] harness threw', err))
-          .finally(() => {
-            isQuitting = true
-            app.quit()
-          })
-      }, 1000)
+    // Default open or close DevTools by F12 in development
+    // and ignore CommandOrControl + R in production.
+    // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
     })
-  }
-})
+
+    // IPC test
+    ipcMain.on('ping', () => console.log('pong'))
+
+    // P3: 스케줄러 -- 판단(shouldNotify)은 engine/drift.ts, 여기는 실제
+    // read-only diff 호출(driftCheck.ts) + electron Notification 연결만.
+    scheduler = createDriftCheckScheduler({
+      runCheck: () => runEngineDriftCheck(),
+      notify: notifyDrift,
+      intervalHours:
+        getEngineContext().settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
+    })
+
+    // 한 번만 등록 -- ipcMain.handle은 같은 채널 재등록 시 던진다. 창은
+    // (macOS activate로) 다시 만들어질 수 있어 참조를 콜백으로 늦게 묶는다.
+    registerEngineIpc(() => mainWindow, {
+      getLastDriftCheck: () => scheduler?.getLastResult() ?? null,
+      onConfigChanged: refreshSchedulerAfterOnboarding,
+      getExecPath: resolveExecPath
+    })
+    registerWindowControlIpc(() => mainWindow)
+
+    createWindow()
+
+    // P4: 창이 뜬 뒤로 미뤄 자기 등록(동기 CLI 호출)이 초기 페인트를 지연시키지
+    // 않게 한다 (runSelfUpdateRegistration 주석 참조). 스크린샷 하네스 실행 중엔
+    // Gear Lever/flatpak이 없는 CI 환경일 수 있어(그리고 실제 앱 상태를 흔들 수
+    // 있어) 건너뛴다.
+    if (!screenshotDir) {
+      setTimeout(runSelfUpdateRegistration, 3000)
+    }
+
+    // P3: 트레이 -- "열기"/"지금 확인"/마지막 확인 라벨/"종료". P4: 자동 시작
+    // 체크박스도 여기 추가(온보딩 ⑤와 같은 토글). 아이콘은 placeholder(design
+    // pass 예정, trayIcon.ts 주석 참조).
+    tray = createAppTray({
+      showWindow: showMainWindow,
+      runCheckNow: () => scheduler?.runNow() ?? Promise.resolve(),
+      quit: () => app.quit(),
+      getLastResult: () => scheduler?.getLastResult() ?? null,
+      isAutostartEnabled: () => isAutostartEnabled(getEngineContext().homeDir),
+      toggleAutostart: (enabled) =>
+        guardedSetAutostart(getEngineContext().homeDir, enabled, resolveExecPath(), is.dev)
+    })
+
+    scheduler.start()
+
+    app.on('activate', function () {
+      // On macOS it's common to re-create a window in the app when the
+      // dock icon is clicked and there are no other windows open.
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else showMainWindow()
+    })
+
+    if (screenshotDir) {
+      const win = mainWindow
+      win?.webContents.once('did-finish-load', () => {
+        // renderer가 첫 status/config를 IPC로 받아올 시간을 조금 더 준다.
+        setTimeout(() => {
+          runScreenshotHarness(win, screenshotDir)
+            .then((results) => {
+              for (const r of results) {
+                console.log(`[screenshot] ${r.file}: ${r.ok ? 'ok' : `FAILED (${r.error})`}`)
+              }
+            })
+            .catch((err: unknown) => console.error('[screenshot] harness threw', err))
+            .finally(() => {
+              isQuitting = true
+              app.quit()
+            })
+        }, 1000)
+      })
+    }
+  })
+  // no-floating-promises 대응 -- 부트스트랩 체인 실패를 조용히 삼키지 않는다
+  // (이전에도 명시적 핸들러가 없었으나, 이제는 lint가 요구하므로 명시한다).
+  .catch((err: unknown) => {
+    console.error('[bootstrap] app.whenReady 체인 실패', err)
+  })
 
 // P3: 창을 닫아도(hide) 프로세스가 살아있어야 트레이 상주가 의미 있으므로,
 // "창이 전부 닫히면 종료"라는 기존 규칙을 더 이상 쓰지 않는다 — 종료는

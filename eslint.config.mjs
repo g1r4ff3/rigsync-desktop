@@ -47,5 +47,25 @@ export default defineConfig(
       '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
+  {
+    // v0.1.19 긴급 버그픽스 배경: v0.1.18 providers 비동기화(MaybePromise<T> =
+    // T | Promise<T>)에서 `services/diff.ts`의 `provider.isEnabled(u.name)`
+    // await 누락이 릴리스됐다 -- "값을 타입 있는 자리에 대입"하는 사용처만
+    // tsc가 잡고, truthiness(`if (!x)`)·조건식은 못 잡는 사각지대였다.
+    // type-aware 규칙은 src/engine·src/main에만 켠다(renderer는 이 async
+    // 계약과 무관 -- React 이벤트 핸들러의 async 관용구까지 물면 소음만
+    // 커진다). tsconfig.node.json이 이 두 트리를 커버한다.
+    files: ['src/engine/**/*.ts', 'src/main/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.node.json',
+        tsconfigRootDir: import.meta.dirname
+      }
+    },
+    rules: {
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/no-floating-promises': 'error'
+    }
+  },
   eslintConfigPrettier
 )
