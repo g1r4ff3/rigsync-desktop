@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
-import { effectiveLayer } from '../../manifest'
+import { effectiveLayer, readHostLayer } from '../../manifest'
 import { expandHome } from '../../paths'
 import type { SyncItemGroup } from '../../syncItems'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
@@ -20,6 +20,14 @@ export function buildDotfilesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
   const entries = (manifest.entry as DotfileEntry[] | undefined) ?? []
   const managedHomes = new Set(entries.map((e) => e.home))
   const ignore = readIgnoreSet(ctx, 'dotfiles', 'homes')
+  // F2: 이 머신의 host 계층에 이미 있는 entry — "이 머신 전용" 배지·토글의
+  // 현재 상태 판정용(engine/hostLayerMove.ts가 실제 이동을 수행한다).
+  const hostHomes = new Set(
+    (
+      ((readHostLayer(ctx, DOTFILES_LAYER).entry as DotfileEntry[] | undefined) ??
+        []) as DotfileEntry[]
+    ).map((e) => e.home)
+  )
 
   const candidateHomes = SEED_DOTFILES.map((s) => s.home).filter(
     (home) => !managedHomes.has(home) && fs.existsSync(expandHome(ctx, home))
@@ -36,7 +44,8 @@ export function buildDotfilesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
       label: home,
       managed: managedHomes.has(home),
       ignored: ignore.has(home),
-      description: KNOWN_DOTFILE_DESCRIPTIONS[home]
+      description: KNOWN_DOTFILE_DESCRIPTIONS[home],
+      hostOnly: hostHomes.has(home)
     }))
   }
 }

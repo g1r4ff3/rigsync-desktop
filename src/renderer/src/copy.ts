@@ -239,19 +239,50 @@ export function isFollowerToggleDisabled(role: EngineRole | undefined): boolean 
 }
 
 /**
+ * F2(docs/refactor-spec-v0.2.md): services 그룹의 ignore 스위치·그룹
+ * 체크박스가 비활성인 이유 — captureServices는 ignore.toml을 전혀 참조하지
+ * 않는다(engine/capabilities/services/capture.ts 확인) — 눌러도 다음
+ * Capture 결과에 아무 영향이 없다는 게 detectionOnly(snap)와 같은 이유라
+ * 비활성화한다(Explanability 계약 ②). "이 머신 전용" 전환은 별도 컨트롤
+ * (hostLayerToggleCopy)로 여전히 가능하다.
+ */
+export const ignoreUnsupportedReason =
+  'services는 ignore를 지원하지 않습니다 — Capture가 이 머신의 유닛을 전부 그대로 기록합니다. 다른 머신에 배포하고 싶지 않으면 "Host only"로 전환하세요.'
+
+/**
  * R8: ignore 스위치·그룹 체크박스의 비활성 사유를 우선순위대로 고른다 —
  * SyncItemsView의 GroupCheckbox·Switch 두 곳에서 똑같은 분기가 중복돼 있던
- * 것을 여기 하나로 모았다(순서 규칙: 그룹이 detectionOnly면 그 사유가 더
- * 구체적이므로 우선, 아니면 follower 사유, 둘 다 아니면 비활성 아님).
+ * 것을 여기 하나로 모았다(순서 규칙: 그룹이 detectionOnly면 그 사유가 가장
+ * 구체적이므로 우선, 다음은 ignore 자체가 없는 capability(services), 다음은
+ * follower 사유, 셋 다 아니면 비활성 아님).
  */
 export function toggleDisabledReason(
   detectionOnly: boolean,
-  role: EngineRole | undefined
+  role: EngineRole | undefined,
+  ignoreUnsupported = false
 ): string | undefined {
   if (detectionOnly) return detectionOnlyDisabledReason
+  if (ignoreUnsupported) return ignoreUnsupportedReason
   if (isFollowerToggleDisabled(role)) return followerToggleDisabledReason
   return undefined
 }
+
+/**
+ * F2: "이 머신 전용"(host 계층) 전환 스위치 — dotfiles·services 항목 행에
+ * ignore 토글과 별개로 뜬다(HOST_LAYER_CAPABILITIES). label/badge는
+ * Explanability 계약 언어 정책대로 영어(버튼류), tooltip은 한국어.
+ */
+export const hostLayerToggleCopy = {
+  label: 'Host only',
+  badge: 'Host only',
+  badgeTooltip: '이 항목은 이 머신의 host 계층에 있습니다 — 다른 머신에는 배포되지 않습니다.',
+  onTooltip:
+    '이 머신에만 적용됩니다 — manifest가 이 머신(host 계층)에만 이 항목을 기록하고, 다른 머신의 Apply에는 나타나지 않습니다. 끄면 공통(common) 계층으로 돌아가 모든 머신에 다시 배포됩니다.',
+  offTooltip:
+    '지금은 공통(common) 계층에 있어 모든 머신에 배포됩니다. 켜면 이 머신 전용(host 계층)으로 옮겨져 다른 머신에는 더 이상 나타나지 않습니다 — 랩 전용 서비스처럼 이 머신에만 있어야 하는 항목에 씁니다.',
+  disabledFollowerReason:
+    'follower에서는 host 계층 이동을 할 수 없습니다 — manifest 저작은 reference 머신에서만 합니다.'
+} as const
 
 /**
  * R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내".
@@ -368,7 +399,8 @@ export const helpCopy = {
     '그룹 헤더와 화면 상단의 집계(동기화 중/추가 예정 또는 이 머신에만 있음/제거 예정/제외)는 검색 필터와 무관하게 항상 그룹·전체 전부를 센 값입니다.',
     '항목 옆 설명은 apt(Description-en)/flatpak(이름+설명)/appimage(Gear Lever 이름)/fonts(설치된 파일 수)/binaries(설치된 실행파일 이름)/dotfiles(잘 알려진 경로)/repos(remote URL) 등 시스템에서 조회한 것입니다 — 출처가 없으면 설명 없이 이름/경로만 보여줍니다.',
     '그룹 헤더의 체크박스는 그룹 전체를 한 번에 동기화 대상/ignore로 맞춥니다 — 일부만 ignore면 대시(-) 표시입니다(follower에서는 비활성화).',
-    'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님). 그래서 4상태 대신 "검출됨" 하나로만 표시되고, 스위치도 비활성화되어 있습니다(눌러도 동기화 결과에 아무 영향이 없기 때문).'
+    'snap 그룹은 "검출 전용"입니다 — INV-1 중복 검출에만 쓰이고 실제 설치/제거는 하지 않습니다(정책상 동기화 대상 아님). 그래서 4상태 대신 "검출됨" 하나로만 표시되고, 스위치도 비활성화되어 있습니다(눌러도 동기화 결과에 아무 영향이 없기 때문).',
+    'dotfiles·services 항목에는 "Host only" 스위치가 따로 있습니다 — DESIGN 3분류의 "머신 고유" 칸입니다. 켜면 그 항목이 manifest의 common(공통) 계층에서 이 머신의 host 계층으로 옮겨져, 다른 머신에는 더 이상 나타나지도 배포되지도 않습니다(랩 전용 서비스처럼 이 머신에만 있어야 하는 항목에 씁니다) — 끄면 공통 계층으로 되돌아가 모든 머신에 다시 배포됩니다. ignore와 달리 다음 Capture를 기다리지 않고 그 자리에서 즉시 반영됩니다. services 그룹 자체는 ignore를 지원하지 않아(Capture가 유닛을 전부 그대로 기록) Sync/Pause 스위치는 항상 비활성이고, "Host only"만 조작할 수 있습니다.'
   ].join(' '),
   doctor: [
     'Doctor는 rigsync가 자동화하지 않는 수동 설치·설정 상태를 점검합니다.',

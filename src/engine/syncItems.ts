@@ -14,6 +14,7 @@ import { readEffectivePackages } from './capabilities/packages/io'
 import type { PackageProviders } from './capabilities/packages/providerTypes'
 import { buildReposSyncGroup } from './capabilities/repos/candidates'
 import type { GitProvider } from './capabilities/repos/providerTypes'
+import { buildServicesSyncGroup } from './capabilities/services/syncItems'
 import { buildToolsSyncGroup } from './capabilities/tools/candidates'
 import type { ToolsProvider } from './capabilities/tools/providerTypes'
 import type { RigsyncContext } from './context'
@@ -43,6 +44,12 @@ export interface SyncItem {
    * 미지원(snap/tools 등)이면 undefined — 추측으로 채우지 않는다.
    */
   readonly description?: string
+  /**
+   * F2(docs/refactor-spec-v0.2.md): 이 항목이 지금 이 머신의 host 계층에
+   * 있으면 true — dotfiles·services 그룹만 채운다(`HOST_LAYER_CAPABILITIES`,
+   * shared/ipc.ts). 다른 capability는 host 계층 이동 개념이 없어 항상 undefined.
+   */
+  readonly hostOnly?: boolean
 }
 
 /**
@@ -97,7 +104,21 @@ export function isPendingSyncItemState(state: SyncItemState): boolean {
 
 export interface SyncItemGroup {
   readonly capability:
-    'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'binaries' | 'tools' | 'repos'
+    | 'dotfiles'
+    | 'apt'
+    | 'snap'
+    | 'flatpak'
+    | 'appimage'
+    | 'fonts'
+    | 'binaries'
+    | 'tools'
+    | 'repos'
+    /**
+     * F2(docs/refactor-spec-v0.2.md): "이 머신 전용" 전환을 보여주기 위한
+     * 그룹 — dotfiles와 달리 unmanaged 후보 탐지·ignore가 없다(항목은 전부
+     * managed=true·ignored=false, `capabilities/services/syncItems.ts` 참조).
+     */
+    | 'services'
   readonly title: string
   readonly items: readonly SyncItem[]
   /**
@@ -171,7 +192,13 @@ const IGNORE_KIND_BY_CAPABILITY: Readonly<Record<SyncItemGroup['capability'], st
   fonts: 'names',
   binaries: 'names',
   tools: 'packages',
-  repos: 'paths'
+  repos: 'paths',
+  // services는 ignore 메커니즘이 없다(captureServices가 ignore.toml을 전혀
+  // 참조하지 않음) — 이 값은 그래서 UI에서 절대 안 쓰인다(렌더러가
+  // `isIgnoreUnsupportedCapability`로 이 그룹의 ignore 토글 자체를
+  // 비활성화한다, shared/ipc.ts 참조). Record의 모든 capability 키를 채워야
+  // 하는 타입 요구 때문에 자리만 채운 값이다.
+  services: 'names'
 }
 
 export async function listSyncItemGroups(
@@ -182,6 +209,7 @@ export async function listSyncItemGroups(
   gitProvider: GitProvider
 ): Promise<SyncItemGroup[]> {
   const dotfilesGroup = buildDotfilesSyncGroup(ctx)
+  const servicesGroup = buildServicesSyncGroup(ctx)
   const packageGroups = await buildPackageSyncGroups(ctx, providers)
   const appimageGroup = await buildAppimageSyncGroup(ctx, gearLeverProvider)
   const fontsGroup = await buildFontsSyncGroup(ctx)
@@ -190,6 +218,7 @@ export async function listSyncItemGroups(
   const reposGroup = await buildReposSyncGroup(ctx, gitProvider)
   return [
     ...(dotfilesGroup ? [dotfilesGroup] : []),
+    ...(servicesGroup ? [servicesGroup] : []),
     ...packageGroups,
     ...(appimageGroup ? [appimageGroup] : []),
     ...(fontsGroup ? [fontsGroup] : []),

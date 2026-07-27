@@ -86,6 +86,15 @@ export const IPC_CHANNELS = {
   engineToggleIgnore: 'engine:toggleIgnore',
   // R5: Candidates 그룹 전체 토글 — ignore.toml 1회 읽기/쓰기 + 자동 커밋도 1회.
   engineToggleIgnoreBulk: 'engine:toggleIgnoreBulk',
+  /**
+   * F2(docs/refactor-spec-v0.2.md) "이 머신 전용" 전환 — dotfiles·services
+   * 항목을 common ↔ hosts/<machineId> manifest 계층 사이로 옮긴다
+   * (engine/hostLayerMove.ts). ignore 토글과 달리 manifest를 **즉시** 바꾼다
+   * (다음 Capture를 기다리지 않음) — 계층 소속 자체가 이동 대상이라 "보류"
+   * 개념이 성립하지 않는다.
+   */
+  engineMoveEntryToHostLayer: 'engine:moveEntryToHostLayer',
+  engineMoveEntryToCommonLayer: 'engine:moveEntryToCommonLayer',
   engineApply: 'engine:apply',
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
@@ -764,7 +773,49 @@ export interface ReclassificationEventDto {
 // ---------------------------------------------------------------------------
 
 export type SyncItemCapability =
-  'dotfiles' | 'apt' | 'snap' | 'flatpak' | 'appimage' | 'fonts' | 'binaries' | 'tools' | 'repos'
+  | 'dotfiles'
+  | 'apt'
+  | 'snap'
+  | 'flatpak'
+  | 'appimage'
+  | 'fonts'
+  | 'binaries'
+  | 'tools'
+  | 'repos'
+  /**
+   * F2: dotfiles와 함께 host 계층 이동(HostLayerCapability)을 지원하는 두
+   * capability 중 하나 — services 그룹은 이 화면에 "이 머신 전용" 전환을
+   * 보여주기 위해서만 존재한다(다른 그룹처럼 unmanaged 후보 탐지·ignore를
+   * 지원하지 않는다 — 항상 managed=true·ignored=false, `HOST_LAYER_CAPABILITIES`
+   * 참조).
+   */
+  | 'services'
+
+/** F2(docs/refactor-spec-v0.2.md): host 계층 이동을 지원하는 capability. */
+export type HostLayerCapability = 'dotfiles' | 'services'
+
+export const HOST_LAYER_CAPABILITIES: readonly HostLayerCapability[] = ['dotfiles', 'services']
+
+export function isHostLayerCapability(
+  capability: SyncItemCapability
+): capability is HostLayerCapability {
+  return (HOST_LAYER_CAPABILITIES as readonly string[]).includes(capability)
+}
+
+/**
+ * R6 R1 4상태(managed×ignored)는 ignore를 지원하는 capability만 의미가 있다.
+ * services 그룹은 ignore 메커니즘이 아예 없다(captureServices가 ignore.toml을
+ * 참조하지 않는다 — engine/capabilities/services/capture.ts 확인) — 그래서
+ * 이 그룹의 Sync/Pause 컨트롤·그룹 체크박스는 항상 비활성이다(눌러도 관찰
+ * 가능한 효과가 없다는 게 detectionOnly 그룹과 같은 이유 — copy.ts
+ * `ignoreUnsupportedReason` 참조). Delete는 별도로 이미
+ * `UNINSTALL_SUPPORTED_CAPABILITIES`가 services를 안 담아 비활성이다.
+ */
+export const IGNORE_UNSUPPORTED_CAPABILITIES: readonly SyncItemCapability[] = ['services']
+
+export function isIgnoreUnsupportedCapability(capability: SyncItemCapability): boolean {
+  return (IGNORE_UNSUPPORTED_CAPABILITIES as readonly string[]).includes(capability)
+}
 
 /**
  * R6 R1: Candidates 4상태 모델 — managed × ignored 조합의 의미(engine
@@ -797,6 +848,13 @@ export interface SyncItemDto {
   readonly state: SyncItemState
   /** R6 R2: 이 항목이 무엇인지 한 줄 설명 — 출처가 없으면 undefined(추측하지 않는다). */
   readonly description?: string
+  /**
+   * F2: 이 항목이 지금 이 머신의 host 계층(hosts/<machineId>)에 있으면 true —
+   * "이 머신 전용"으로 배포되고 다른 머신에는 이 항목 자체가 보이지 않는다는
+   * 뜻. `HOST_LAYER_CAPABILITIES` 밖의 capability(apt 등)에서는 항상
+   * undefined(그 개념이 없다 — 추측하지 않는다, description과 같은 원칙).
+   */
+  readonly hostOnly?: boolean
 }
 
 /** refactor-spec-v0.2 §1: apt가 무상태 분류로 갈라진 두 그룹의 식별자. */
@@ -836,6 +894,19 @@ export interface ToggleIgnoreBulkRequest {
   readonly ignored: boolean
   /** ToggleIgnoreRequest.subgroup과 동일 — apt-distro면 include 경로로 라우팅. */
   readonly subgroup?: SyncItemSubgroup
+}
+
+/**
+ * F2: "이 머신 전용" 전환 요청 — `engine:moveEntryToHostLayer`/
+ * `engine:moveEntryToCommonLayer` 둘 다 이 shape을 쓴다(방향은 채널로
+ * 갈린다, ToggleIgnoreRequest의 ignored 플래그 대신 채널을 나눈 이유:
+ * 이동은 ignore처럼 "다음 Capture가 반영할 방향"이 아니라 manifest를
+ * 즉시 바꾸는 저작 행위라 요청 자체에 방향을 싣기보다 채널명이 더
+ * 명확하다고 판단했다).
+ */
+export interface MoveEntryHostLayerRequest {
+  readonly capability: HostLayerCapability
+  readonly key: string
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { CandidateStateControl } from '@/components/CandidateStateControl'
 import { CandidateStateIcon } from '@/components/CandidateStateIcon'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { ViewToolbar } from '@/components/ViewToolbar'
+import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { captureAll } from '../captureAll'
 import {
@@ -18,6 +19,7 @@ import {
   followerDeleteAsymmetryCopy,
   formatDetectionOnlySummary,
   formatSyncItemStateSummary,
+  hostLayerToggleCopy,
   isFollowerToggleDisabled,
   pendingChangesCopy,
   shouldShowPendingCaptureBanner,
@@ -31,11 +33,14 @@ import {
 } from '../deleteEligibility'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusText } from '../status'
-import type {
-  EngineStatus,
-  ScreenshotRoute,
-  SyncItemGroupDto,
-  SyncItemState
+import {
+  isHostLayerCapability,
+  isIgnoreUnsupportedCapability,
+  type EngineStatus,
+  type HostLayerCapability,
+  type ScreenshotRoute,
+  type SyncItemGroupDto,
+  type SyncItemState
 } from '../../../shared/ipc'
 
 /**
@@ -137,6 +142,12 @@ type Row =
       /** computeDeleteEligibility 결과를 행 생성 시점에 미리 계산해 둔다. */
       readonly deleteEligible: boolean
       readonly deleteDisabledReason?: string
+      /**
+       * F2(docs/refactor-spec-v0.2.md): 이 항목이 지금 이 머신의 host 계층에
+       * 있는지 — `isHostLayerCapability(capability)`인 그룹(dotfiles·services)
+       * 에서만 의미가 있다(다른 그룹은 항상 false).
+       */
+      readonly hostOnly: boolean
     }
 
 /**
@@ -265,6 +276,10 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({})
   const [pendingGroups, setPendingGroups] = useState<Record<string, boolean>>({})
+  // F2: "이 머신 전용" 스위치 전용 busy 상태 — ignore 토글(pendingKeys)과는
+  // 별개 컨트롤이라 같은 행에서 둘이 동시에 눌려도(이론상) 서로의 busy를
+  // 밟지 않는다.
+  const [pendingHostKeys, setPendingHostKeys] = useState<Record<string, boolean>>({})
   // refactor-spec-v0.2 §1: 그룹 접기 상태 — 명시 오버라이드만 저장하고,
   // 없으면 그룹의 collapsedByDefault를 따른다(refresh로 groups가 갈려도
   // 사용자가 펼친 상태가 유지된다). 검색 중엔 접힘을 무시한다 — 접힌 그룹
@@ -420,6 +435,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
           state: item.state,
           detectionOnly,
           deleteEligible: eligibility.eligible,
+          hostOnly: !!item.hostOnly,
           ...(eligibility.reason ? { deleteDisabledReason: eligibility.reason } : {})
         })
       }
@@ -492,6 +508,27 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setPendingKeys((prev) => ({ ...prev, [rowKey]: false }))
+    }
+  }
+
+  // F2: "이 머신 전용" 스위치 — ignore와 달리 manifest를 그 자리에서 즉시
+  // 바꾼다(다음 Capture를 기다리지 않는다, engine/hostLayerMove.ts 참조).
+  async function toggleHostLayer(
+    capability: HostLayerCapability,
+    key: string,
+    nextHostOnly: boolean
+  ): Promise<void> {
+    const rowKey = `${capability}:${key}`
+    setPendingHostKeys((prev) => ({ ...prev, [rowKey]: true }))
+    try {
+      const next = nextHostOnly
+        ? await window.api.engine.moveEntryToHostLayer({ capability, key })
+        : await window.api.engine.moveEntryToCommonLayer({ capability, key })
+      setGroups(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingHostKeys((prev) => ({ ...prev, [rowKey]: false }))
     }
   }
 
@@ -695,8 +732,17 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                       <GroupCheckbox
                         state={row.groupState}
                         subgroup={row.subgroup}
-                        disabled={row.detectionOnly || isFollower || !!pendingGroups[row.groupId]}
-                        disabledReason={toggleDisabledReason(row.detectionOnly, status?.role)}
+                        disabled={
+                          row.detectionOnly ||
+                          isFollower ||
+                          !!pendingGroups[row.groupId] ||
+                          isIgnoreUnsupportedCapability(row.capability)
+                        }
+                        disabledReason={toggleDisabledReason(
+                          row.detectionOnly,
+                          status?.role,
+                          isIgnoreUnsupportedCapability(row.capability)
+                        )}
                         onClick={() =>
                           toggleGroup(
                             row.groupId,
@@ -756,12 +802,59 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                       >
                         <CandidateStateIcon state={row.state} />
                         <span className="shrink-0 font-mono text-foreground">{row.label}</span>
+                        {/* F2: host 계층 소속 배지 — follower 화면에서는 다른
+                            머신의 host 전용 항목이 애초에 effective manifest에
+                            없어 이 배지 자체가 안 뜬다(자연히 안 보임, 스펙
+                            판단 원칙 3 "화면은 머신이 아는 것만 말한다"). */}
+                        {row.hostOnly && (
+                          <span
+                            className="shrink-0 rounded border border-border px-1 text-[10px] font-normal text-muted-foreground"
+                            title={hostLayerToggleCopy.badgeTooltip}
+                          >
+                            {hostLayerToggleCopy.badge}
+                          </span>
+                        )}
                         {row.description && (
                           <span className="truncate text-muted-foreground" title={row.description}>
                             — {row.description}
                           </span>
                         )}
                       </span>
+                      {/* F2: "이 머신 전용" 전환 — dotfiles·services 항목에만
+                          뜬다(HOST_LAYER_CAPABILITIES). ignore 토글(위
+                          CandidateStateControl)과는 독립된 컨트롤이라 별도
+                          busy 상태(pendingHostKeys)를 쓴다. */}
+                      {isHostLayerCapability(row.capability) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <label className="flex shrink-0 items-center gap-1.5">
+                              <Switch
+                                size="sm"
+                                checked={row.hostOnly}
+                                disabled={isFollower || pendingHostKeys[row.key]}
+                                onCheckedChange={(checked) =>
+                                  toggleHostLayer(
+                                    row.capability as HostLayerCapability,
+                                    row.itemKey,
+                                    checked
+                                  )
+                                }
+                                aria-label={`${row.label} — ${hostLayerToggleCopy.label}`}
+                              />
+                              <span className="text-muted-foreground">
+                                {hostLayerToggleCopy.label}
+                              </span>
+                            </label>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {isFollower
+                              ? hostLayerToggleCopy.disabledFollowerReason
+                              : row.hostOnly
+                                ? hostLayerToggleCopy.onTooltip
+                                : hostLayerToggleCopy.offTooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                       <CandidateStateControl
                         // 사용자 명세: 3상태(Sync/Pause/Delete)가 각각 직접
                         // 선택 가능한 세그먼트 컨트롤. Sync/Pause는 기존
@@ -779,10 +872,16 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                             : controlValueForItem(!isItemOn(row, row.subgroup))
                         }
                         ariaLabel={row.label}
-                        syncPauseDisabled={row.detectionOnly || isFollower || pendingKeys[row.key]}
+                        syncPauseDisabled={
+                          row.detectionOnly ||
+                          isFollower ||
+                          pendingKeys[row.key] ||
+                          isIgnoreUnsupportedCapability(row.capability)
+                        }
                         syncPauseDisabledReason={toggleDisabledReason(
                           row.detectionOnly,
-                          status?.role
+                          status?.role,
+                          isIgnoreUnsupportedCapability(row.capability)
                         )}
                         deleteEligible={row.deleteEligible}
                         deleteDisabledReason={row.deleteDisabledReason}

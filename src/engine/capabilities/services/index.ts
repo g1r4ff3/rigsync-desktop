@@ -1,5 +1,6 @@
 export { captureServices, FollowerServicesCaptureBlockedError } from './capture'
 export { diffServices } from './diff'
+export { moveServiceEntryToCommonLayer, moveServiceEntryToHostLayer } from './hostLayer'
 export { planServices } from './plan'
 export * from './types'
 export * from './providerTypes'

@@ -28,6 +28,7 @@ import {
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
   type ManifestPathCheckDto,
+  type MoveEntryHostLayerRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanEvent,
@@ -144,6 +145,11 @@ const engineApi = {
   /** R5: Candidates 그룹 전체 토글 — ignore.toml 1회 읽기/쓰기 + 자동 커밋도 1회. */
   toggleIgnoreBulk: (request: ToggleIgnoreBulkRequest): Promise<SyncItemGroupDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineToggleIgnoreBulk, request),
+  /** F2: "이 머신 전용" 전환 — dotfiles·services 항목을 host 계층으로/에서 옮긴다. */
+  moveEntryToHostLayer: (request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineMoveEntryToHostLayer, request),
+  moveEntryToCommonLayer: (request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineMoveEntryToCommonLayer, request),
   apply: (request: ApplyRequest): Promise<ApplyResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
   /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */

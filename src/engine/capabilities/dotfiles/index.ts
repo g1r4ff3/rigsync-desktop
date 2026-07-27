@@ -1,5 +1,6 @@
 export { captureDotfiles, FollowerCaptureBlockedError, type CaptureOptions } from './capture'
 export { diffDotfiles } from './diff'
+export { moveDotfileEntryToCommonLayer, moveDotfileEntryToHostLayer } from './hostLayer'
 export { planDotfiles } from './plan'
 export { SEED_DOTFILES, type SeedDotfile } from './seed'
 export type { CaptureReport, DiffReport, DotfileEntry } from './types'

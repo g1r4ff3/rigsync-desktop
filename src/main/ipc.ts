@@ -97,6 +97,7 @@ import {
   linuxAppimageSystemCheck
 } from '../engine/providers/linux'
 import { detectReclassifications } from '../engine/reclassification'
+import { moveEntryToCommonLayer, moveEntryToHostLayer } from '../engine/hostLayerMove'
 import {
   listSyncItemGroups,
   toggleAptDistroSyncedBulk,
@@ -132,6 +133,7 @@ import {
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
   type ManifestPathCheckDto,
+  type MoveEntryHostLayerRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
   type PlanActionResultDto,
@@ -704,6 +706,29 @@ export function registerEngineIpc(
       } else {
         toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
       }
+      autoSyncAfterWrite(getContext(), gitTransportProvider)
+      return listSyncItemGroupsForRenderer()
+    }
+  )
+
+  // F2(docs/refactor-spec-v0.2.md) "이 머신 전용" 전환 — engine/hostLayerMove.ts가
+  // role 가드(reference 전용)를 자체적으로 하므로 여기서는 스윕+자동
+  // commit+push 배선만 한다(다른 manifest 저작 경로와 동일 패턴).
+  ipcMain.handle(
+    IPC_CHANNELS.engineMoveEntryToHostLayer,
+    async (_event, request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> => {
+      await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
+      moveEntryToHostLayer(getContext(), request.capability, request.key)
+      autoSyncAfterWrite(getContext(), gitTransportProvider)
+      return listSyncItemGroupsForRenderer()
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.engineMoveEntryToCommonLayer,
+    async (_event, request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> => {
+      await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
+      moveEntryToCommonLayer(getContext(), request.capability, request.key)
       autoSyncAfterWrite(getContext(), gitTransportProvider)
       return listSyncItemGroupsForRenderer()
     }
