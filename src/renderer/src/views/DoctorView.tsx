@@ -179,7 +179,15 @@ function SummaryStat({
   )
 }
 
-/** 경고·실패 항목 옆에 "그래서 뭘 해야 하나"를 시각적으로 액션임이 드러나게 보여준다. */
+/**
+ * 경고·실패 항목 옆에 "그래서 뭘 해야 하나"를 아이콘+차분한 경고 톤 블록으로
+ * 보여준다. UI 정돈(v0.1.16): 이전엔 문장 전체를 빨간 모노스페이스 장문으로
+ * 밀어붙였는데(CLAUDE.md "모노스페이스는 경로·명령·코드에만 한정" 위반이기도
+ * 했다 — 실제 내용은 사람이 읽는 한국어 문장, engine/doctor/*.ts 확인),
+ * StatusIcon으로 통일된 경고/오류 아이콘을 붙이고 본문은 보통 글꼴 산문으로
+ * 바꾼다. 색이 있는 틴트 블록 자체는 유지한다 — 이건 "똑같은 회색 보더 박스"가
+ * 아니라 의미가 다른(경고 vs 정보) 별도 색 코드라 남겨 둘 이유가 있다.
+ */
 function DoctorActionNote({
   kind,
   text
@@ -190,22 +198,30 @@ function DoctorActionNote({
   return (
     <div
       className={
-        'mt-1 flex items-start gap-1.5 rounded border px-2 py-1 text-[11px] ' +
+        'mt-1.5 flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs ' +
         (kind === 'error'
-          ? 'border-status-error/40 bg-status-error/10 text-status-error'
-          : 'border-status-warn/40 bg-status-warn/10 text-status-warn')
+          ? 'border-status-error/30 bg-status-error/10 text-status-error'
+          : 'border-status-warn/30 bg-status-warn/10 text-status-warn')
       }
     >
-      <span className="shrink-0 font-medium">{doctorCopy.actionPrefix}:</span>
-      <span className="font-mono break-all">{text}</span>
+      <StatusIcon kind={kind} className="mt-0.5 shrink-0" />
+      <span>
+        <span className="font-medium">{doctorCopy.actionPrefix}: </span>
+        <span className="break-words">{text}</span>
+      </span>
     </div>
   )
 }
 
 /**
- * 그룹 하나(Basic/AppImage/NVIDIA/Checklist)의 카드 골격. 경고·실패가 없으면
- * `<details>`로 접어 요약 한 줄만 보여주고(Density 원칙 — 전부 초록인 화면도
- * 스크롤 없이 한 화면에), 하나라도 있으면 항상 펼친 채 보여준다.
+ * 그룹 하나(Basic/AppImage/NVIDIA/Checklist)의 골격. UI 정돈(v0.1.16): 이전엔
+ * 통과/경고 여부와 무관하게 전부 같은 회색 보더 카드였다("모든 섹션이 똑같은
+ * 보더 카드" — 이 화면이 그 증상의 가장 심한 사례, 11개 섹션이 나란히
+ * 똑같은 상자였다). 보더는 실제 상호작용 단위에만 남긴다:
+ * - 통과(allPass)면 `<details>`로 접는다 — 클릭 대상이므로 hover 배경으로
+ *   인터랙션을 알리고, 상시 보더 박스는 두지 않는다.
+ * - 경고·실패가 있으면 펼친 채 보여주되 보더 없이 타이포 위계(굵은 제목)만으로
+ *   구획한다 — 섹션 사이 구분은 부모 컨테이너의 `[&>*+*]` 구분선이 담당한다.
  */
 function DoctorGroup({
   title,
@@ -230,8 +246,8 @@ function DoctorGroup({
   )
   if (allPass) {
     return (
-      <details className="rounded-md border border-border bg-card/50 p-2.5">
-        <summary className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-foreground">
+      <details>
+        <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-1 text-sm font-semibold text-foreground hover:bg-accent/60">
           <StatusIcon kind="ok" className="size-3.5 shrink-0" />
           <span>{title}</span>
           <span className="text-xs font-normal text-muted-foreground">
@@ -239,13 +255,13 @@ function DoctorGroup({
             {summaryExtra ? ` · ${summaryExtra}` : ''}
           </span>
         </summary>
-        <div className="mt-2 border-t border-border pt-2">{body}</div>
+        <div className="mt-2 pl-5">{body}</div>
       </details>
     )
   }
   return (
-    <section className="rounded-md border border-border p-3">
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+    <section>
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       {body}
     </section>
   )
@@ -367,7 +383,12 @@ function DoctorView(): React.JSX.Element {
         </div>
       </section>
 
-      <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+      {/* UI 정돈(v0.1.16): 섹션마다 있던 회색 보더 카드를 지우고, 대신 이
+          컨테이너가 "첫 자식 제외 전부"에 상단 구분선을 준다([&>*+*] —
+          allPass/펼침 여부·조건부 렌더와 무관하게 항상 올바른 첫/이후 판정,
+          컴포넌트마다 반복해서 챙길 필요가 없다). 구분선 하나로 11개 섹션이
+          한 데 이어지는 "밀도 있는 리스트"처럼 읽힌다 — 상자 11개가 아니라. */}
+      <div className="flex-1 overflow-y-auto pr-1 [&>*+*]:mt-4 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-4">
         <DoctorGroup
           title="Basic diagnostics"
           description="machine-id·role·manifest 폴더 존재 여부"
@@ -525,12 +546,9 @@ function DoctorView(): React.JSX.Element {
               감지된 항목 없음 -- manifest 저장소에 비밀로 보이는 값이 없습니다.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border">
               {report.secretScan.blockedFindings.map((f, i) => (
-                <li
-                  key={`${f.path}:${f.line}:${f.kind}:${i}`}
-                  className="rounded border border-border p-2 text-xs"
-                >
+                <li key={`${f.path}:${f.line}:${f.kind}:${i}`} className="py-2 text-xs first:pt-0">
                   <StatusText kind="error">
                     {f.path}:{f.line} -- {f.label}
                   </StatusText>
@@ -555,9 +573,9 @@ function DoctorView(): React.JSX.Element {
               없습니다.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border">
               {report.portability.warnings.map((w) => (
-                <li key={w} className="rounded border border-border p-2 text-xs">
+                <li key={w} className="py-2 text-xs first:pt-0">
                   <StatusText kind="warn">{w}</StatusText>
                 </li>
               ))}
@@ -581,9 +599,9 @@ function DoctorView(): React.JSX.Element {
               감지된 항목 없음 -- 관리 중인 apt 패키지가 PATH에서 가려지고 있지 않습니다.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border">
               {report.aptShadow.warnings.map((w) => (
-                <li key={w} className="rounded border border-border p-2 text-xs">
+                <li key={w} className="py-2 text-xs first:pt-0">
                   <StatusText kind="warn">{w}</StatusText>
                 </li>
               ))}
@@ -607,7 +625,7 @@ function DoctorView(): React.JSX.Element {
               감지된 항목 없음 -- manifest 작업 트리가 깨끗합니다.
             </p>
           ) : (
-            <div className="rounded border border-border p-2 text-xs">
+            <div className="text-xs">
               <StatusText kind={report.manifestDirty.role === 'follower' ? 'warn' : 'muted'}>
                 {report.manifestDirty.role === 'follower'
                   ? 'manifest 로컬 편집 감지'
@@ -640,14 +658,14 @@ function DoctorView(): React.JSX.Element {
           기존 중립 상태 의미를 그대로 재사용한 것 -- 새 색상·아이콘 없음.
         */}
         {report.manualSyncNotes.length > 0 && (
-          <section className="rounded-md border border-border p-3">
-            <h2 className="text-sm font-medium text-foreground">Manual sync checklist</h2>
+          <section>
+            <h2 className="text-sm font-semibold text-foreground">Manual sync checklist</h2>
             <p className="mb-1.5 text-xs text-muted-foreground">
               rigsync가 자동 동기화할 수 없어 사용자가 직접 맞춰야 하는 항목
             </p>
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border">
               {report.manualSyncNotes.map((note) => (
-                <li key={note.id} className="rounded border border-border p-2 text-xs">
+                <li key={note.id} className="py-2 text-xs first:pt-0">
                   <StatusText kind="muted">{note.title}</StatusText>
                   <div className="mt-0.5 whitespace-pre-line text-muted-foreground">
                     {note.detail}
@@ -664,11 +682,11 @@ function DoctorView(): React.JSX.Element {
             description="rigsync가 자동화하지 않는 수동 설치·설정 점검 목록"
             counts={checklistCounts}
           >
-            <ul className="space-y-2">
+            <ul className="divide-y divide-border">
               {report.checks.map((c) => (
                 <li
                   key={c.name}
-                  className="flex items-center justify-between gap-2 rounded border border-border p-2 text-xs"
+                  className="flex items-center justify-between gap-2 py-2 text-xs first:pt-0"
                 >
                   <div className="min-w-0">
                     <StatusText kind={doctorResultKind(c.result)}>

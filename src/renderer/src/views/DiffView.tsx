@@ -186,11 +186,12 @@ function DriftRow({
 }
 
 /**
- * R5: dotfiles 항목 전용 행 — DriftRow와 달리 문장 전체를 monospace로 묶지
- * 않는다("경로·명령 자체는 monospace 원문 유지"라는 계약에 맞춰, 사람이 읽는
- * 설명은 보통 글꼴로, 홈 경로만 별도 <span className="font-mono">로 감싼다 —
- * 호출부 책임). 다른 capability(Packages/AppImage/...)의 `[apt to-install]`류
- * 태그는 이번 라운드 스코프 밖이라 DriftRow를 그대로 쓴다.
+ * R5: 문장에 가까운 긴 행 전용(dotfiles + UI 정돈에서 합류한 Duplicates·
+ * Reclassifications) — DriftRow와 달리 전체를 monospace로 묶지 않는다
+ * ("경로·명령 자체는 monospace 원문 유지"라는 계약에 맞춰, 사람이 읽는 설명은
+ * 보통 글꼴로, 식별자만 별도 <span className="font-mono">로 감싼다 — 호출부
+ * 책임). 짧은 태그류(`[apt to-install]` 등)는 여전히 DriftRow를 쓴다 — 이름과
+ * 달리 이제 dotfiles 전용은 아니다.
  */
 function DotfilesDriftRow({
   kind,
@@ -766,8 +767,13 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       {/* R4-2 #5: 기준과 일치하는 capability는 각자 섹션(제목+설명+"기준과
           일치")을 펼치지 않고 여기 한 데 모아 한 줄씩 컴팩트하게 접는다 —
           drift가 있는 것만 아래에서 온전히 펼쳐진다. */}
+      {/* UI 정돈(v0.1.16): 보더 카드 대신 아주 옅은 배경 틴트만 남긴다 —
+          촘촘한 이름 그리드가 세부 항목(아래 DriftSection들, 보더 없음)과는
+          결이 다른 "묶음"이라는 것만 암시하면 충분하고, 진한 회색 보더 상자를
+          또 하나 만들 필요는 없다(이 화면의 유일한 실질 보더 카드는 위 요약
+          히어로 카드 하나로 충분). */}
       {matchedCapabilities.length > 0 && (
-        <section className="mb-4 rounded-md border border-border bg-card/50 p-2.5">
+        <section className="mb-4 rounded-md bg-muted/40 p-2.5">
           <p className="mb-1.5 text-xs text-muted-foreground">
             {summary.matched} ({matchedCapabilities.length})
           </p>
@@ -1026,6 +1032,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         </DriftSection>
       )}
 
+      {/* UI 정돈(v0.1.16): Duplicates·Reclassifications는 짧은 태그가 아니라
+          문장에 가까운 긴 내용이라 DriftRow의 통짜 모노스페이스 대신
+          DotfilesDriftRow(아이콘 + 보통 글꼴 산문, 이름만 monospace)를 쓴다 —
+          "빨간 모노스페이스 장문"을 아이콘+차분한 톤으로 바꾸라는 지시가
+          정확히 겨냥한 줄들이다. */}
       {duplicates.length > 0 && (
         <DriftSection
           title="Duplicate installs (INV-1)"
@@ -1034,10 +1045,11 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           empty={false}
         >
           {duplicates.map((d) => (
-            <DriftRow key={d.name} kind={d.ignored ? 'muted' : 'error'}>
-              {d.name}: {d.layers.map((l) => `${l.capability}(${l.label})`).join(' + ')}
+            <DotfilesDriftRow key={d.name} kind={d.ignored ? 'muted' : 'error'}>
+              <span className="font-mono">{d.name}</span>:{' '}
+              {d.layers.map((l) => `${l.capability}(${l.label})`).join(' + ')}
               {d.ignored ? ' — 무시됨' : ''}
-            </DriftRow>
+            </DotfilesDriftRow>
           ))}
         </DriftSection>
       )}
@@ -1050,12 +1062,13 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           empty={false}
         >
           {reclassifications.map((r) => (
-            <DriftRow key={r.name} kind="warn">
-              {r.name}: manifest={r.manifestedIn} → 실제={r.foundIn}
+            <DotfilesDriftRow key={r.name} kind="warn">
+              <span className="font-mono">{r.name}</span>: manifest={r.manifestedIn} → 실제=
+              {r.foundIn}
               {status?.role === 'follower'
                 ? ' — reference에서 매니페스트를 갱신하세요'
                 : ' — 매니페스트 갱신을 검토하세요 (자동 갱신 없음)'}
-            </DriftRow>
+            </DotfilesDriftRow>
           ))}
         </DriftSection>
       )}
