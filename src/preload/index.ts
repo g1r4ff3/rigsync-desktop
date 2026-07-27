@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import {
   IPC_CHANNELS,
+  WINDOW_IPC_CHANNELS,
   type ApplyRequest,
   type ApplyResponse,
   type AppimageCaptureReportDto,
@@ -169,7 +170,26 @@ const engineApi = {
   }
 }
 
-const api = { engine: engineApi }
+/**
+ * UI 정돈(v0.1.16) — 커스텀 타이틀바(frame:false) 창 제어. engineApi와
+ * 분리한 이유는 shared/ipc.ts WINDOW_IPC_CHANNELS 주석과 동일(엔진 워커를
+ * 거치지 않는 순수 BrowserWindow 조작).
+ */
+const windowControlsApi = {
+  minimize: (): Promise<void> => ipcRenderer.invoke(WINDOW_IPC_CHANNELS.windowMinimize),
+  toggleMaximize: (): Promise<void> => ipcRenderer.invoke(WINDOW_IPC_CHANNELS.windowToggleMaximize),
+  close: (): Promise<void> => ipcRenderer.invoke(WINDOW_IPC_CHANNELS.windowClose),
+  isMaximized: (): Promise<boolean> => ipcRenderer.invoke(WINDOW_IPC_CHANNELS.windowIsMaximized),
+  /** main -> renderer push: 최대화/복원 상태 변화(타이틀바 아이콘 토글). */
+  onMaximizeChanged: (callback: (maximized: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, maximized: boolean): void =>
+      callback(maximized)
+    ipcRenderer.on(WINDOW_IPC_CHANNELS.windowMaximizeChanged, listener)
+    return () => ipcRenderer.removeListener(WINDOW_IPC_CHANNELS.windowMaximizeChanged, listener)
+  }
+}
+
+const api = { engine: engineApi, windowControls: windowControlsApi }
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
@@ -189,3 +209,4 @@ if (process.contextIsolated) {
 }
 
 export type EngineApi = typeof engineApi
+export type WindowControlsApi = typeof windowControlsApi

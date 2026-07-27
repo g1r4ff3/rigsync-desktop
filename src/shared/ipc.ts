@@ -121,6 +121,23 @@ export const IPC_CHANNELS = {
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
 
+// ---------------------------------------------------------------------------
+// window:* — 커스텀 타이틀바(frame:false) 창 제어. engine:* 채널과 분리한
+// 이유: 엔진 워커(EngineWorkerClient)를 거치지 않고 main 프로세스가
+// BrowserWindow를 직접 조작하는 순수 UI 관심사이기 때문(UI 정돈 — 커스텀
+// 타이틀바, v0.1.16).
+// ---------------------------------------------------------------------------
+export const WINDOW_IPC_CHANNELS = {
+  windowMinimize: 'window:minimize',
+  windowToggleMaximize: 'window:toggleMaximize',
+  windowClose: 'window:close',
+  windowIsMaximized: 'window:isMaximized',
+  /** main -> renderer push: 최대화/복원 상태가 바뀔 때(타이틀바 아이콘 토글용). */
+  windowMaximizeChanged: 'window:maximizeChanged'
+} as const
+
+export type WindowIpcChannel = (typeof WINDOW_IPC_CHANNELS)[keyof typeof WINDOW_IPC_CHANNELS]
+
 /** engine:screenshotGoto 페이로드 — App.tsx가 이 이름으로 탭/온보딩/다이얼로그를 강제 전환한다. */
 export type ScreenshotRoute =
   | 'onboarding'

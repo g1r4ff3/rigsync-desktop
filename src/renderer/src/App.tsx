@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { HelpPopover } from '@/components/HelpPopover'
+import { TitleBar } from '@/components/TitleBar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { truncatePathStart } from '@/lib/utils'
 import { helpCopy, tabCopy } from './copy'
 import { SCREENSHOT_GOTO_EVENT } from './screenshotBus'
-import { StatusText } from './status'
 import { syncStatusKind } from './statusKind'
 import type {
   EngineStatus,
@@ -18,19 +17,7 @@ import OnboardingView from './views/OnboardingView'
 import SettingsView from './views/SettingsView'
 import SyncItemsView from './views/SyncItemsView'
 
-// R4-2 #1: 헤더 경로는 좌측 생략으로 꼬리만 보여준다(중요도 순 배치 원칙 —
-// machineId·role·sync 상태가 먼저 읽혀야 하고 경로는 참고 정보다).
-const MANIFEST_DIR_MAX_CHARS = 34
-
 type Tab = 'diff' | 'items' | 'doctor' | 'settings'
-
-function syncStatusLabel(status: SyncStatusDto | null): string {
-  if (!status) return ''
-  if (status.kind === 'local-only') return '로컬 전용'
-  if (status.kind === 'synced') return '동기화됨'
-  if (status.kind === 'behind') return `뒤처짐 (${status.behindBy})`
-  return `오류: ${status.message}`
-}
 
 function App(): React.JSX.Element {
   const [status, setStatus] = useState<EngineStatus | null>(null)
@@ -121,112 +108,88 @@ function App(): React.JSX.Element {
     })
   }, [])
 
-  if (status?.firstRun || forceOnboarding) {
-    return (
-      <div className="min-h-screen bg-background px-6 text-foreground">
-        <OnboardingView
-          status={
-            status ?? {
-              machineId: '',
-              role: 'reference',
-              manifestDir: '',
-              firstRun: true,
-              autostartEnabled: false
-            }
-          }
-          onComplete={(s) => {
-            setForceOnboarding(false)
-            setStatus(s)
-          }}
-          initialManifestSource={onboardingPreset}
-        />
-      </div>
-    )
-  }
-
   const syncKind = syncStatus ? syncStatusKind(syncStatus.kind) : null
+  const isOnboarding = status?.firstRun || forceOnboarding
 
+  // UI 정돈(v0.1.16): frame:false라 TitleBar가 유일한 창 이동/제어 수단이다 —
+  // 온보딩 화면에서도 예외 없이 항상 렌더한다. 온보딩 중엔 machineId·role이
+  // 아직 확정 전이라 status가 있어도 identity 블록은 "로딩 중…"처럼 보일 수
+  // 있는데, TitleBar는 status===null일 때만 "로딩 중…"을 보여주므로 firstRun
+  // 상태의 placeholder status(위 OnboardingView status prop과 동일한 값)를
+  // 그대로 넘긴다 — machineId가 빈 문자열이라도 창 제어 버튼은 항상 동작한다.
   return (
-    <div className="flex min-h-screen flex-col bg-background p-6 text-foreground">
-      {/* R1b 원칙③(정보 밀도): identity 블록을 한 줄로 압축한다 — 이전에는
-          제목/machineId·role/manifestDir가 각각 줄을 차지해 화면 상단 1/3을
-          먹었다. 경로는 화면 폭을 넘기면 잘리고 title로 전문을 제공한다. */}
-      <header className="mb-2 flex items-center gap-2 border-b border-border pb-2">
-        <span className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
-          rigsync
-        </span>
-        {status ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
-            <span className="shrink-0">
-              {status.machineId} · {status.role}
-            </span>
-            {syncKind && (
-              <>
-                <span className="shrink-0">·</span>
-                <StatusText kind={syncKind} className="inline-flex shrink-0">
-                  {syncStatusLabel(syncStatus)}
-                </StatusText>
-              </>
-            )}
-            <span className="shrink-0">·</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="max-w-[34ch] shrink-0 overflow-hidden font-mono text-[11px]">
-                  {truncatePathStart(status.manifestDir, MANIFEST_DIR_MAX_CHARS)}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-none">{status.manifestDir}</TooltipContent>
-            </Tooltip>
-          </div>
-        ) : statusError ? (
-          <StatusText kind="error">{statusError}</StatusText>
-        ) : (
-          <p className="text-xs text-muted-foreground">로딩 중…</p>
-        )}
-      </header>
-
-      {/* R4-2 #2: "?" 헬프는 화면마다 제각각 떠 있던 걸(Settings·Candidates에선
-          좌측에 홀로) 탭 바 우측 끝 한 자리로 통일한다 — 위치·형태가 전 화면에서
-          항상 같아야 "여기 누르면 된다"가 학습된다(일관성 원칙). 화면별 텍스트는
-          그대로 helpCopy[tab]에서 가져오므로 각 화면 고유 설명은 유지된다. */}
-      <nav className="mb-3 flex items-center justify-between gap-2 border-b border-border">
-        <div className="flex gap-1">
-          {(['diff', 'items', 'doctor', 'settings'] as const).map((id) => {
-            const t = tabCopy[id]
-            return (
-              <Tooltip key={id}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setTab(id)}
-                    className={
-                      'border-b-2 px-3 py-1.5 text-xs font-medium ' +
-                      (tab === id
-                        ? 'border-primary text-foreground'
-                        : 'border-transparent text-muted-foreground hover:text-foreground')
-                    }
-                  >
-                    {t.label}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{t.subtitle}</TooltipContent>
-              </Tooltip>
-            )
-          })}
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar
+        status={isOnboarding ? null : status}
+        statusError={statusError}
+        syncStatus={syncStatus}
+        syncKind={syncKind}
+      />
+      {isOnboarding ? (
+        <div className="flex-1 overflow-y-auto px-6">
+          <OnboardingView
+            status={
+              status ?? {
+                machineId: '',
+                role: 'reference',
+                manifestDir: '',
+                firstRun: true,
+                autostartEnabled: false
+              }
+            }
+            onComplete={(s) => {
+              setForceOnboarding(false)
+              setStatus(s)
+            }}
+            initialManifestSource={onboardingPreset}
+          />
         </div>
-        <HelpPopover text={helpCopy[tab]} />
-      </nav>
+      ) : (
+        <div className="flex flex-1 flex-col overflow-hidden p-6 pt-3">
+          {/* R4-2 #2: "?" 헬프는 화면마다 제각각 떠 있던 걸(Settings·Candidates에선
+              좌측에 홀로) 탭 바 우측 끝 한 자리로 통일한다 — 위치·형태가 전 화면에서
+              항상 같아야 "여기 누르면 된다"가 학습된다(일관성 원칙). 화면별 텍스트는
+              그대로 helpCopy[tab]에서 가져오므로 각 화면 고유 설명은 유지된다. */}
+          <nav className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-border">
+            <div className="flex gap-1">
+              {(['diff', 'items', 'doctor', 'settings'] as const).map((id) => {
+                const t = tabCopy[id]
+                return (
+                  <Tooltip key={id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setTab(id)}
+                        className={
+                          'border-b-2 px-3 py-1.5 text-xs font-medium ' +
+                          (tab === id
+                            ? 'border-primary text-foreground'
+                            : 'border-transparent text-muted-foreground hover:text-foreground')
+                        }
+                      >
+                        {t.label}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t.subtitle}</TooltipContent>
+                  </Tooltip>
+                )
+              })}
+            </div>
+            <HelpPopover text={helpCopy[tab]} />
+          </nav>
 
-      <main className="flex-1 overflow-hidden">
-        {tab === 'diff' ? (
-          <DiffView status={status} />
-        ) : tab === 'items' ? (
-          <SyncItemsView status={status} />
-        ) : tab === 'doctor' ? (
-          <DoctorView />
-        ) : (
-          <SettingsView onSaved={fetchStatus} />
-        )}
-      </main>
+          <main className="flex-1 overflow-hidden">
+            {tab === 'diff' ? (
+              <DiffView status={status} />
+            ) : tab === 'items' ? (
+              <SyncItemsView status={status} />
+            ) : tab === 'doctor' ? (
+              <DoctorView />
+            ) : (
+              <SettingsView onSaved={fetchStatus} />
+            )}
+          </main>
+        </div>
+      )}
     </div>
   )
 }

@@ -16,6 +16,7 @@ import {
 import { runScreenshotHarness } from './screenshot'
 import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
 import { createAppTray, type AppTray } from './tray'
+import { registerWindowControlIpc, wireWindowMaximizeEvents } from './windowControls'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { LinuxGearLeverProvider } from '../engine/providers/linux/gearlever'
 import {
@@ -76,6 +77,15 @@ function createWindow(): void {
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    // UI 정돈(v0.1.16): GTK 기본 타이틀바 제거 -- 자체 TitleBar 컴포넌트
+    // (renderer)가 드래그 영역 + 창 제어 버튼을 그린다. Linux 전용 앱이라
+    // titleBarOverlay(Windows/macOS 전용 API)는 쓰지 않는다. resizable은
+    // 기본값이 true지만, frame:false에서도 유지돼야 함을 명시해 둔다 --
+    // Linux WM(Mutter/KWin 등)은 override-redirect가 아닌 한 undecorated
+    // top-level 창도 가장자리 드래그로 리사이즈를 계속 지원한다(VSCode·
+    // Discord 등 frame:false 앱과 동일 전제).
+    frame: false,
+    resizable: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -87,6 +97,9 @@ function createWindow(): void {
     }
   })
   mainWindow = win
+  // UI 정돈(v0.1.16): TitleBar가 최대화/복원 아이콘을 그리려면 그 상태 변화를
+  // 알아야 한다 -- 창 컨트롤 IPC(registerWindowControlIpc)와 짝을 이룬다.
+  wireWindowMaximizeEvents(win)
 
   win.on('ready-to-show', () => {
     win.show()
@@ -207,6 +220,7 @@ app.whenReady().then(() => {
     onConfigChanged: refreshSchedulerAfterOnboarding,
     getExecPath: resolveExecPath
   })
+  registerWindowControlIpc(() => mainWindow)
 
   createWindow()
 

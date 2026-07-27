@@ -1,9 +1,9 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { EngineApi } from './index'
+import type { EngineApi, WindowControlsApi } from './index'
 
 declare global {
   interface Window {
     electron: ElectronAPI
-    api: { engine: EngineApi }
+    api: { engine: EngineApi; windowControls: WindowControlsApi }
   }
 }
