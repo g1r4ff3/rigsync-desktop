@@ -304,6 +304,28 @@ export interface RegisterEngineIpcDeps {
   readonly getExecPath?: () => string
 }
 
+/**
+ * 성능 계측(1단계) — IPC 핸들러 하나가 얼마나 걸렸는지 100ms 초과일 때만
+ * 로그로 남긴다(전량 로깅은 소음이라 과하다). `ipcMain.handle`을 그대로
+ * 감싸므로 채널별 요청/응답 타입 추론은 그대로 유지된다. 실측(2026-07-27,
+ * 이 머신, 이 계측 전): `engine:getDoctorReport` 2480ms, `engine:diffPackages`
+ * 564ms급 — main 이벤트 루프를 블록하는 실제 핫스팟이 이 로그로 드러난다.
+ */
+function handle<Args extends unknown[], R>(
+  channel: string,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => Promise<R>
+): void {
+  ipcMain.handle(channel, async (event, ...args: Args) => {
+    const start = performance.now()
+    try {
+      return await listener(event, ...args)
+    } finally {
+      const ms = performance.now() - start
+      if (ms > 100) console.log(`[ipc] ${channel} took ${ms.toFixed(0)}ms`)
+    }
+  })
+}
+
 export function registerEngineIpc(
   getMainWindow: () => BrowserWindow | null,
   deps: RegisterEngineIpcDeps = {}
@@ -312,7 +334,7 @@ export function registerEngineIpc(
   const onConfigChanged = deps.onConfigChanged ?? ((): void => {})
   const getExecPath = deps.getExecPath ?? ((): string => process.execPath)
 
-  ipcMain.handle(IPC_CHANNELS.engineGetStatus, async (): Promise<EngineStatus> => {
+  handle(IPC_CHANNELS.engineGetStatus, async (): Promise<EngineStatus> => {
     const { ctx, firstRun } = resolved
     return {
       machineId: ctx.machineId,
@@ -323,11 +345,11 @@ export function registerEngineIpc(
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffDotfiles, async (): Promise<DotfilesDiffReport> => {
+  handle(IPC_CHANNELS.engineDiffDotfiles, async (): Promise<DotfilesDiffReport> => {
     return diffDotfiles(getContext())
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureDotfiles,
     async (_event, request: CaptureDotfilesRequest): Promise<DotfilesCaptureReport> => {
       return withAutoSync(request.dryRun, () =>
@@ -336,11 +358,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffPackages, async (): Promise<PackagesDiffReport> => {
+  handle(IPC_CHANNELS.engineDiffPackages, async (): Promise<PackagesDiffReport> => {
     return diffPackages(getContext(), providers)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCapturePackages,
     async (_event, request: CapturePackagesRequest): Promise<PackagesCaptureReport> => {
       return withAutoSync(request.dryRun, () =>
@@ -349,11 +371,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffAppimage, async (): Promise<AppimageDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffAppimage, async (): Promise<AppimageDiffReportDto> => {
     return diffAppimage(getContext(), gearLeverProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureAppimage,
     async (_event, request: CaptureAppimageRequest): Promise<AppimageCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -362,11 +384,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffFonts, async (): Promise<FontsDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffFonts, async (): Promise<FontsDiffReportDto> => {
     return diffFonts(getContext())
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureFonts,
     async (_event, request: CaptureFontsRequest): Promise<FontsCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -375,11 +397,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffBinaries, async (): Promise<BinariesDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffBinaries, async (): Promise<BinariesDiffReportDto> => {
     return diffBinaries(getContext(), linuxBinariesSystemProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureBinaries,
     async (_event, request: CaptureBinariesRequest): Promise<BinariesCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -388,11 +410,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffSettings, async (): Promise<SettingsDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffSettings, async (): Promise<SettingsDiffReportDto> => {
     return diffSettings(getContext(), dconfProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureSettings,
     async (_event, request: CaptureRequest): Promise<SettingsCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -401,11 +423,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffServices, async (): Promise<ServicesDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffServices, async (): Promise<ServicesDiffReportDto> => {
     return diffServices(getContext(), systemdUserProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureServices,
     async (_event, request: CaptureRequest): Promise<ServicesCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -414,11 +436,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffScheduled, async (): Promise<ScheduledDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffScheduled, async (): Promise<ScheduledDiffReportDto> => {
     return diffScheduled(getContext(), cronProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureScheduled,
     async (_event, request: CaptureRequest): Promise<ScheduledCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -427,11 +449,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffTools, async (): Promise<ToolsDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffTools, async (): Promise<ToolsDiffReportDto> => {
     return diffTools(getContext(), toolsProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureTools,
     async (_event, request: CaptureRequest): Promise<ToolsCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -440,11 +462,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDiffRepos, async (): Promise<ReposDiffReportDto> => {
+  handle(IPC_CHANNELS.engineDiffRepos, async (): Promise<ReposDiffReportDto> => {
     return diffRepos(getContext())
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCaptureRepos,
     async (_event, request: CaptureRequest): Promise<ReposCaptureReportDto> => {
       return withAutoSync(request.dryRun, () =>
@@ -453,7 +475,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineGetDoctorReport, async (): Promise<DoctorReportDto> => {
+  handle(IPC_CHANNELS.engineGetDoctorReport, async (): Promise<DoctorReportDto> => {
     return buildDoctorReport(
       getContext(),
       doctorSystemProvider,
@@ -467,7 +489,7 @@ export function registerEngineIpc(
     )
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineIgnoreDoctorCheck,
     async (_event, request: IgnoreDoctorCheckRequest): Promise<DoctorReportDto> => {
       await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
@@ -487,14 +509,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
-    IPC_CHANNELS.engineGetLastDriftCheck,
-    async (): Promise<DriftSummaryDto | null> => {
-      return getLastDriftCheck()
-    }
-  )
+  handle(IPC_CHANNELS.engineGetLastDriftCheck, async (): Promise<DriftSummaryDto | null> => {
+    return getLastDriftCheck()
+  })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCompleteOnboarding,
     async (_event, request: CompleteOnboardingRequest): Promise<CompleteOnboardingResponse> => {
       await completeOnboarding(request, {
@@ -518,7 +537,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineValidateManifestPath,
     async (_event, request: ValidateManifestPathRequest): Promise<ManifestPathCheckDto> => {
       const targetDir = expandTilde(request.manifestDir, getContext().homeDir)
@@ -526,7 +545,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineCloneManifestRepo,
     async (_event, request: CloneManifestRepoRequest): Promise<CloneManifestRepoResponse> => {
       const ctx = getContext()
@@ -561,15 +580,15 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineGetSyncStatus, async (): Promise<SyncStatusDto> => {
+  handle(IPC_CHANNELS.engineGetSyncStatus, async (): Promise<SyncStatusDto> => {
     return getLastSyncStatus(getContext(), gitTransportProvider)
   })
 
-  ipcMain.handle(IPC_CHANNELS.engineSyncNow, async (): Promise<SyncStatusDto> => {
+  handle(IPC_CHANNELS.engineSyncNow, async (): Promise<SyncStatusDto> => {
     return triggerSync(getContext(), gitTransportProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineSetAutostart,
     async (_event, request: SetAutostartRequest): Promise<EngineStatus> => {
       guardedSetAutostart(getContext().homeDir, request.enabled, getExecPath(), is.dev)
@@ -594,7 +613,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineGetConfig, async (): Promise<RigsyncConfigDto> => {
+  handle(IPC_CHANNELS.engineGetConfig, async (): Promise<RigsyncConfigDto> => {
     const ctx = getContext()
     return {
       machineId: ctx.machineId,
@@ -607,7 +626,7 @@ export function registerEngineIpc(
     }
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineUpdateConfig,
     async (_event, request: UpdateConfigRequest): Promise<RigsyncConfigDto> => {
       const homeDir = getContext().homeDir
@@ -639,11 +658,11 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineDetectDuplicates, async (): Promise<DuplicateWarningDto[]> => {
+  handle(IPC_CHANNELS.engineDetectDuplicates, async (): Promise<DuplicateWarningDto[]> => {
     return detectDuplicates(getContext(), providers, gearLeverProvider)
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineDetectReclassifications,
     async (): Promise<ReclassificationEventDto[]> => {
       const ctx = getContext()
@@ -673,11 +692,11 @@ export function registerEngineIpc(
     return [...withSyncItemState(groups)]
   }
 
-  ipcMain.handle(IPC_CHANNELS.engineListSyncItems, async (): Promise<SyncItemGroupDto[]> => {
+  handle(IPC_CHANNELS.engineListSyncItems, async (): Promise<SyncItemGroupDto[]> => {
     return listSyncItemGroupsForRenderer()
   })
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineToggleIgnore,
     async (_event, request: ToggleIgnoreRequest): Promise<SyncItemGroupDto[]> => {
       await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
@@ -694,7 +713,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineToggleIgnoreBulk,
     async (_event, request: ToggleIgnoreBulkRequest): Promise<SyncItemGroupDto[]> => {
       await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
@@ -714,7 +733,7 @@ export function registerEngineIpc(
   // F2(docs/refactor-spec-v0.2.md) "이 머신 전용" 전환 — engine/hostLayerMove.ts가
   // role 가드(reference 전용)를 자체적으로 하므로 여기서는 스윕+자동
   // commit+push 배선만 한다(다른 manifest 저작 경로와 동일 패턴).
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineMoveEntryToHostLayer,
     async (_event, request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> => {
       await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
@@ -724,7 +743,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineMoveEntryToCommonLayer,
     async (_event, request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> => {
       await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
@@ -734,7 +753,7 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineApply,
     async (_event, request: ApplyRequest): Promise<ApplyResponse> => {
       const ctx = getContext()
@@ -771,14 +790,14 @@ export function registerEngineIpc(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.engineCancelApply, async (): Promise<void> => {
+  handle(IPC_CHANNELS.engineCancelApply, async (): Promise<void> => {
     currentApplyRunner?.cancel()
   })
 
   // 항목 삭제(uninstall, 안전 불변식 5) — 순수 dry-run 미리보기. 아무것도
   // 실행하지 않고 planUninstall()이 계산한 명령 전문·제외 사유·apt 의존성
   // 경고만 돌려준다(확인 다이얼로그가 그대로 노출 — 불변식 ⑥).
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.enginePlanUninstall,
     async (_event, request: PlanUninstallRequest): Promise<PlanUninstallResponse> => {
       const ctx = getContext()
@@ -803,7 +822,7 @@ export function registerEngineIpc(
   // run이 각자 새로 plan을 만든다) 기존 ApplyRunner·`engine:planEvent` 이벤트
   // 스트림·`engine:cancelApply` 취소 경로를 그대로 태운다(코디네이터 지시 —
   // 실행기를 새로 만들지 않는다).
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.engineRunUninstall,
     async (_event, request: RunUninstallRequest): Promise<RunUninstallResponse> => {
       const ctx = getContext()
