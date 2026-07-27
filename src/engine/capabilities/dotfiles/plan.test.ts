@@ -99,6 +99,44 @@ describe('planDotfiles + PlanExecutor (dotfiles walking skeleton)', () => {
     expect(mode).toBe(0o600)
   })
 
+  // link=true → link=false 전환: 홈에 남은 심링크를 실파일 사본으로 바꾼다.
+  // (F3 후속 — settings.json처럼 앱이 수시로 쓰는 파일을 복사 모드로 돌릴 때,
+  // 심링크가 남으면 로컬 편집이 store를 계속 오염시킨다.)
+  it('converts a home symlink into a real copy when the entry is link:false', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [
+        {
+          home: '~/.claude/settings.json',
+          store: 'dotfiles/.claude/settings.json',
+          type: 'file',
+          link: false
+        }
+      ]
+    })
+    const storePath = path.join(fixture.manifestDir, 'dotfiles', '.claude', 'settings.json')
+    fs.mkdirSync(path.dirname(storePath), { recursive: true })
+    fs.writeFileSync(storePath, '{"model":"ref"}\n')
+    const homePath = path.join(fixture.ctx.homeDir, '.claude', 'settings.json')
+    fs.mkdirSync(path.dirname(homePath), { recursive: true })
+    fs.symlinkSync(path.resolve(storePath), homePath)
+
+    // 심링크는 내용 비교로는 store와 "같음"이라 전환 필요를 diff가 직접 잡아야 한다.
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.contentChanged).toContain('~/.claude/settings.json')
+
+    const plan = planDotfiles(fixture.ctx, diff, 'run-convert')
+    const results = await new PlanExecutor().execute(plan, { confirm: true })
+    expect(results.some((r) => r.status === 'ok')).toBe(true)
+
+    expect(fs.lstatSync(homePath).isSymbolicLink()).toBe(false)
+    expect(fs.readFileSync(homePath, 'utf-8')).toBe('{"model":"ref"}\n')
+    expect(fs.readFileSync(storePath, 'utf-8')).toBe('{"model":"ref"}\n')
+
+    // 전환 뒤에는 조용해야 한다 (수렴 확인).
+    const diff2 = await diffDotfiles(fixture.ctx)
+    expect(diff2.contentChanged).toEqual([])
+  })
+
   // TestDotfilesDenylistApplyRejection.test_apply_refuses_denylisted_entry
   it('refuses to apply a manually-injected denylisted entry and leaves home untouched', async () => {
     const homeFile = writeHomeFile(fixture, '.config/credentials_test', 'SECRET=1\n')

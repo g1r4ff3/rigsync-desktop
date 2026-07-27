@@ -130,6 +130,11 @@ function makeCopyAction(ctx: RigsyncContext, entry: DotfileEntry, runTs: string)
         }
       }
       doBackup(ctx, homePath, runTs)
+      // 홈이 심링크면 실파일로 전환한다 — 심링크 위에 복사하면 store 원본에
+      // 쓰는 셈이라(자기 자신 복사) 전환이 영원히 안 일어난다.
+      if (isSymlink(homePath)) {
+        fs.unlinkSync(homePath)
+      }
       copyTreeMirror(storePath, homePath)
       if (entry.mode) {
         fs.chmodSync(homePath, Number.parseInt(entry.mode, 8))

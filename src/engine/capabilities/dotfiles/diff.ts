@@ -49,6 +49,14 @@ export async function diffDotfiles(ctx: RigsyncContext): Promise<DiffReport> {
       continue
     }
 
+    // link=false 엔트리의 홈이 심링크면 실파일 전환이 필요하다 — 내용 비교는
+    // 심링크를 따라가 "같음"이 되므로 여기서 먼저 잡는다 (link=true → false
+    // 전환 시나리오: 심링크가 남으면 로컬 편집이 store를 계속 오염시킨다).
+    if (homeIsSymlink) {
+      contentChanged.push(entry.home)
+      continue
+    }
+
     let same = false
     try {
       same =
