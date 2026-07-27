@@ -6,8 +6,13 @@ import { DEFAULT_DRIFT_CHECK_INTERVAL_HOURS } from '../engine/context'
 import { isAutostartEnabled } from '../engine/autostart'
 import { guardedSetAutostart } from './autostartGuard'
 import type { DriftSummary } from '../engine/drift'
-import { runDriftCheck } from './driftCheck'
-import { getEngineContext, refreshEngineContext, registerEngineIpc } from './ipc'
+import {
+  disposeEngineWorker,
+  getEngineContext,
+  refreshEngineContext,
+  registerEngineIpc,
+  runEngineDriftCheck
+} from './ipc'
 import { runScreenshotHarness } from './screenshot'
 import { createDriftCheckScheduler, type DriftCheckScheduler } from './scheduler'
 import { createAppTray, type AppTray } from './tray'
@@ -189,7 +194,7 @@ app.whenReady().then(() => {
   // P3: 스케줄러 -- 판단(shouldNotify)은 engine/drift.ts, 여기는 실제
   // read-only diff 호출(driftCheck.ts) + electron Notification 연결만.
   scheduler = createDriftCheckScheduler({
-    runCheck: () => runDriftCheck(getEngineContext()),
+    runCheck: () => runEngineDriftCheck(),
     notify: notifyDrift,
     intervalHours:
       getEngineContext().settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
@@ -263,6 +268,9 @@ app.on('before-quit', () => {
   isQuitting = true
   scheduler?.stop()
   tray?.destroy()
+  // 엔진 워커도 여기서 명시적으로 내린다 -- 안 하면 앱 종료로 죽는 워커를
+  // client가 "예기치 않은 크래시"로 오인해 재기동을 시도한다(실행 확인 중 발견).
+  disposeEngineWorker()
 })
 
 /** 온보딩 위저드(P4)가 config.toml을 새로 쓴 뒤 스케줄러 간격도 다시 읽어야 한다. */
@@ -271,7 +279,7 @@ export function refreshSchedulerAfterOnboarding(): void {
   const ctx = getEngineContext()
   scheduler?.stop()
   scheduler = createDriftCheckScheduler({
-    runCheck: () => runDriftCheck(getEngineContext()),
+    runCheck: () => runEngineDriftCheck(),
     notify: notifyDrift,
     intervalHours: ctx.settings.driftCheckIntervalHours ?? DEFAULT_DRIFT_CHECK_INTERVAL_HOURS
   })
