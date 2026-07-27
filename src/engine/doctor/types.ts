@@ -9,6 +9,7 @@ import type { Role } from '../context'
 import type { AppimagePreflightCheck } from '../capabilities/appimage/checks'
 import type { BinariesPreflightCheck } from '../capabilities/binaries/checks'
 import type { FontsPreflightCheck } from '../capabilities/fonts/checks'
+import type { AptNoCandidateCheckResult } from './aptNoCandidateCheck'
 import type { AptShadowCheckResult } from './aptShadowCheck'
 import type { EmptyFollowerCheckResult } from './emptyFollowerCheck'
 import type { ManifestDirtyCheckResult } from './manifestDirtyCheck'
@@ -79,6 +80,13 @@ export interface DoctorReport {
    * 재발 방지 — planApt의 설치 전 경고와 자매 검사, `aptShadowCheck.ts`).
    */
   readonly aptShadow: AptShadowCheckResult
+  /**
+   * 관리(managed) apt 패키지 중 어떤 저장소도 후보(candidate)를 제공하지
+   * 않는 것 — 저장소 없는 로컬 .deb가 apt 관리 목록에 잘못 들어가면 follower
+   * Apply가 "Unable to locate package"로 실패한다(실사용 사고 재발 방지,
+   * `aptNoCandidateCheck.ts`).
+   */
+  readonly aptNoCandidate: AptNoCandidateCheckResult
   /**
    * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
    * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인을 경고로 표면화한다.

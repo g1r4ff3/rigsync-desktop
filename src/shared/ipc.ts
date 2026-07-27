@@ -689,6 +689,21 @@ export interface DoctorAptShadowDto {
 }
 
 /**
+ * apt 저장소 후보 없음 검사 — 관리(managed) apt 패키지 중 어떤 저장소도
+ * 후보(candidate)를 제공하지 않는 것(저장소 없는 로컬 .deb가 관리 목록에
+ * 잘못 들어간 경우가 전형 — follower Apply가 "Unable to locate package"로
+ * 실패한다). `aptNoCandidateCheck.ts` 참조.
+ */
+export interface DoctorAptNoCandidateFindingDto {
+  readonly packageName: string
+}
+
+export interface DoctorAptNoCandidateDto {
+  readonly findings: readonly DoctorAptNoCandidateFindingDto[]
+  readonly warnings: readonly string[]
+}
+
+/**
  * refactor-spec-v0.2 P3(D2-a): manifest 작업 트리 dirty 검사 -- follower의
  * 심링크 로컬 편집이 다음 pull을 깨뜨리는 F3 병인. follower는 warning(경고),
  * reference는 note(P4가 자동 정리하므로 중립 정보)로 표현이 갈린다.
@@ -739,6 +754,7 @@ export interface DoctorReportDto {
   readonly secretScan: DoctorSecretScanPreflightDto
   readonly portability: DoctorPortabilityDto
   readonly aptShadow: DoctorAptShadowDto
+  readonly aptNoCandidate: DoctorAptNoCandidateDto
   readonly manifestDirty: DoctorManifestDirtyDto
   readonly manualSyncNotes: readonly ManualSyncNoteDto[]
   readonly emptyFollower: DoctorEmptyFollowerDto

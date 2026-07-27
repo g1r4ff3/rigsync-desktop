@@ -138,6 +138,16 @@ function aptShadowKinds(aptShadow: DoctorReportDto['aptShadow']): StatusKind[] {
 }
 
 /**
+ * apt 저장소 후보 없음 검사 -- 저장소 없는 로컬 .deb가 관리 목록에 잘못
+ * 들어가면 follower Apply가 "Unable to locate package"로 실패한다(실사용
+ * 사고 재발 방지). aptShadow와 같은 심각도(warn)로 센다 -- 지금 이 머신이
+ * 깨진 건 아니지만 follower에서 확실히 실패할 예고이므로 확인을 유도한다.
+ */
+function aptNoCandidateKinds(aptNoCandidate: DoctorReportDto['aptNoCandidate']): StatusKind[] {
+  return aptNoCandidate.warnings.map((): StatusKind => 'warn')
+}
+
+/**
  * P3(D2-a) manifest dirty 검사 -- follower dirty만 'warn'으로 센다. reference
  * dirty는 P4(`sweepLiveEditsIfDirty`)가 다음 드리프트 주기에 자동 정리하므로
  * 중립 정보일 뿐 경고가 아니다(요약 카운트에 반영하지 않는다).
@@ -353,6 +363,7 @@ function DoctorView(): React.JSX.Element {
   const secretScanCounts = countKinds(secretScanKinds(report.secretScan))
   const portabilityCounts = countKinds(portabilityKinds(report.portability))
   const aptShadowCounts = countKinds(aptShadowKinds(report.aptShadow))
+  const aptNoCandidateCounts = countKinds(aptNoCandidateKinds(report.aptNoCandidate))
   const manifestDirtyCounts = countKinds(manifestDirtyKinds(report.manifestDirty))
   const selfUpdateCounts = countKinds(selfUpdateKinds(selfUpdate))
   const checklistCounts = report.checksVisible
@@ -367,6 +378,7 @@ function DoctorView(): React.JSX.Element {
     secretScanCounts,
     portabilityCounts,
     aptShadowCounts,
+    aptNoCandidateCounts,
     manifestDirtyCounts,
     selfUpdateCounts,
     checklistCounts
@@ -623,6 +635,32 @@ function DoctorView(): React.JSX.Element {
           ) : (
             <ul className="divide-y divide-border">
               {report.aptShadow.warnings.map((w) => (
+                <li key={w} className="py-2 text-xs first:pt-0">
+                  <StatusText kind="warn">{w}</StatusText>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DoctorGroup>
+
+        {/*
+          apt 저장소 후보 없음 -- 저장소 없는 로컬 .deb(gcm·rustdesk 실증
+          사고)가 관리 apt 목록에 잘못 들어가면 follower Apply가 "Unable to
+          locate package"로 실패한다. Apt PATH shadowing과 같은 골격
+          (warnings 목록, 역할 구분 없음)을 재사용한다.
+        */}
+        <DoctorGroup
+          title="Apt no repository candidate"
+          description="관리 중인 apt 패키지 중 어떤 저장소도 후보를 제공하지 않는 것이 있는지 확인"
+          counts={aptNoCandidateCounts}
+        >
+          {report.aptNoCandidate.warnings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              감지된 항목 없음 -- 관리 중인 apt 패키지 전부 저장소 후보가 있습니다.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {report.aptNoCandidate.warnings.map((w) => (
                 <li key={w} className="py-2 text-xs first:pt-0">
                   <StatusText kind="warn">{w}</StatusText>
                 </li>
