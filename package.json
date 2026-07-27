@@ -1,7 +1,7 @@
 {
   "name": "rigsync-desktop",
   "desktopName": "rigsync-desktop.desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Claude Desktop급 머신 설정 동기화 앱 (Electron + React + TypeScript)",
   "private": true,
   "author": "Seongil <sngillkym@gm.gist.ac.kr>",
