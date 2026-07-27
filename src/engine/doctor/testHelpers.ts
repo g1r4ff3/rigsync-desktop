@@ -19,10 +19,13 @@ export function makeFakeDoctorSystemProvider(
   state: FakeDoctorSystemState = {}
 ): DoctorSystemProvider {
   return {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증). fileMatches는 DoctorSystemProvider
+    // 인터페이스상 plain sync라(providerTypes.ts) 감싸지 않는다.
     fileMatches: (expandedTarget: string) => state.fileMatches?.[expandedTarget] ?? [],
-    isAptPackageInstalled: (pkg: string) => state.aptInstalled?.[pkg] ?? false,
+    isAptPackageInstalled: (pkg: string) => Promise.resolve(state.aptInstalled?.[pkg] ?? false),
     runShellCmd: (cmdString: string) =>
-      state.shellResults?.[cmdString] ?? { code: 1, combinedOutput: '' }
+      Promise.resolve(state.shellResults?.[cmdString] ?? { code: 1, combinedOutput: '' })
   }
 }
 
@@ -33,7 +36,9 @@ export interface FakeNvidiaState {
 
 export function makeFakeNvidiaProvider(state: FakeNvidiaState = {}): NvidiaCheckProvider {
   return {
+    // readNvrmVersion은 NvidiaCheckProvider 인터페이스상 plain sync라(nvidia.ts)
+    // 감싸지 않는다.
     readNvrmVersion: () => state.nvrmVersion ?? null,
-    listInstalledDriverPackages: () => state.packages ?? []
+    listInstalledDriverPackages: () => Promise.resolve(state.packages ?? [])
   }
 }

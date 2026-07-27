@@ -54,8 +54,11 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): FakeAptP
   )
   const removeDryRunCalls: string[][] = []
   return {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증). isAvailable은 AptProvider 인터페이스상
+    // 그대로 plain boolean이라(providerTypes.ts) 감싸지 않는다.
     isAvailable: () => opts.available ?? true,
-    manualInstalled: () => [...(opts.manual ?? [])],
+    manualInstalled: () => Promise.resolve([...(opts.manual ?? [])]),
     listSourceFiles: () => [...(opts.sourceFiles ?? [])],
     fileExists: (p) => files.has(p),
     readFileBytes: (p) => files.get(p) ?? null,
@@ -63,25 +66,27 @@ export function makeFakeAptProvider(opts: FakeAptProviderOptions = {}): FakeAptP
       const table = opts.descriptions ?? {}
       const out: Record<string, string> = {}
       for (const name of names) if (table[name] !== undefined) out[name] = table[name]
-      return out
+      return Promise.resolve(out)
     },
     removeDryRun: (names) => {
       removeDryRunCalls.push([...names])
-      return opts.removeDryRunOutput ?? ''
+      return Promise.resolve(opts.removeDryRunOutput ?? '')
     },
-    policySourcesRaw: () => opts.policySourcesRaw ?? '',
-    policyPackagesRaw: () => opts.policyPackagesRaw ?? '',
-    dependsClosureRaw: () => opts.dependsClosureRaw ?? '',
+    policySourcesRaw: () => Promise.resolve(opts.policySourcesRaw ?? ''),
+    policyPackagesRaw: () => Promise.resolve(opts.policyPackagesRaw ?? ''),
+    dependsClosureRaw: () => Promise.resolve(opts.dependsClosureRaw ?? ''),
     prioritiesRaw: () => {
-      if (opts.prioritiesRaw !== undefined) return opts.prioritiesRaw
-      if (!opts.classify) return ''
-      return Object.entries(opts.classify)
-        .map(([name, cls]) => `${name}\t${cls === 'distro' ? 'required' : 'optional'}\tinstalled`)
-        .join('\n')
+      if (opts.prioritiesRaw !== undefined) return Promise.resolve(opts.prioritiesRaw)
+      if (!opts.classify) return Promise.resolve('')
+      return Promise.resolve(
+        Object.entries(opts.classify)
+          .map(([name, cls]) => `${name}\t${cls === 'distro' ? 'required' : 'optional'}\tinstalled`)
+          .join('\n')
+      )
     },
     dpkgOwnsPaths: (paths) => {
       const owned = new Set(opts.dpkgOwnedPaths ?? [])
-      return new Set(paths.filter((p) => owned.has(p)))
+      return Promise.resolve(new Set(paths.filter((p) => owned.has(p))))
     },
     removeDryRunCalls
   }
@@ -93,7 +98,9 @@ export function makeFakeSnapProvider(
 ): SnapProvider {
   return {
     isAvailable: () => available,
-    list: () => [...rows]
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증).
+    list: () => Promise.resolve([...rows])
   }
 }
 
@@ -133,17 +140,20 @@ export function makeFakeFlatpakProvider(
   )
 
   return {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증). isAvailable은 FlatpakProvider
+    // 인터페이스상 plain boolean이라(providerTypes.ts) 감싸지 않는다.
     isAvailable: () => opts.available ?? true,
-    remotes: () => [...(opts.remotes ?? [])],
-    apps: () => [...(opts.apps ?? [])],
-    appDetails: () => ({ ...(opts.details ?? {}) }),
+    remotes: () => Promise.resolve([...(opts.remotes ?? [])]),
+    apps: () => Promise.resolve([...(opts.apps ?? [])]),
+    appDetails: () => Promise.resolve({ ...(opts.details ?? {}) }),
     addRemoteUser: (name, url) => {
       addRemoteCalls.push({ name, url })
-      return opts.addRemoteResult ?? { ok: true, output: '' }
+      return Promise.resolve(opts.addRemoteResult ?? { ok: true, output: '' })
     },
     installAppUser: (origin, application) => {
       installCalls.push({ origin, application })
-      return opts.installResult ?? { ok: true, output: '' }
+      return Promise.resolve(opts.installResult ?? { ok: true, output: '' })
     },
     listOverrideFiles: (): FlatpakOverrideFile[] =>
       [...overrideFiles.entries()].map(([appId, content]) => ({
@@ -159,7 +169,7 @@ export function makeFakeFlatpakProvider(
     },
     uninstallAppUser: (application) => {
       uninstallCalls.push(application)
-      return opts.uninstallResult ?? { ok: true, output: '' }
+      return Promise.resolve(opts.uninstallResult ?? { ok: true, output: '' })
     },
     addRemoteCalls,
     installCalls,

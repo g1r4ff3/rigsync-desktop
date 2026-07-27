@@ -14,12 +14,15 @@ export function makeFakeCronProvider(state: FakeCronState = {}): FakeCronProvide
   let crontab = state.crontab === undefined ? null : state.crontab
   const writtenContents: string[] = []
   return {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증). isAvailable은 CronProvider 인터페이스상
+    // plain boolean이라(providerTypes.ts) 감싸지 않는다.
     isAvailable: () => state.available ?? true,
-    readCrontab: () => crontab,
-    writeCrontab: (content: string): CronCommandResult => {
+    readCrontab: () => Promise.resolve(crontab),
+    writeCrontab: (content: string): Promise<CronCommandResult> => {
       crontab = content
       writtenContents.push(content)
-      return { ok: true, output: '' }
+      return Promise.resolve({ ok: true, output: '' })
     },
     writtenContents
   }

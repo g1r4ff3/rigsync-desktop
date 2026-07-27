@@ -111,13 +111,15 @@ export function makeFakeTarExtractor(opts: FakeTarExtractorOptions = {}): FakeTa
   const gzCalls: Array<{ tarPath: string; destDir: string }> = []
   const bz2Calls: Array<{ tarPath: string; destDir: string }> = []
   return {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증).
     extractGz: (tarPath, destDir) => {
       gzCalls.push({ tarPath, destDir })
-      return opts.gzResult ?? { ok: true, extractedPaths: [] }
+      return Promise.resolve(opts.gzResult ?? { ok: true, extractedPaths: [] })
     },
     extractBz2: (tarPath, destDir) => {
       bz2Calls.push({ tarPath, destDir })
-      return opts.bz2Result ?? { ok: true, extractedPaths: [] }
+      return Promise.resolve(opts.bz2Result ?? { ok: true, extractedPaths: [] })
     },
     gzCalls,
     bz2Calls
@@ -140,7 +142,7 @@ export function makeFakeBinariesSystemProvider(
   return {
     runVersionCommand: (binaryPath, versionArgs) => {
       calls.push({ binaryPath, versionArgs })
-      return (
+      return Promise.resolve(
         opts.resultsByBinaryPath?.[binaryPath] ?? opts.defaultResult ?? { ok: true, output: '' }
       )
     },

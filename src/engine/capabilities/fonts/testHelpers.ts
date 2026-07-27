@@ -82,10 +82,12 @@ export function makeFakeFontsSystemProvider(
   return {
     fcCacheAvailable: () => opts.fcCacheAvailable ?? true,
     fcListAvailable: () => opts.fcListAvailable ?? true,
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증).
     runFcCache: () => {
       const result = opts.runFcCacheResult ?? { ok: true, output: '' }
       runFcCacheCalls.push(result)
-      return result
+      return Promise.resolve(result)
     },
     runFcCacheCalls
   }

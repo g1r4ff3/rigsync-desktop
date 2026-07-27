@@ -25,15 +25,18 @@ export function makeFakeGitTransportProvider(
   state: FakeGitTransportState = {}
 ): GitTransportProvider {
   return {
-    isGitRepo: () => state.isGitRepo ?? false,
-    hasRemote: () => state.hasRemote ?? false,
-    fetch: () => state.fetchResult ?? OK,
-    pullFastForward: () => state.pullResult ?? OK,
-    behindCount: () => state.behindCount ?? 0,
-    hasUncommittedChanges: () => state.hasUncommittedChanges ?? false,
-    changedFiles: () => state.changedFiles ?? [],
-    addAllAndCommit: () => state.commitResult ?? OK,
-    push: () => state.pushResult ?? OK,
-    cloneManifest: () => state.cloneResult ?? OK
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증) -- GitTransportProvider는 전 메서드가
+    // MaybePromise(types.ts).
+    isGitRepo: () => Promise.resolve(state.isGitRepo ?? false),
+    hasRemote: () => Promise.resolve(state.hasRemote ?? false),
+    fetch: () => Promise.resolve(state.fetchResult ?? OK),
+    pullFastForward: () => Promise.resolve(state.pullResult ?? OK),
+    behindCount: () => Promise.resolve(state.behindCount ?? 0),
+    hasUncommittedChanges: () => Promise.resolve(state.hasUncommittedChanges ?? false),
+    changedFiles: () => Promise.resolve(state.changedFiles ?? []),
+    addAllAndCommit: () => Promise.resolve(state.commitResult ?? OK),
+    push: () => Promise.resolve(state.pushResult ?? OK),
+    cloneManifest: () => Promise.resolve(state.cloneResult ?? OK)
   }
 }

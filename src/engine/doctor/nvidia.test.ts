@@ -7,7 +7,9 @@ function fakeProvider(
 ): NvidiaCheckProvider {
   return {
     readNvrmVersion: () => nvrm,
-    listInstalledDriverPackages: () => packages
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증).
+    listInstalledDriverPackages: () => Promise.resolve(packages)
   }
 }
 

@@ -29,23 +29,26 @@ export function makeFakeToolsProvider(state: FakeToolsState = {}): FakeToolsProv
   const installNodeCalls: string[] = []
   const installPackageCalls: string[] = []
   return {
-    npmNodeAvailable: () => available,
-    npmGlobals: () => ({ ...globals }),
-    nodeVersion: () => nodeVersion,
-    installNvm: (version: string): ToolsCommandResult => {
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증) -- ToolsProvider는 전 메서드가
+    // MaybePromise(providerTypes.ts).
+    npmNodeAvailable: () => Promise.resolve(available),
+    npmGlobals: () => Promise.resolve({ ...globals }),
+    nodeVersion: () => Promise.resolve(nodeVersion),
+    installNvm: (version: string): Promise<ToolsCommandResult> => {
       installNvmCalls.push(version)
-      return { ok: true, output: '' }
+      return Promise.resolve({ ok: true, output: '' })
     },
-    installNodeAndSetDefault: (version: string): ToolsCommandResult => {
+    installNodeAndSetDefault: (version: string): Promise<ToolsCommandResult> => {
       installNodeCalls.push(version)
       nodeVersion = version
       available = true
-      return { ok: true, output: '' }
+      return Promise.resolve({ ok: true, output: '' })
     },
-    installGlobalPackage: (pkg: string): ToolsCommandResult => {
+    installGlobalPackage: (pkg: string): Promise<ToolsCommandResult> => {
       installPackageCalls.push(pkg)
       globals[pkg] = 'installed'
-      return { ok: true, output: '' }
+      return Promise.resolve({ ok: true, output: '' })
     },
     installNvmCalls,
     installNodeCalls,

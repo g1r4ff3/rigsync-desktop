@@ -137,11 +137,14 @@ function makeDeps(overrides: Partial<SelfRegistrationDeps> = {}): {
 
   const deps: SelfRegistrationDeps = {
     appImagePath: '/opt/rigsync-desktop.AppImage',
-    isGearLeverAvailable: () => true,
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증) -- 실제 gearLeverProvider는 이 두 메서드를
+    // 비동기로 돌려준다(main/index.ts 배선 참조).
+    isGearLeverAvailable: () => Promise.resolve(true),
     readAppConfig: (): GearLeverAppConfig | null => null,
-    setUpdateSource: (appImagePath, manager, params): GearLeverCommandResult => {
+    setUpdateSource: (appImagePath, manager, params): Promise<GearLeverCommandResult> => {
       setUpdateSourceCalls.push({ appImagePath, manager, params: { ...params } })
-      return { ok: true, output: 'ok' }
+      return Promise.resolve({ ok: true, output: 'ok' })
     },
     readState: () => null,
     writeState: (state) => writtenStates.push(state),
@@ -179,7 +182,7 @@ describe('attemptSelfUpdateRegistration', () => {
 
   it('does nothing when Gear Lever is not available', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps({
-      isGearLeverAvailable: () => false
+      isGearLeverAvailable: () => Promise.resolve(false)
     })
     const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('gearlever-unavailable')
@@ -224,7 +227,7 @@ describe('attemptSelfUpdateRegistration', () => {
 
   it('records a failed attempt (still attempted:true, so it does not retry next launch) when setUpdateSource fails', async () => {
     const { deps, writtenStates } = makeDeps({
-      setUpdateSource: () => ({ ok: false, output: 'exit 1: flatpak not found' })
+      setUpdateSource: () => Promise.resolve({ ok: false, output: 'exit 1: flatpak not found' })
     })
     const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('attempt')

@@ -24,22 +24,25 @@ export function makeFakeSystemdUserProvider(
   return {
     listUnitFiles: () => [...units.entries()].map(([name, content]) => ({ name, content })),
     readUnitFile: (name: string) => (units.has(name) ? (units.get(name) ?? '') : null),
-    isEnabled: (name: string) => enabled[name] ?? false,
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 재발 시 여기서 fake 반환값이 Promise 객체가 되어
+    // assert가 깨진다 -- services/diff.ts:34 await 누락의 교차 검증).
+    isEnabled: (name: string) => Promise.resolve(enabled[name] ?? false),
     writeUnitFile: (name: string, content: string): ServiceCommandResult => {
       units.set(name, content)
       written.push({ name, content })
       return { ok: true, output: '' }
     },
-    daemonReload: (): ServiceCommandResult => {
+    daemonReload: (): Promise<ServiceCommandResult> => {
       reloadCallCount.count += 1
-      return state.daemonReloadFails
-        ? { ok: false, output: 'reload failed' }
-        : { ok: true, output: '' }
+      return Promise.resolve(
+        state.daemonReloadFails ? { ok: false, output: 'reload failed' } : { ok: true, output: '' }
+      )
     },
-    enable: (name: string): ServiceCommandResult => {
+    enable: (name: string): Promise<ServiceCommandResult> => {
       enabledCalls.push(name)
       enabled[name] = true
-      return { ok: true, output: '' }
+      return Promise.resolve({ ok: true, output: '' })
     },
     written,
     enabledCalls,

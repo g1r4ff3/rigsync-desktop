@@ -48,17 +48,19 @@ export function makeFakeGearLeverProvider(
   }> = []
 
   return {
-    isAvailable: () => opts.available ?? true,
-    version: () => opts.version ?? '4.6.2',
-    listInstalled: () => [...(opts.installed ?? [])],
+    // v0.1.19: MaybePromise 계약을 실제로 exercise하도록 Promise.resolve로
+    // 감싼다(await 누락 회귀 교차 검증 -- CLAUDE.md async.ts 주석 참조).
+    isAvailable: () => Promise.resolve(opts.available ?? true),
+    version: () => Promise.resolve(opts.version ?? '4.6.2'),
+    listInstalled: () => Promise.resolve([...(opts.installed ?? [])]),
     readAppConfig: (appImagePath) => opts.configsByPath?.[appImagePath] ?? null,
     integrate: (appImagePath) => {
       integrateCalls.push(appImagePath)
-      return opts.integrateResult ?? { ok: true, output: '' }
+      return Promise.resolve(opts.integrateResult ?? { ok: true, output: '' })
     },
     setUpdateSource: (appImagePath, manager, params) => {
       setUpdateSourceCalls.push({ path: appImagePath, manager, params: { ...params } })
-      return opts.setUpdateSourceResult ?? { ok: true, output: '' }
+      return Promise.resolve(opts.setUpdateSourceResult ?? { ok: true, output: '' })
     },
     integrateCalls,
     setUpdateSourceCalls
@@ -126,6 +128,6 @@ export function makeFakeAppimageSystemCheckProvider(
 ): AppimageSystemCheckProvider {
   const set = new Set(installedPackages)
   return {
-    isPackageInstalled: (debPackageName) => set.has(debPackageName)
+    isPackageInstalled: (debPackageName) => Promise.resolve(set.has(debPackageName))
   }
 }
