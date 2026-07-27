@@ -274,6 +274,20 @@ export const pendingChangesCopy = {
   captureSubtitle: '보류 중인 변경을 지금 manifest에 반영합니다'
 } as const
 
+/**
+ * Apply 실행 화면(DiffView 다이얼로그) 전용 문구. R1: 항목별 로그는 기본
+ * 접혀 있고(failed는 예외로 기본 펼침), 실행 중엔 액션 단위 진행률을 보여준다
+ * (apt 패키지 단위 세부 퍼센트는 소스가 없어 스펙 밖 — 액션 단위가 계약).
+ */
+export const applyProgressCopy = {
+  preparing: '실행 준비 중…',
+  countLabel: (done: number, total: number): string => `${done}/${total}`,
+  doneSummary: (ok: number, failed: number): string =>
+    failed > 0 ? `실행 완료 — 성공 ${ok} · 실패 ${failed}` : `실행 완료 — 성공 ${ok}`,
+  expandRow: '로그 펼치기',
+  collapseRow: '로그 접기'
+} as const
+
 export const buttonCopy = {
   capture: { label: 'Capture', subtitle: '지금 상태를 manifest로 기록' },
   captureDisabledFollower: 'follower는 capture 불가 — reference에서만 저작합니다',

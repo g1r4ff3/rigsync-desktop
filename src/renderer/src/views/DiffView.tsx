@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { ViewToolbar } from '@/components/ViewToolbar'
@@ -10,8 +11,10 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  applyProgressCopy,
   buttonCopy,
   diffSummaryCopy,
   dotfilesStateCopy,
@@ -241,6 +244,10 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const [live, setLive] = useState<Record<number, RowLiveState>>({})
   const [finalResults, setFinalResults] = useState<readonly PlanActionResultDto[] | null>(null)
   const [applying, setApplying] = useState(false)
+  // R1: 항목별 로그 펼침 상태 — 사용자가 명시적으로 토글한 것만 여기 기록하고,
+  // 나머지는 렌더 시점의 상태(실패면 기본 펼침)를 그대로 따른다(아래
+  // rowExpanded). openApplyPreview에서 다이얼로그를 새로 열 때 리셋한다.
+  const [expandedOverride, setExpandedOverride] = useState<Record<number, boolean>>({})
 
   // R5: reference는 그 자체가 기준이라 "기준과 다른 점" 프레이밍이 성립하지
   // 않는다 — role에 따라 요약 문구 전체를 갈아 끼운다(copy.ts diffSummaryCopy).
@@ -565,6 +572,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       setPreview(dryRunPreview)
       setFinalResults(null)
       setLive({})
+      setExpandedOverride({})
       setDialogOpen(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -619,6 +627,29 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  // R1: 진행률은 apt 패키지 등 명령 내부 단위가 아니라 액션(preview.results의
+  // 각 행) 단위다 — 세부 퍼센트를 낼 소스가 없어 액션 단위가 스펙 그대로다.
+  // 이벤트 스트림은 이미 있어(action_start/action_done) 새 IPC 없이 live에서
+  // 그대로 파생한다.
+  const totalActions = preview?.results.length ?? 0
+  const completedActions = Object.values(live).filter((row) => row.ok !== undefined).length
+  const progressPercent = totalActions > 0 ? Math.round((completedActions / totalActions) * 100) : 0
+  const runningIndex = Object.keys(live)
+    .map(Number)
+    .find((index) => live[index]?.running)
+  const runningSummary =
+    runningIndex !== undefined ? (preview?.results[runningIndex]?.summary ?? null) : null
+  const finalTally = finalResults
+    ? finalResults.reduce(
+        (acc, r) => {
+          if (r.status === 'ok') acc.ok += 1
+          else if (r.status === 'failed' || r.status === 'refused') acc.failed += 1
+          return acc
+        },
+        { ok: 0, failed: 0 }
+      )
+    : null
 
   return (
     <div className="h-full overflow-y-auto pr-1">
@@ -1037,7 +1068,7 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
           </DialogHeader>
 
           {preview?.sudoScriptPreview && (
-            <div className="rounded border border-border bg-muted p-2">
+            <div className="min-w-0 rounded border border-border bg-muted p-2">
               <p className="mb-1 text-xs text-status-warn">
                 관리자 권한 스크립트 (polkit 1회 인증으로 실행)
               </p>
@@ -1047,29 +1078,84 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
             </div>
           )}
 
-          <ul className="space-y-3">
+          {/* R1: 실행 중엔 액션 단위 진행률(완료 수/전체 수) — apt 패키지 등
+              명령 내부 단위 퍼센트는 소스가 없어 스펙 밖. 이미 있는
+              action_start/action_done 이벤트 스트림(live)에서 파생하므로 새
+              IPC 계약이 필요 없다. */}
+          {applying && finalResults === null && (
+            <div className="min-w-0 rounded border border-border bg-muted p-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate">
+                  {runningSummary ?? applyProgressCopy.preparing}
+                </span>
+                <span className="shrink-0 font-mono tabular-nums">
+                  {applyProgressCopy.countLabel(completedActions, totalActions)} ({progressPercent}
+                  %)
+                </span>
+              </div>
+              <Progress value={progressPercent} />
+            </div>
+          )}
+          {/* 완료 후: 진행률 바를 그대로 두는 대신 요약 헤더로 대체한다 —
+              바는 "진행 중"이라는 의미가 강해 끝난 뒤에도 남아 있으면
+              어중간하다(기존 상태 텍스트 디자인 언어로 대체). */}
+          {finalTally && (
+            <StatusText kind={finalTally.failed > 0 ? 'error' : 'ok'} className="min-w-0">
+              {applyProgressCopy.doneSummary(finalTally.ok, finalTally.failed)}
+            </StatusText>
+          )}
+
+          <ul className="min-w-0 space-y-2">
             {preview?.results.map((action, index) => {
               const rowState = finalResults?.[index]
               const liveRow = live[index]
               const label = statusLabel(index, preview, finalResults, live)
               const kind = planActionStatusKind(label as Parameters<typeof planActionStatusKind>[0])
+              // R1: failed(및 refused — 둘 다 'error' kind)는 설명가능성 계약상
+              // 문제를 숨기지 않도록 기본 펼침. 나머지는 기본 접힘. 사용자가
+              // 명시적으로 토글하면(expandedOverride) 그 값이 항상 우선한다.
+              const defaultExpanded = kind === 'error'
+              const expanded = expandedOverride[index] ?? defaultExpanded
+              const detailText = rowState?.detail ?? liveRow?.error
               return (
-                <li key={`${action.summary}-${index}`} className="rounded border border-border p-2">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                    <span>{action.summary}</span>
-                    <StatusText kind={kind}>{label}</StatusText>
-                  </div>
-                  {action.commands.map((cmd, cmdIndex) => (
-                    <div
-                      key={cmdIndex}
-                      className="font-mono text-xs break-all text-muted-foreground"
-                    >
-                      $ {cmd}
-                    </div>
-                  ))}
-                  {(rowState?.detail ?? liveRow?.error) && (
-                    <div className="mt-1 font-mono text-xs text-muted-foreground">
-                      {rowState?.detail ?? liveRow?.error}
+                <li
+                  key={`${action.summary}-${index}`}
+                  className="min-w-0 rounded border border-border p-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setExpandedOverride((prev) => ({ ...prev, [index]: !expanded }))}
+                    className="flex w-full min-w-0 items-center gap-1.5 text-left text-xs hover:text-foreground"
+                    title={expanded ? applyProgressCopy.collapseRow : applyProgressCopy.expandRow}
+                    aria-expanded={expanded}
+                  >
+                    {expanded ? (
+                      <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate" title={action.summary}>
+                      {action.summary}
+                    </span>
+                    <StatusText kind={kind} className="shrink-0">
+                      {label}
+                    </StatusText>
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 min-w-0 space-y-1 pl-5">
+                      {action.commands.map((cmd, cmdIndex) => (
+                        <div
+                          key={cmdIndex}
+                          className="font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground"
+                        >
+                          $ {cmd}
+                        </div>
+                      ))}
+                      {detailText && (
+                        <div className="font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground">
+                          {detailText}
+                        </div>
+                      )}
                     </div>
                   )}
                 </li>
