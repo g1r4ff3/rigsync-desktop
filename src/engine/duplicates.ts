@@ -83,28 +83,28 @@ export async function detectDuplicates(
   if (providers.apt.isAvailable()) {
     // 무상태 분류(refactor-spec-v0.2 §1) -- 배포판 기본분은 사용자가 겹치게
     // 설치한 앱이 아니므로 구 baseline 필터와 같은 취지로 후보에서 뺀다.
-    const manual = providers.apt.manualInstalled()
+    const manual = await providers.apt.manualInstalled()
     // 3단계: aptQueryCache 확장 — diffPackages/capturePackages/candidates에
     // 이어 5번째 호출부. dpkg 상태가 그 사이 안 바뀌었으면 원료 조회 절반을
     // 건너뛴다(aptQueryCache.ts 헤더 주석 참조).
-    const classification = classifyAptPackagesCached(providers.apt, manual)
+    const classification = await classifyAptPackagesCached(providers.apt, manual)
     for (const name of manual) {
       if (classification.get(name) === 'distro') continue
       items.push({ capability: 'apt', label: name })
     }
   }
   if (providers.snap.isAvailable()) {
-    for (const row of providers.snap.list()) {
+    for (const row of await providers.snap.list()) {
       items.push({ capability: 'snap', label: row.name })
     }
   }
   if (providers.flatpak.isAvailable()) {
-    for (const app of providers.flatpak.apps()) {
+    for (const app of await providers.flatpak.apps()) {
       items.push({ capability: 'flatpak', label: app.application })
     }
   }
-  if (gearLeverProvider.isAvailable()) {
-    for (const row of gearLeverProvider.listInstalled()) {
+  if (await gearLeverProvider.isAvailable()) {
+    for (const row of await gearLeverProvider.listInstalled()) {
       items.push({ capability: 'appimage', label: row.desktopId })
     }
   }

@@ -179,36 +179,36 @@ describe('classifyAptPackages', () => {
     prioritiesRaw: PRIORITIES_RAW
   })
 
-  it('rule 1: a third-party-only installed source is user, even a repo without o= (zotero)', () => {
-    const result = classifyAptPackages(provider, ['zotero', 'code'])
+  it('rule 1: a third-party-only installed source is user, even a repo without o= (zotero)', async () => {
+    const result = await classifyAptPackages(provider, ['zotero', 'code'])
     expect(result.get('zotero')).toBe('user')
     expect(result.get('code')).toBe('user')
   })
 
-  it('rule 2: metapackage closure membership is distro (ubuntu-wallpapers, priority optional)', () => {
-    const result = classifyAptPackages(provider, ['ubuntu-wallpapers'])
+  it('rule 2: metapackage closure membership is distro (ubuntu-wallpapers, priority optional)', async () => {
+    const result = await classifyAptPackages(provider, ['ubuntu-wallpapers'])
     expect(result.get('ubuntu-wallpapers')).toBe('distro')
   })
 
-  it('rule 3: required/important/standard priority is distro (bash, ubuntu-minimal)', () => {
-    const result = classifyAptPackages(provider, ['bash', 'ubuntu-minimal'])
+  it('rule 3: required/important/standard priority is distro (bash, ubuntu-minimal)', async () => {
+    const result = await classifyAptPackages(provider, ['bash', 'ubuntu-minimal'])
     expect(result.get('bash')).toBe('distro')
     expect(result.get('ubuntu-minimal')).toBe('distro')
   })
 
-  it('rule 4 default: an Ubuntu-origin optional package outside the closure is user (zsh)', () => {
-    const result = classifyAptPackages(provider, ['zsh'])
+  it('rule 4 default: an Ubuntu-origin optional package outside the closure is user (zsh)', async () => {
+    const result = await classifyAptPackages(provider, ['zsh'])
     expect(result.get('zsh')).toBe('user')
   })
 
-  it('rule 4 default: a local .deb with no sources at all is user (claude-desktop)', () => {
-    const result = classifyAptPackages(provider, ['claude-desktop'])
+  it('rule 4 default: a local .deb with no sources at all is user (claude-desktop)', async () => {
+    const result = await classifyAptPackages(provider, ['claude-desktop'])
     expect(result.get('claude-desktop')).toBe('user')
   })
 
-  it('fails safe: with empty raw inputs everything classifies as user (nothing gets hidden)', () => {
+  it('fails safe: with empty raw inputs everything classifies as user (nothing gets hidden)', async () => {
     const empty = makeFakeAptProvider({})
-    const result = classifyAptPackages(empty, ['anything', 'bash'])
+    const result = await classifyAptPackages(empty, ['anything', 'bash'])
     expect(result.get('anything')).toBe('user')
     expect(result.get('bash')).toBe('user')
   })

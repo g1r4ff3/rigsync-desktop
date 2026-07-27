@@ -252,10 +252,14 @@ async function buildCombinedPlan(ctx: RigsyncContext, runTs: string): Promise<Pl
     diffTools(ctx, toolsProvider),
     diffRepos(ctx)
   ])
+  // planPackages는 perf 3라운드로 async가 됐다(내부 apt plan이 provider
+  // 조회를 한다) -- 나머지 plan*은 여전히 동기(액션의 run() 클로저 안에서만
+  // provider를 부른다). 새 병렬화를 발명하지 않고 순차 await만 앞에 둔다.
+  const packagesPlan = await planPackages(ctx, providers, packagesDiff, runTs)
   return orderCombinedPlan({
     repos: planRepos(ctx, gitProvider, reposDiff),
     dotfiles: planDotfiles(ctx, dotfilesDiff, runTs),
-    packages: planPackages(ctx, providers, packagesDiff, runTs),
+    packages: packagesPlan,
     appimage: planAppimage(
       ctx,
       gearLeverProvider,
@@ -492,7 +496,7 @@ const handlers: Record<string, Handler> = {
     const request = args as CloneManifestRepoRequest
     const ctx = getContext()
     const targetDir = expandTilde(request.manifestDir, ctx.homeDir)
-    const result = cloneManifestRepo(request.repoUrl.trim(), targetDir, gitTransportProvider)
+    const result = await cloneManifestRepo(request.repoUrl.trim(), targetDir, gitTransportProvider)
     if (!result.ok) {
       return { ok: false, error: cloneErrorGuidance(result.error) }
     }
@@ -663,7 +667,7 @@ const handlers: Record<string, Handler> = {
   planUninstall: async (args): Promise<PlanUninstallResponse> => {
     const request = args as PlanUninstallRequest
     const ctx = getContext()
-    const plan = planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
+    const plan = await planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
     const actions: PlanActionResultDto[] = plan.actions.map((action) => ({
       capability: action.capability,
       summary: action.summary,
@@ -682,7 +686,7 @@ const handlers: Record<string, Handler> = {
   runUninstall: async (args): Promise<RunUninstallResponse> => {
     const request = args as RunUninstallRequest
     const ctx = getContext()
-    const plan = planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
+    const plan = await planUninstall(ctx, uninstallProviders, request.items, runTimestamp())
     return runApplyLike(plan.actions, true)
   }
 }

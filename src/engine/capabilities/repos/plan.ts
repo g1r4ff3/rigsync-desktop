@@ -25,7 +25,7 @@ export function planRepos(
       privileged: false,
       run: async () => {
         fs.mkdirSync(path.dirname(dest), { recursive: true })
-        const result = provider.clone(r.url, dest)
+        const result = await provider.clone(r.url, dest)
         return { ok: result.ok, detail: result.output || (result.ok ? 'cloned' : 'clone 실패') }
       }
     }

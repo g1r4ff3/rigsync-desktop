@@ -21,18 +21,18 @@ describe('checkExistingManifestPath', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  it('warns (but does not block) when the path does not exist yet', () => {
+  it('warns (but does not block) when the path does not exist yet', async () => {
     const targetDir = path.join(root, 'does-not-exist')
-    const result = checkExistingManifestPath(targetDir, makeFakeGitTransportProvider())
+    const result = await checkExistingManifestPath(targetDir, makeFakeGitTransportProvider())
     expect(result.exists).toBe(false)
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain('아직 없습니다')
   })
 
-  it('warns when the path exists but is not a git repo', () => {
+  it('warns when the path exists but is not a git repo', async () => {
     const targetDir = path.join(root, 'plain')
     fs.mkdirSync(targetDir)
-    const result = checkExistingManifestPath(
+    const result = await checkExistingManifestPath(
       targetDir,
       makeFakeGitTransportProvider({ isGitRepo: false })
     )
@@ -40,10 +40,10 @@ describe('checkExistingManifestPath', () => {
     expect(result.warnings.some((w) => w.includes('git 저장소가 아닙니다'))).toBe(true)
   })
 
-  it('warns when it is a git repo but has no remote (this is exactly the real-world bug)', () => {
+  it('warns when it is a git repo but has no remote (this is exactly the real-world bug)', async () => {
     const targetDir = path.join(root, 'local-only')
     fs.mkdirSync(targetDir)
-    const result = checkExistingManifestPath(
+    const result = await checkExistingManifestPath(
       targetDir,
       makeFakeGitTransportProvider({ isGitRepo: true, hasRemote: false })
     )
@@ -51,10 +51,10 @@ describe('checkExistingManifestPath', () => {
     expect(result.warnings.some((w) => w.includes('원격이 연결돼 있지 않습니다'))).toBe(true)
   })
 
-  it('warns when common/ is missing even if git+remote are fine (still just a warning)', () => {
+  it('warns when common/ is missing even if git+remote are fine (still just a warning)', async () => {
     const targetDir = path.join(root, 'no-manifest-structure')
     fs.mkdirSync(targetDir)
-    const result = checkExistingManifestPath(
+    const result = await checkExistingManifestPath(
       targetDir,
       makeFakeGitTransportProvider({ isGitRepo: true, hasRemote: true })
     )
@@ -62,10 +62,10 @@ describe('checkExistingManifestPath', () => {
     expect(result.warnings.some((w) => w.includes('manifest(common/)가 없습니다'))).toBe(true)
   })
 
-  it('has no warnings for a fully valid existing manifest (git + remote + common/)', () => {
+  it('has no warnings for a fully valid existing manifest (git + remote + common/)', async () => {
     const targetDir = path.join(root, 'valid')
     fs.mkdirSync(path.join(targetDir, 'common'), { recursive: true })
-    const result = checkExistingManifestPath(
+    const result = await checkExistingManifestPath(
       targetDir,
       makeFakeGitTransportProvider({ isGitRepo: true, hasRemote: true })
     )

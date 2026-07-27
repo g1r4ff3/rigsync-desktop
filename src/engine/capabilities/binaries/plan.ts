@@ -93,12 +93,16 @@ function makeInstallAction(
         fs.copyFileSync(downloadDest, target)
         installedPaths = [target]
       } else if (source.assetKind === 'tar.gz') {
-        const extracted = tarExtractor.extractGz(downloadDest, destDir, matchesDeclaredBinary)
+        const extracted = await tarExtractor.extractGz(downloadDest, destDir, matchesDeclaredBinary)
         installedPaths = extracted.ok ? extracted.extractedPaths : []
         extractDetail = extracted.detail
         if (!extracted.ok) return { ok: false, detail: extractDetail ?? 'tar.gz 추출 실패' }
       } else if (source.assetKind === 'tar.bz2') {
-        const extracted = tarExtractor.extractBz2(downloadDest, destDir, matchesDeclaredBinary)
+        const extracted = await tarExtractor.extractBz2(
+          downloadDest,
+          destDir,
+          matchesDeclaredBinary
+        )
         installedPaths = extracted.ok ? extracted.extractedPaths : []
         extractDetail = extracted.detail
         if (!extracted.ok) return { ok: false, detail: extractDetail ?? 'tar.bz2 추출 실패' }

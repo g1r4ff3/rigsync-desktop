@@ -40,15 +40,15 @@ function formatFileList(files: readonly ManifestDirtyFile[]): string {
   return shown.join(', ') + more
 }
 
-export function checkManifestDirty(
+export async function checkManifestDirty(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'role'>,
   provider: Pick<GitTransportProvider, 'isGitRepo' | 'changedFiles'>
-): ManifestDirtyCheckResult {
-  if (!provider.isGitRepo(ctx.manifestDir)) {
+): Promise<ManifestDirtyCheckResult> {
+  if (!(await provider.isGitRepo(ctx.manifestDir))) {
     return { role: ctx.role, dirty: false, files: [] }
   }
 
-  const files = provider.changedFiles(ctx.manifestDir)
+  const files = await provider.changedFiles(ctx.manifestDir)
   if (files.length === 0) {
     return { role: ctx.role, dirty: false, files: [] }
   }

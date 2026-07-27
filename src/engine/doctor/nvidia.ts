@@ -10,6 +10,7 @@
  * GPU가 없는 머신(NVRM 파일도 없고 dpkg 드라이버 패키지도 없음)은 이 체크
  * 자체를 skip 취급한다(`applicable:false`).
  */
+import type { MaybePromise } from '../async'
 
 export interface NvidiaDriverPackage {
   readonly name: string
@@ -20,7 +21,7 @@ export interface NvidiaCheckProvider {
   /** `/proc/driver/nvidia/version`에서 뽑은 NVRM 커널 모듈 버전 문자열, 파일 없으면 null. */
   readNvrmVersion(): string | null
   /** `dpkg-query`로 찾은 `nvidia-driver-*` 패키지들(설치된 것만). */
-  listInstalledDriverPackages(): readonly NvidiaDriverPackage[]
+  listInstalledDriverPackages(): MaybePromise<readonly NvidiaDriverPackage[]>
 }
 
 export interface NvidiaDriverCheckResult {
@@ -42,9 +43,11 @@ function upstreamVersion(version: string): string {
   return match ? match[0] : version
 }
 
-export function checkNvidiaDriverMismatch(provider: NvidiaCheckProvider): NvidiaDriverCheckResult {
+export async function checkNvidiaDriverMismatch(
+  provider: NvidiaCheckProvider
+): Promise<NvidiaDriverCheckResult> {
   const nvrmVersion = provider.readNvrmVersion()
-  const packages = provider.listInstalledDriverPackages()
+  const packages = await provider.listInstalledDriverPackages()
 
   if (!nvrmVersion && packages.length === 0) {
     return { applicable: false, nvrmVersion: null, userspaceVersion: null, matched: true }

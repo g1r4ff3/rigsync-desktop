@@ -36,7 +36,7 @@ describe('planUninstall', () => {
     const homeFile = writeHomeFile(fixture, '.oldtoolrc', 'leftover\n')
     writeIgnore(fixture, { dotfiles: { homes: ['~/.oldtoolrc'] } })
 
-    const result = planUninstall(
+    const result = await planUninstall(
       fixture.ctx,
       providers,
       [{ capability: 'dotfiles', key: '~/.oldtoolrc' }],
@@ -50,7 +50,7 @@ describe('planUninstall', () => {
     expect(fs.existsSync(homeFile)).toBe(false)
   })
 
-  it('excludes every unsupported capability with a human-readable reason (snap/appimage/settings/services/scheduled/tools/repos)', () => {
+  it('excludes every unsupported capability with a human-readable reason (snap/appimage/settings/services/scheduled/tools/repos)', async () => {
     const unsupported = [
       'snap',
       'appimage',
@@ -63,7 +63,7 @@ describe('planUninstall', () => {
     ]
     const items = unsupported.map((capability) => ({ capability, key: 'x' }))
 
-    const result = planUninstall(fixture.ctx, providers, items, 'run-unsupported')
+    const result = await planUninstall(fixture.ctx, providers, items, 'run-unsupported')
 
     expect(result.actions).toEqual([])
     expect(result.excluded).toHaveLength(unsupported.length)
@@ -103,7 +103,7 @@ describe('planUninstall', () => {
       entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
     })
 
-    const result = planUninstall(
+    const result = await planUninstall(
       fixture.ctx,
       providers,
       [
@@ -129,11 +129,11 @@ describe('planUninstall', () => {
     expect(result.aptDependencies?.extra).toEqual([])
   })
 
-  it('omits aptDependencies entirely when no apt items are requested', () => {
+  it('omits aptDependencies entirely when no apt items are requested', async () => {
     writeHomeFile(fixture, '.oldtoolrc', 'leftover\n')
     writeIgnore(fixture, { dotfiles: { homes: ['~/.oldtoolrc'] } })
 
-    const result = planUninstall(
+    const result = await planUninstall(
       fixture.ctx,
       providers,
       [{ capability: 'dotfiles', key: '~/.oldtoolrc' }],
@@ -143,8 +143,8 @@ describe('planUninstall', () => {
     expect(result.aptDependencies).toBeUndefined()
   })
 
-  it('is a no-op-safe call with an empty item list', () => {
-    const result = planUninstall(fixture.ctx, providers, [], 'run-empty')
+  it('is a no-op-safe call with an empty item list', async () => {
+    const result = await planUninstall(fixture.ctx, providers, [], 'run-empty')
     expect(result.actions).toEqual([])
     expect(result.excluded).toEqual([])
     expect(result.aptDependencies).toBeUndefined()

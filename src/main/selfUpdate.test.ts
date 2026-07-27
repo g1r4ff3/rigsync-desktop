@@ -154,15 +154,15 @@ function makeDeps(overrides: Partial<SelfRegistrationDeps> = {}): {
 }
 
 describe('attemptSelfUpdateRegistration', () => {
-  it('does nothing (and calls Gear Lever zero times) when not running as an AppImage', () => {
+  it('does nothing (and calls Gear Lever zero times) when not running as an AppImage', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps({ appImagePath: null })
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('not-appimage')
     expect(setUpdateSourceCalls).toHaveLength(0)
     expect(writtenStates).toHaveLength(0)
   })
 
-  it('does nothing when a previous attempt was already recorded, even if the source is missing again', () => {
+  it('does nothing when a previous attempt was already recorded, even if the source is missing again', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps({
       readState: () => ({
         attempted: true,
@@ -171,35 +171,35 @@ describe('attemptSelfUpdateRegistration', () => {
         detail: 'ok'
       })
     })
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('already-attempted')
     expect(setUpdateSourceCalls).toHaveLength(0)
     expect(writtenStates).toHaveLength(0)
   })
 
-  it('does nothing when Gear Lever is not available', () => {
+  it('does nothing when Gear Lever is not available', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps({
       isGearLeverAvailable: () => false
     })
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('gearlever-unavailable')
     expect(setUpdateSourceCalls).toHaveLength(0)
     expect(writtenStates).toHaveLength(0)
   })
 
-  it('does nothing when the update source is already configured for this exact AppImage', () => {
+  it('does nothing when the update source is already configured for this exact AppImage', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps({
       readAppConfig: () => ({ updateManager: { repo: 'g1r4ff3/rigsync-desktop' } })
     })
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('source-already-set')
     expect(setUpdateSourceCalls).toHaveLength(0)
     expect(writtenStates).toHaveLength(0)
   })
 
-  it('calls setUpdateSource with GithubUpdater + fixed repo coordinates for exactly this AppImage path, then records success', () => {
+  it('calls setUpdateSource with GithubUpdater + fixed repo coordinates for exactly this AppImage path, then records success', async () => {
     const { deps, setUpdateSourceCalls, writtenStates } = makeDeps()
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('attempt')
     expect(setUpdateSourceCalls).toEqual([
       {
@@ -222,11 +222,11 @@ describe('attemptSelfUpdateRegistration', () => {
     ])
   })
 
-  it('records a failed attempt (still attempted:true, so it does not retry next launch) when setUpdateSource fails', () => {
+  it('records a failed attempt (still attempted:true, so it does not retry next launch) when setUpdateSource fails', async () => {
     const { deps, writtenStates } = makeDeps({
       setUpdateSource: () => ({ ok: false, output: 'exit 1: flatpak not found' })
     })
-    const decision = attemptSelfUpdateRegistration(deps)
+    const decision = await attemptSelfUpdateRegistration(deps)
     expect(decision).toBe('attempt')
     expect(writtenStates).toEqual([
       {
@@ -238,13 +238,14 @@ describe('attemptSelfUpdateRegistration', () => {
     ])
   })
 
-  it('never throws, even if a dep throws mid-flow (must not block app startup)', () => {
+  it('never throws, even if a dep throws mid-flow (must not block app startup)', async () => {
     const { deps } = makeDeps({
       isGearLeverAvailable: () => {
         throw new Error('boom')
       }
     })
-    expect(() => attemptSelfUpdateRegistration(deps)).not.toThrow()
-    expect(attemptSelfUpdateRegistration(deps)).toBe('error')
+    // 던지지 않고(reject 아님) 'error'로 조용히 처리되는지 -- resolves 자체가
+    // "throw/reject하지 않았다"는 증명이다.
+    await expect(attemptSelfUpdateRegistration(deps)).resolves.toBe('error')
   })
 })

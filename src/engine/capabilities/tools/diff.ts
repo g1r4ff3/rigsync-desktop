@@ -21,7 +21,7 @@ export async function diffTools(
   const ignore = readIgnoreSet(ctx, 'tools', 'packages')
   const wantPkgs = [...new Set(manifest.packages ?? [])].filter((p) => !ignore.has(p)).sort()
   const wantNode = manifest.node?.version ?? ''
-  const npmOk = provider.npmNodeAvailable()
+  const npmOk = await provider.npmNodeAvailable()
 
   if (!npmOk && !wantNode) {
     return {
@@ -36,8 +36,8 @@ export async function diffTools(
   let toInstall: string[]
   let nodeToInstall: string | null
   if (npmOk) {
-    const installed = new Set(Object.keys(provider.npmGlobals()))
-    const liveNode = provider.nodeVersion()
+    const installed = new Set(Object.keys(await provider.npmGlobals()))
+    const liveNode = await provider.nodeVersion()
     toInstall = wantPkgs.filter((p) => !installed.has(p))
     nodeToInstall = wantNode && liveNode !== wantNode ? wantNode : null
   } else {

@@ -31,19 +31,20 @@ export async function detectReclassifications(
 ): Promise<ReclassificationEvent[]> {
   const live: DuplicateSourceItem[] = []
   if (providers.apt.isAvailable()) {
-    for (const name of providers.apt.manualInstalled())
+    for (const name of await providers.apt.manualInstalled())
       live.push({ capability: 'apt', label: name })
   }
   if (providers.snap.isAvailable()) {
-    for (const row of providers.snap.list()) live.push({ capability: 'snap', label: row.name })
+    for (const row of await providers.snap.list())
+      live.push({ capability: 'snap', label: row.name })
   }
   if (providers.flatpak.isAvailable()) {
-    for (const app of providers.flatpak.apps()) {
+    for (const app of await providers.flatpak.apps()) {
       live.push({ capability: 'flatpak', label: app.application })
     }
   }
-  if (gearLeverProvider.isAvailable()) {
-    for (const row of gearLeverProvider.listInstalled()) {
+  if (await gearLeverProvider.isAvailable()) {
+    for (const row of await gearLeverProvider.listInstalled()) {
       live.push({ capability: 'appimage', label: row.desktopId })
     }
   }

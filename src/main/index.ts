@@ -133,32 +133,33 @@ function createWindow(): void {
  * CLI provider + `app.getPath('userData')` 상태 파일 배선만 한다.
  *
  * `createWindow()` 이후 지연 실행하는 이유: Gear Lever CLI 호출(`flatpak run
- * it.mijorus.gearlever …`)은 동기(`execFileSync`)라 호출 중엔 메인 프로세스가
- * 블록된다 — "실패해도 기동을 막지 말고"라는 명세를 지키려고, 창이 이미
- * 뜬 뒤(사용자가 화면을 보기 시작한 뒤)로 미뤄 초기 페인트를 지연시키지
- * 않는다. 대부분의 실행에서는 이미 한 번 시도돼 상태 파일에 기록돼 있어
+ * it.mijorus.gearlever …`)은 (perf 3라운드 이전에는) 동기(`execFileSync`)라
+ * 호출 중엔 메인 프로세스가 블록됐다 — 지금은 비동기 execFile로 바뀌어 더 이상
+ * 블록하지 않지만, "실패해도 기동을 막지 말고"라는 명세는 그대로 유지하려고
+ * 창이 이미 뜬 뒤(사용자가 화면을 보기 시작한 뒤)로 미루는 타이밍은 남겨둔다
+ * — 초기 페인트와 자기 등록 I/O를 시간상으로도 분리해두는 편이 안전하다.
+ * 대부분의 실행에서는 이미 한 번 시도돼 상태 파일에 기록돼 있어
  * `readState()`만 보고 즉시 반환한다(비용 무시할 수준).
  */
 function runSelfUpdateRegistration(): void {
   const gearLeverProvider = new LinuxGearLeverProvider()
   const userDataDir = app.getPath('userData')
-  try {
-    attemptSelfUpdateRegistration({
-      appImagePath: process.env.APPIMAGE || null,
-      isGearLeverAvailable: () => gearLeverProvider.isAvailable(),
-      readAppConfig: (appImagePath) => gearLeverProvider.readAppConfig(appImagePath),
-      setUpdateSource: (appImagePath, manager, params) =>
-        gearLeverProvider.setUpdateSource(appImagePath, manager, params),
-      readState: () => readSelfUpdateState(userDataDir),
-      writeState: (state) => writeSelfUpdateState(userDataDir, state),
-      log: (message) => console.log(message)
-    })
-  } catch (err) {
-    // attemptSelfUpdateRegistration 자체가 이미 내부에서 삼키지만, 이 배선
-    // 함수(provider 생성·app.getPath 등)에서 던질 가능성까지 이중으로 막는다
-    // — 자기 등록은 기동을 절대 막아선 안 된다.
+  // attemptSelfUpdateRegistration은 perf 3라운드로 async가 됐다(Gear Lever
+  // CLI 호출이 비동기 execFile) -- fire-and-forget으로 두되(자기 등록이
+  // 기동 흐름을 블록해선 안 된다) .catch로 이중 방어한다(내부에서 이미
+  // 삼키므로 정상적으로는 여기 도달하지 않는다).
+  attemptSelfUpdateRegistration({
+    appImagePath: process.env.APPIMAGE || null,
+    isGearLeverAvailable: () => gearLeverProvider.isAvailable(),
+    readAppConfig: (appImagePath) => gearLeverProvider.readAppConfig(appImagePath),
+    setUpdateSource: (appImagePath, manager, params) =>
+      gearLeverProvider.setUpdateSource(appImagePath, manager, params),
+    readState: () => readSelfUpdateState(userDataDir),
+    writeState: (state) => writeSelfUpdateState(userDataDir, state),
+    log: (message) => console.log(message)
+  }).catch((err: unknown) => {
     console.error('[self-update] wiring failed (non-fatal)', err)
-  }
+  })
 }
 
 function showMainWindow(): void {

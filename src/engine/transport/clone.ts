@@ -70,12 +70,12 @@ export function classifyCloneFailure(rawOutput: string): CloneManifestError {
 }
 
 /** 온보딩·Settings 양쪽이 공유하는 클론 실행 진입점. */
-export function cloneManifestRepo(
+export async function cloneManifestRepo(
   url: string,
   targetDir: string,
   provider: Pick<GitTransportProvider, 'cloneManifest'>
-): CloneManifestResult {
-  const result: GitCommandResult = provider.cloneManifest(url, targetDir)
+): Promise<CloneManifestResult> {
+  const result: GitCommandResult = await provider.cloneManifest(url, targetDir)
   if (result.ok) return { ok: true }
   return { ok: false, error: classifyCloneFailure(result.output) }
 }

@@ -97,8 +97,8 @@ export async function captureRepos(
       notes.push(`skipped (worktree): ${homeForm}`)
       continue
     }
-    const url = provider.remoteUrl(p)
-    const branch = provider.branch(p)
+    const url = await provider.remoteUrl(p)
+    const branch = await provider.branch(p)
     if (!url) warnings.push(`${homeForm}: no remote.origin.url`)
     if (!entries.has(homeForm)) added += 1
     entries.set(homeForm, { path: homeForm, url, branch })

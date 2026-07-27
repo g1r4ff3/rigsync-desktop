@@ -57,12 +57,13 @@ export function planServices(
         const write = provider.writeUnitFile(name, storedContent)
         if (!write.ok) return { ok: false, detail: write.output || '유닛 파일 쓰기 실패' }
 
-        const reload = provider.daemonReload()
+        // 순차 의존 -- daemon-reload가 먼저 끝나야 enable이 의미 있다.
+        const reload = await provider.daemonReload()
         let ok = reload.ok
         let detail = reload.output
 
         if (u.enabled) {
-          const enable = provider.enable(name)
+          const enable = await provider.enable(name)
           ok = ok && enable.ok
           detail += enable.output
         }

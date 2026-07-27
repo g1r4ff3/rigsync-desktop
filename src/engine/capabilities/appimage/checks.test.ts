@@ -19,11 +19,11 @@ describe('versionAtLeast', () => {
 })
 
 describe('checkAppimagePreflight', () => {
-  it("all green: Gear Lever >= 4.6.2, libfuse2t64 present, no AppImageLauncher (this dev machine's real state)", () => {
+  it("all green: Gear Lever >= 4.6.2, libfuse2t64 present, no AppImageLauncher (this dev machine's real state)", async () => {
     // §7 실측: 이 머신은 Gear Lever 4.6.2, libfuse2t64 설치됨, AppImageLauncher 없음.
     const provider = makeFakeGearLeverProvider({ available: true, version: '4.6.2' })
     const systemCheck = makeFakeAppimageSystemCheckProvider(['libfuse2t64'])
-    const result = checkAppimagePreflight(provider, systemCheck)
+    const result = await checkAppimagePreflight(provider, systemCheck)
 
     expect(result.gearLeverInstalled).toBe(true)
     expect(result.gearLeverVersionOk).toBe(true)
@@ -32,33 +32,33 @@ describe('checkAppimagePreflight', () => {
     expect(result.warnings).toEqual([])
   })
 
-  it('warns when Gear Lever is missing', () => {
+  it('warns when Gear Lever is missing', async () => {
     const provider = makeFakeGearLeverProvider({ available: false })
     const systemCheck = makeFakeAppimageSystemCheckProvider(['libfuse2t64'])
-    const result = checkAppimagePreflight(provider, systemCheck)
+    const result = await checkAppimagePreflight(provider, systemCheck)
     expect(result.gearLeverInstalled).toBe(false)
     expect(result.warnings.some((w) => w.includes('Gear Lever'))).toBe(true)
   })
 
-  it('warns when Gear Lever version is below the minimum', () => {
+  it('warns when Gear Lever version is below the minimum', async () => {
     const provider = makeFakeGearLeverProvider({ available: true, version: '4.5.0' })
     const systemCheck = makeFakeAppimageSystemCheckProvider(['libfuse2t64'])
-    const result = checkAppimagePreflight(provider, systemCheck)
+    const result = await checkAppimagePreflight(provider, systemCheck)
     expect(result.gearLeverVersionOk).toBe(false)
     expect(result.warnings.some((w) => w.includes('4.6.2'))).toBe(true)
   })
 
-  it('warns when libfuse2t64 is missing', () => {
+  it('warns when libfuse2t64 is missing', async () => {
     const provider = makeFakeGearLeverProvider({ available: true, version: '4.6.2' })
     const systemCheck = makeFakeAppimageSystemCheckProvider([])
-    const result = checkAppimagePreflight(provider, systemCheck)
+    const result = await checkAppimagePreflight(provider, systemCheck)
     expect(result.warnings.some((w) => w.includes('libfuse2t64'))).toBe(true)
   })
 
-  it('warns when AppImageLauncher is present (conflict risk)', () => {
+  it('warns when AppImageLauncher is present (conflict risk)', async () => {
     const provider = makeFakeGearLeverProvider({ available: true, version: '4.6.2' })
     const systemCheck = makeFakeAppimageSystemCheckProvider(['libfuse2t64', 'appimagelauncher'])
-    const result = checkAppimagePreflight(provider, systemCheck)
+    const result = await checkAppimagePreflight(provider, systemCheck)
     expect(result.appImageLauncherPresent).toBe(true)
     expect(result.warnings.some((w) => w.includes('AppImageLauncher'))).toBe(true)
   })

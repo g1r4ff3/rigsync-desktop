@@ -30,7 +30,7 @@ export async function captureTools(
   if (ctx.role === 'follower') {
     throw new FollowerToolsCaptureBlockedError()
   }
-  if (!provider.npmNodeAvailable()) {
+  if (!(await provider.npmNodeAvailable())) {
     return {
       skipped: true,
       packagesInManifest: 0,
@@ -40,8 +40,8 @@ export async function captureTools(
     }
   }
 
-  const globals = provider.npmGlobals()
-  const nodeVersion = provider.nodeVersion()
+  const globals = await provider.npmGlobals()
+  const nodeVersion = await provider.nodeVersion()
   const existing = (readCommonLayer(ctx, TOOLS_LAYER) as ToolsManifest).packages ?? []
   const ignore = readIgnoreSet(ctx, 'tools', 'packages')
   const existingPackages = new Set(existing.filter((p) => !ignore.has(p)))

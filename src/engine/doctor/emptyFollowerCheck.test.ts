@@ -10,9 +10,9 @@ import { makeFakeGitTransportProvider } from '../transport/testHelpers'
 import { checkEmptyFollower } from './emptyFollowerCheck'
 
 describe('checkEmptyFollower', () => {
-  it('warns for a follower whose manifest is empty and has no remote (the real-world bug)', () => {
+  it('warns for a follower whose manifest is empty and has no remote (the real-world bug)', async () => {
     const fixture = makeFixture('follower')
-    const result = checkEmptyFollower(
+    const result = await checkEmptyFollower(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false })
     )
@@ -24,12 +24,12 @@ describe('checkEmptyFollower', () => {
     fixture.cleanup()
   })
 
-  it('warns for a follower with declarations but still no remote', () => {
+  it('warns for a follower with declarations but still no remote', async () => {
     const fixture = makeFixture('follower')
     writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
       entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file' }]
     })
-    const result = checkEmptyFollower(
+    const result = await checkEmptyFollower(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, hasRemote: false })
     )
@@ -39,12 +39,12 @@ describe('checkEmptyFollower', () => {
     fixture.cleanup()
   })
 
-  it('does not warn for a follower with declarations and a remote (healthy state)', () => {
+  it('does not warn for a follower with declarations and a remote (healthy state)', async () => {
     const fixture = makeFixture('follower')
     writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
       entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file' }]
     })
-    const result = checkEmptyFollower(
+    const result = await checkEmptyFollower(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, hasRemote: true })
     )
@@ -52,9 +52,9 @@ describe('checkEmptyFollower', () => {
     fixture.cleanup()
   })
 
-  it('does not warn for a reference machine with an empty manifest (normal pre-first-capture state)', () => {
+  it('does not warn for a reference machine with an empty manifest (normal pre-first-capture state)', async () => {
     const fixture = makeFixture('reference')
-    const result = checkEmptyFollower(
+    const result = await checkEmptyFollower(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: false, hasRemote: false })
     )

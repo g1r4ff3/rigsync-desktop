@@ -112,7 +112,7 @@ function makeInstallAction(
         }
       }
 
-      const fcCacheResult = systemProvider.runFcCache()
+      const fcCacheResult = await systemProvider.runFcCache()
       return {
         ok: fcCacheResult.ok,
         detail: fcCacheResult.ok
@@ -169,7 +169,7 @@ function makeFontUninstallAction(
           fs.unlinkSync(p)
         }
       }
-      const fcCacheResult = systemProvider.runFcCache()
+      const fcCacheResult = await systemProvider.runFcCache()
       return {
         ok: fcCacheResult.ok,
         detail: fcCacheResult.ok

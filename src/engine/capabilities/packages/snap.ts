@@ -30,7 +30,7 @@ export async function captureSnap(
   )
 
   let added = 0
-  for (const row of provider.list()) {
+  for (const row of await provider.list()) {
     if (ignore.has(row.name) || row.notes.includes('base')) continue
     const entry: SnapEntry = { name: row.name, classic: row.notes.includes('classic') }
     if (!existingMap.has(row.name)) added += 1
@@ -55,7 +55,7 @@ export async function diffSnap(
   const manifest = readEffectivePackages(ctx).snap ?? {}
   const manifestEntries = (manifest.snap ?? []).filter((s) => !ignore.has(s.name))
   const manifestNames = new Set(manifestEntries.map((s) => s.name))
-  const installed = new Set(provider.list().map((r) => r.name))
+  const installed = new Set((await provider.list()).map((r) => r.name))
 
   const toInstall = manifestEntries.filter((s) => !installed.has(s.name))
   const uncaptured = [...installed]

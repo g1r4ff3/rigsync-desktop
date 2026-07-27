@@ -27,13 +27,13 @@ export class LinuxDoctorSystemProvider implements DoctorSystemProvider {
     return fs.existsSync(expandedTarget) ? [expandedTarget] : []
   }
 
-  isAptPackageInstalled(pkg: string): boolean {
-    const result = run(['dpkg', '-s', pkg])
+  async isAptPackageInstalled(pkg: string): Promise<boolean> {
+    const result = await run(['dpkg', '-s', pkg])
     return result.code === 0
   }
 
-  runShellCmd(cmdString: string): ShellCheckResult {
-    const result = run(['bash', '-c', cmdString], 15_000)
+  async runShellCmd(cmdString: string): Promise<ShellCheckResult> {
+    const result = await run(['bash', '-c', cmdString], 15_000)
     return { code: result.code, combinedOutput: result.stdout + result.stderr }
   }
 }

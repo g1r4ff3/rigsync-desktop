@@ -6,18 +6,18 @@ import type { GitCommandResult, GitProvider } from '../../capabilities/repos/pro
 import { run } from './exec'
 
 export class LinuxGitProvider implements GitProvider {
-  remoteUrl(absPath: string): string {
-    const result = run(['git', '-C', absPath, 'config', '--get', 'remote.origin.url'])
+  async remoteUrl(absPath: string): Promise<string> {
+    const result = await run(['git', '-C', absPath, 'config', '--get', 'remote.origin.url'])
     return result.code === 0 ? result.stdout.trim() : ''
   }
 
-  branch(absPath: string): string {
-    const result = run(['git', '-C', absPath, 'symbolic-ref', '--short', 'HEAD'])
+  async branch(absPath: string): Promise<string> {
+    const result = await run(['git', '-C', absPath, 'symbolic-ref', '--short', 'HEAD'])
     return result.code === 0 ? result.stdout.trim() : ''
   }
 
-  clone(url: string, dest: string): GitCommandResult {
-    const result = run(['git', 'clone', url, dest], 600_000)
+  async clone(url: string, dest: string): Promise<GitCommandResult> {
+    const result = await run(['git', 'clone', url, dest], 600_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 }

@@ -42,8 +42,8 @@ export class LinuxSystemdUserProvider implements SystemdUserProvider {
     }
   }
 
-  isEnabled(name: string): boolean {
-    const result = run(['systemctl', '--user', 'is-enabled', name])
+  async isEnabled(name: string): Promise<boolean> {
+    const result = await run(['systemctl', '--user', 'is-enabled', name])
     return result.code === 0
   }
 
@@ -57,13 +57,13 @@ export class LinuxSystemdUserProvider implements SystemdUserProvider {
     }
   }
 
-  daemonReload(): ServiceCommandResult {
-    const result = run(['systemctl', '--user', 'daemon-reload'])
+  async daemonReload(): Promise<ServiceCommandResult> {
+    const result = await run(['systemctl', '--user', 'daemon-reload'])
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 
-  enable(name: string): ServiceCommandResult {
-    const result = run(['systemctl', '--user', 'enable', name])
+  async enable(name: string): Promise<ServiceCommandResult> {
+    const result = await run(['systemctl', '--user', 'enable', name])
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 }

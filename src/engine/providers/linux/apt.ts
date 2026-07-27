@@ -15,8 +15,8 @@ export class LinuxAptProvider implements AptProvider {
     return commandExists('apt-mark')
   }
 
-  manualInstalled(): string[] {
-    const result = run(['apt-mark', 'showmanual'])
+  async manualInstalled(): Promise<string[]> {
+    const result = await run(['apt-mark', 'showmanual'])
     if (result.code !== 0) return []
     return result.stdout
       .split('\n')
@@ -56,10 +56,10 @@ export class LinuxAptProvider implements AptProvider {
     }
   }
 
-  descriptions(names: readonly string[]): Readonly<Record<string, string>> {
+  async descriptions(names: readonly string[]): Promise<Readonly<Record<string, string>>> {
     if (names.length === 0) return {}
     // 배치 1회 호출 -- 이름마다 프로세스를 띄우지 않는다. 158개 실측 수십 ms.
-    const result = run(['apt-cache', 'show', ...names], 30_000)
+    const result = await run(['apt-cache', 'show', ...names], 30_000)
     if (result.code !== 0 && !result.stdout) return {}
     const out: Record<string, string> = {}
     let currentPackage: string | null = null
@@ -78,26 +78,26 @@ export class LinuxAptProvider implements AptProvider {
     return out
   }
 
-  removeDryRun(names: readonly string[]): string {
-    const result = run(['apt-get', 'remove', '--dry-run', ...names], 30_000)
+  async removeDryRun(names: readonly string[]): Promise<string> {
+    const result = await run(['apt-get', 'remove', '--dry-run', ...names], 30_000)
     return result.stdout + result.stderr
   }
 
-  policySourcesRaw(): string {
-    const result = run(['apt-cache', 'policy'], 30_000)
+  async policySourcesRaw(): Promise<string> {
+    const result = await run(['apt-cache', 'policy'], 30_000)
     return result.code === 0 ? result.stdout : ''
   }
 
-  policyPackagesRaw(names: readonly string[]): string {
+  async policyPackagesRaw(names: readonly string[]): Promise<string> {
     if (names.length === 0) return ''
     // 배치 1회 호출 -- 실측 159개 수십 ms.
-    const result = run(['apt-cache', 'policy', ...names], 30_000)
+    const result = await run(['apt-cache', 'policy', ...names], 30_000)
     return result.stdout
   }
 
-  dependsClosureRaw(metapackages: readonly string[]): string {
+  async dependsClosureRaw(metapackages: readonly string[]): Promise<string> {
     if (metapackages.length === 0) return ''
-    const result = run(
+    const result = await run(
       [
         'apt-cache',
         'depends',
@@ -115,20 +115,20 @@ export class LinuxAptProvider implements AptProvider {
     return result.code === 0 ? result.stdout : ''
   }
 
-  prioritiesRaw(): string {
-    const result = run(
+  async prioritiesRaw(): Promise<string> {
+    const result = await run(
       ['dpkg-query', '-W', '-f=${Package}\\t${Priority}\\t${db:Status-Status}\\n'],
       30_000
     )
     return result.code === 0 ? result.stdout : ''
   }
 
-  dpkgOwnsPaths(absPaths: readonly string[]): ReadonlySet<string> {
+  async dpkgOwnsPaths(absPaths: readonly string[]): Promise<ReadonlySet<string>> {
     if (absPaths.length === 0) return new Set()
     // 종료코드는 무시한다 -- 실기 확인(2026-07-27): 여러 경로 중 하나라도
     // 못 찾으면 전체 종료코드가 0이 아니게 된다("no path found matching
     // pattern" 이 stderr로만 나가고, 매치된 나머지는 그대로 stdout에 남는다).
-    const result = run(['dpkg', '-S', ...absPaths], 10_000)
+    const result = await run(['dpkg', '-S', ...absPaths], 10_000)
     return parseDpkgOwnedPaths(result.stdout)
   }
 }

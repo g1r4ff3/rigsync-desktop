@@ -57,7 +57,7 @@ export async function captureAppimage(
     throw new FollowerAppimageCaptureBlockedError()
   }
 
-  if (!provider.isAvailable()) {
+  if (!(await provider.isAvailable())) {
     return {
       skipped: true,
       capturedCount: 0,
@@ -72,7 +72,7 @@ export async function captureAppimage(
   const notes: string[] = []
   let added = 0
 
-  for (const row of provider.listInstalled()) {
+  for (const row of await provider.listInstalled()) {
     const config = provider.readAppConfig(row.path)
     const repo = config?.updateManager?.repo
     const repoFilename = config?.updateManager?.repoFilename

@@ -78,7 +78,7 @@ export async function captureServices(
       continue
     }
 
-    const enabled = provider.isEnabled(u.name)
+    const enabled = await provider.isEnabled(u.name)
     if (!options.dryRun) {
       fs.mkdirSync(outDir, { recursive: true })
       fs.writeFileSync(path.join(outDir, u.name), u.content)

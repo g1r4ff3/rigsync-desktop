@@ -9,8 +9,11 @@ import type {
 import { run } from './exec'
 
 export class LinuxBinariesSystemProvider implements BinariesSystemProvider {
-  runVersionCommand(binaryPath: string, versionArgs: readonly string[]): BinariesCommandResult {
-    const result = run([binaryPath, ...versionArgs], 10_000)
+  async runVersionCommand(
+    binaryPath: string,
+    versionArgs: readonly string[]
+  ): Promise<BinariesCommandResult> {
+    const result = await run([binaryPath, ...versionArgs], 10_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 }

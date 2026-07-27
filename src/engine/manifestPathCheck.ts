@@ -17,10 +17,10 @@ export interface ManifestPathCheckResult {
   readonly warnings: readonly string[]
 }
 
-export function checkExistingManifestPath(
+export async function checkExistingManifestPath(
   targetDir: string,
   gitProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote'>
-): ManifestPathCheckResult {
+): Promise<ManifestPathCheckResult> {
   const exists = fs.existsSync(targetDir)
   if (!exists) {
     return {
@@ -35,8 +35,8 @@ export function checkExistingManifestPath(
     }
   }
 
-  const isGitRepo = gitProvider.isGitRepo(targetDir)
-  const hasRemote = isGitRepo && gitProvider.hasRemote(targetDir)
+  const isGitRepo = await gitProvider.isGitRepo(targetDir)
+  const hasRemote = isGitRepo && (await gitProvider.hasRemote(targetDir))
   const hasManifestStructure = fs.existsSync(path.join(targetDir, 'common'))
 
   const warnings: string[] = []

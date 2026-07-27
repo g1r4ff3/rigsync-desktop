@@ -22,13 +22,14 @@ export interface EmptyFollowerCheckResult {
   readonly warning?: string
 }
 
-export function checkEmptyFollower(
+export async function checkEmptyFollower(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId' | 'profile' | 'role'>,
   gitProvider: Pick<GitTransportProvider, 'isGitRepo' | 'hasRemote'>
-): EmptyFollowerCheckResult {
+): Promise<EmptyFollowerCheckResult> {
   const applicable = ctx.role === 'follower'
   const declarationsTotal = countManifestDeclarations(ctx)
-  const hasRemote = gitProvider.isGitRepo(ctx.manifestDir) && gitProvider.hasRemote(ctx.manifestDir)
+  const hasRemote =
+    (await gitProvider.isGitRepo(ctx.manifestDir)) && (await gitProvider.hasRemote(ctx.manifestDir))
 
   if (!applicable || (declarationsTotal > 0 && hasRemote)) {
     return { applicable, declarationsTotal, hasRemote }

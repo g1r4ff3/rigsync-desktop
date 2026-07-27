@@ -6,45 +6,49 @@
 import type { GitChangedFile, GitCommandResult, GitTransportProvider } from '../../transport/types'
 import { run } from './exec'
 
-function git(dir: string, args: string[], timeoutMs = 30_000): { code: number; text: string } {
-  const result = run(['git', '-C', dir, ...args], timeoutMs)
+async function git(
+  dir: string,
+  args: string[],
+  timeoutMs = 30_000
+): Promise<{ code: number; text: string }> {
+  const result = await run(['git', '-C', dir, ...args], timeoutMs)
   return { code: result.code, text: result.stdout + result.stderr }
 }
 
 export class LinuxGitTransportProvider implements GitTransportProvider {
-  isGitRepo(dir: string): boolean {
-    return git(dir, ['rev-parse', '--is-inside-work-tree']).code === 0
+  async isGitRepo(dir: string): Promise<boolean> {
+    return (await git(dir, ['rev-parse', '--is-inside-work-tree'])).code === 0
   }
 
-  hasRemote(dir: string): boolean {
-    const result = git(dir, ['remote'])
+  async hasRemote(dir: string): Promise<boolean> {
+    const result = await git(dir, ['remote'])
     return result.code === 0 && result.text.trim().length > 0
   }
 
-  fetch(dir: string): GitCommandResult {
-    const result = git(dir, ['fetch', '--all'], 60_000)
+  async fetch(dir: string): Promise<GitCommandResult> {
+    const result = await git(dir, ['fetch', '--all'], 60_000)
     return { ok: result.code === 0, output: result.text }
   }
 
-  pullFastForward(dir: string): GitCommandResult {
-    const result = git(dir, ['pull', '--ff-only'], 60_000)
+  async pullFastForward(dir: string): Promise<GitCommandResult> {
+    const result = await git(dir, ['pull', '--ff-only'], 60_000)
     return { ok: result.code === 0, output: result.text }
   }
 
-  behindCount(dir: string): number {
-    const result = git(dir, ['rev-list', '--count', 'HEAD..@{u}'])
+  async behindCount(dir: string): Promise<number> {
+    const result = await git(dir, ['rev-list', '--count', 'HEAD..@{u}'])
     if (result.code !== 0) return 0
     const n = Number.parseInt(result.text.trim(), 10)
     return Number.isFinite(n) ? n : 0
   }
 
-  hasUncommittedChanges(dir: string): boolean {
-    const result = git(dir, ['status', '--porcelain'])
+  async hasUncommittedChanges(dir: string): Promise<boolean> {
+    const result = await git(dir, ['status', '--porcelain'])
     return result.code === 0 && result.text.trim().length > 0
   }
 
-  changedFiles(dir: string): readonly GitChangedFile[] {
-    const result = git(dir, ['status', '--porcelain'])
+  async changedFiles(dir: string): Promise<readonly GitChangedFile[]> {
+    const result = await git(dir, ['status', '--porcelain'])
     if (result.code !== 0) return []
     return result.text
       .split('\n')
@@ -59,23 +63,24 @@ export class LinuxGitTransportProvider implements GitTransportProvider {
       })
   }
 
-  addAllAndCommit(dir: string, message: string): GitCommandResult {
-    const add = git(dir, ['add', '-A'])
+  async addAllAndCommit(dir: string, message: string): Promise<GitCommandResult> {
+    // 순차 의존 -- add가 성공해야 commit이 의미 있다(순서 파괴 금지).
+    const add = await git(dir, ['add', '-A'])
     if (add.code !== 0) return { ok: false, output: add.text }
-    const commit = git(dir, ['commit', '-m', message])
+    const commit = await git(dir, ['commit', '-m', message])
     return { ok: commit.code === 0, output: commit.text }
   }
 
-  push(dir: string): GitCommandResult {
-    const result = git(dir, ['push'], 60_000)
+  async push(dir: string): Promise<GitCommandResult> {
+    const result = await git(dir, ['push'], 60_000)
     return { ok: result.code === 0, output: result.text }
   }
 
-  cloneManifest(url: string, targetDir: string): GitCommandResult {
+  async cloneManifest(url: string, targetDir: string): Promise<GitCommandResult> {
     // `targetDir`이 아직 없어 `git -C targetDir ...`(다른 메서드들의 공용
     // helper)를 쓸 수 없다 -- clone 자체가 그 디렉터리를 만드는 명령이라
     // run()을 직접 호출한다.
-    const result = run(['git', 'clone', url, targetDir], 120_000)
+    const result = await run(['git', 'clone', url, targetDir], 120_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 }

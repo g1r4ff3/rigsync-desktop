@@ -80,12 +80,12 @@ function unsupportedReason(capability: string): string {
  * 전부를 한 번에 넘기므로 별도 배치 로직이 필요 없다 — `planAptUninstall`이
  * 내부에서 합친다).
  */
-export function planUninstall(
+export async function planUninstall(
   ctx: RigsyncContext,
   providers: UninstallProviders,
   items: readonly UninstallItemRequest[],
   runTs: string
-): UninstallPlanResult {
+): Promise<UninstallPlanResult> {
   const keysByCapability = new Map<string, string[]>()
   for (const item of items) {
     const list = keysByCapability.get(item.capability)
@@ -104,13 +104,13 @@ export function planUninstall(
         result = planDotfilesUninstall(ctx, keys, runTs)
         break
       case 'apt': {
-        const aptResult = planAptUninstall(ctx, providers.apt, keys)
+        const aptResult = await planAptUninstall(ctx, providers.apt, keys)
         result = aptResult
         if (aptResult.dependencies) aptDependencies = aptResult.dependencies
         break
       }
       case 'flatpak':
-        result = planFlatpakUninstall(ctx, providers.flatpak, keys)
+        result = await planFlatpakUninstall(ctx, providers.flatpak, keys)
         break
       case 'binaries':
         result = planBinariesUninstall(ctx, keys, runTs)

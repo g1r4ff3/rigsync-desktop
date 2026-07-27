@@ -31,16 +31,16 @@ export function versionAtLeast(version: string, min: string): boolean {
   return true
 }
 
-export function checkAppimagePreflight(
+export async function checkAppimagePreflight(
   provider: GearLeverProvider,
   systemCheck: AppimageSystemCheckProvider
-): AppimagePreflightCheck {
-  const gearLeverInstalled = provider.isAvailable()
-  const version = gearLeverInstalled ? provider.version() : null
+): Promise<AppimagePreflightCheck> {
+  const gearLeverInstalled = await provider.isAvailable()
+  const version = gearLeverInstalled ? await provider.version() : null
   const gearLeverVersionOk = version ? versionAtLeast(version, MIN_GEARLEVER_VERSION) : null
 
-  const libfuse2t64Installed = systemCheck.isPackageInstalled('libfuse2t64')
-  const appImageLauncherPresent = systemCheck.isPackageInstalled('appimagelauncher')
+  const libfuse2t64Installed = await systemCheck.isPackageInstalled('libfuse2t64')
+  const appImageLauncherPresent = await systemCheck.isPackageInstalled('appimagelauncher')
 
   const warnings: string[] = []
   if (!gearLeverInstalled) {

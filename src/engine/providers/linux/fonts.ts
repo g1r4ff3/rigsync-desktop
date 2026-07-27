@@ -18,8 +18,8 @@ export class LinuxFontsSystemProvider implements FontsSystemProvider {
     return commandExists('fc-list')
   }
 
-  runFcCache(): FontsSystemCommandResult {
-    const result = run(['fc-cache', '-f'], 30_000)
+  async runFcCache(): Promise<FontsSystemCommandResult> {
+    const result = await run(['fc-cache', '-f'], 30_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 }

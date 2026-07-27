@@ -13,18 +13,20 @@
  * `[ -s "$NVM_DIR/nvm.sh" ] && .`가 조용히 no-op돼 기존과 동일하게 상속받은
  * PATH로 폴백한다(빈 결과가 나오되 에러는 아니다).
  */
-import { spawnSync } from 'node:child_process'
 import { NVM_SOURCE } from '../../capabilities/tools/constants'
 import type { ToolsCommandResult, ToolsProvider } from '../../capabilities/tools/providerTypes'
+import { run } from './exec'
 
 export class LinuxToolsProvider implements ToolsProvider {
-  npmNodeAvailable(): boolean {
-    const result = runInToolEnv('command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1')
+  async npmNodeAvailable(): Promise<boolean> {
+    const result = await runInToolEnv(
+      'command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1'
+    )
     return result.code === 0
   }
 
-  npmGlobals(): Record<string, string> {
-    const result = runInToolEnv('npm ls -g --depth=0 --json', 30_000)
+  async npmGlobals(): Promise<Record<string, string>> {
+    const result = await runInToolEnv('npm ls -g --depth=0 --json', 30_000)
     if (!result.stdout.trim()) return {}
     try {
       const data = JSON.parse(result.stdout) as {
@@ -42,24 +44,24 @@ export class LinuxToolsProvider implements ToolsProvider {
     }
   }
 
-  nodeVersion(): string {
-    const result = runInToolEnv('node --version')
+  async nodeVersion(): Promise<string> {
+    const result = await runInToolEnv('node --version')
     return result.stdout.trim()
   }
 
-  installNvm(nvmVersion: string): ToolsCommandResult {
+  async installNvm(nvmVersion: string): Promise<ToolsCommandResult> {
     const url = `https://raw.githubusercontent.com/nvm-sh/nvm/${nvmVersion}/install.sh`
     return runBash(`curl -o- ${url} | bash`, 600_000)
   }
 
-  installNodeAndSetDefault(nodeVersion: string): ToolsCommandResult {
+  async installNodeAndSetDefault(nodeVersion: string): Promise<ToolsCommandResult> {
     return runBash(
       `${NVM_SOURCE}; nvm install ${nodeVersion} && nvm alias default ${nodeVersion}`,
       1_200_000
     )
   }
 
-  installGlobalPackage(pkg: string): ToolsCommandResult {
+  async installGlobalPackage(pkg: string): Promise<ToolsCommandResult> {
     return runBash(`${NVM_SOURCE}; npm install -g ${pkg}`, 300_000)
   }
 }
@@ -75,24 +77,14 @@ interface ToolEnvResult {
  * 것과 동일한 환경. 실행 자체가 안 되거나(ENOENT 등) 타임아웃 나도 조용히
  * 실패로 돌린다(호출부가 각자 빈 결과/false로 해석).
  */
-function runInToolEnv(cmd: string, timeoutMs = 20_000): ToolEnvResult {
-  const result = spawnSync('bash', ['-c', `${NVM_SOURCE}; ${cmd}`], {
-    encoding: 'utf-8',
-    timeout: timeoutMs
-  })
-  if (result.error) {
-    return { code: 1, stdout: '', stderr: result.error.message }
-  }
-  if (result.signal) {
-    return { code: 124, stdout: result.stdout ?? '', stderr: 'timeout' }
-  }
-  return { code: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+async function runInToolEnv(cmd: string, timeoutMs = 20_000): Promise<ToolEnvResult> {
+  return run(['bash', '-c', `${NVM_SOURCE}; ${cmd}`], timeoutMs)
 }
 
-function runBash(cmd: string, timeoutMs: number): ToolsCommandResult {
-  const result = spawnSync('bash', ['-c', cmd], { encoding: 'utf-8', timeout: timeoutMs })
-  const output = ((result.stdout ?? '') + (result.stderr ?? '')).slice(-2000)
-  if (result.error || result.status !== 0) {
+async function runBash(cmd: string, timeoutMs: number): Promise<ToolsCommandResult> {
+  const result = await run(['bash', '-c', cmd], timeoutMs)
+  const output = (result.stdout + result.stderr).slice(-2000)
+  if (result.code !== 0) {
     return { ok: false, output }
   }
   return { ok: true, output }

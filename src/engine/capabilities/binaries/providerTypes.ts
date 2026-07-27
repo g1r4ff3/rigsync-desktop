@@ -3,7 +3,11 @@
  * 건드리는 유일한 통로 — fonts capability와 동일 원칙: 실제 구현은
  * `src/engine/providers/linux/`, 테스트는 여기 인터페이스를 fake로 주입한다.
  * capture/diff/plan은 항상 이 인터페이스들 뒤에서만 시스템에 접근한다.
+ *
+ * perf 3라운드(providers 비동기화): `runVersionCommand`는 실제 바이너리를
+ * spawn하므로 `MaybePromise<T>`(`src/engine/async.ts`)를 돌려준다.
  */
+import type { MaybePromise } from '../../async'
 
 export interface BinaryReleaseAsset {
   readonly name: string
@@ -73,13 +77,13 @@ export interface TarExtractor {
     tarPath: string,
     destDir: string,
     filter: (entryName: string) => boolean
-  ): TarExtractResult
+  ): MaybePromise<TarExtractResult>
   /** tarPath(.tar.bz2) 안에서 `filter(entryFileName)`이 true인 엔트리만 destDir에 추출한다. */
   extractBz2(
     tarPath: string,
     destDir: string,
     filter: (entryName: string) => boolean
-  ): TarExtractResult
+  ): MaybePromise<TarExtractResult>
 }
 
 export interface BinariesCommandResult {
@@ -90,5 +94,8 @@ export interface BinariesCommandResult {
 /** 설치된 실행파일의 버전 확인 — diff의 pinMismatch 판정에 쓰인다. */
 export interface BinariesSystemProvider {
   /** binaryPath를 versionArgs로 실행해 결합 출력(stdout+stderr)을 돌려준다. 실행 자체가 실패하면 ok=false. */
-  runVersionCommand(binaryPath: string, versionArgs: readonly string[]): BinariesCommandResult
+  runVersionCommand(
+    binaryPath: string,
+    versionArgs: readonly string[]
+  ): MaybePromise<BinariesCommandResult>
 }

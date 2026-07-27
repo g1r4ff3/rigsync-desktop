@@ -48,7 +48,7 @@ export async function captureScheduled(
     }
   }
 
-  const tab = provider.readCrontab()
+  const tab = await provider.readCrontab()
   if (tab === null) {
     return {
       skipped: false,

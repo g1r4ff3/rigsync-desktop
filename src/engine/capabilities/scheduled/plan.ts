@@ -27,14 +27,14 @@ export function planScheduled(
       commands: [`crontab ${storedPath}`],
       privileged: false,
       run: async () => {
-        const live = provider.readCrontab()
+        const live = await provider.readCrontab()
         if (live !== null) {
           const backupPath = path.join(ctx.backupRoot, runTs, 'scheduled', 'crontab.txt')
           fs.mkdirSync(path.dirname(backupPath), { recursive: true })
           fs.writeFileSync(backupPath, live)
         }
         const storedContent = fs.readFileSync(storedPath, 'utf-8')
-        const result = provider.writeCrontab(storedContent)
+        const result = await provider.writeCrontab(storedContent)
         return {
           ok: result.ok,
           detail: result.output || (result.ok ? 'crontab restored' : '복원 실패')

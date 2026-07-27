@@ -39,7 +39,7 @@ export async function diffBinaries(
       const def = getKnownBinaryDefinition(entry.name)
       if (def) {
         for (const binaryName of entry.binaries) {
-          const result = systemProvider.runVersionCommand(
+          const result = await systemProvider.runVersionCommand(
             path.join(dir, binaryName),
             def.versionArgs
           )

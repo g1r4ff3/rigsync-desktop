@@ -15,14 +15,14 @@ export async function diffAppimage(
   ctx: RigsyncContext,
   provider: GearLeverProvider
 ): Promise<AppimageDiffReport> {
-  if (!provider.isAvailable()) {
+  if (!(await provider.isAvailable())) {
     return { skipped: true, toInstall: [], pinMismatch: [], unsupportedSource: [], uncaptured: [] }
   }
 
   const manifest =
     (effectiveLayer(ctx, APPIMAGE_LAYER, APPIMAGE_KEY_FIELDS).app as AppimageEntry[] | undefined) ??
     []
-  const installedRows = provider.listInstalled()
+  const installedRows = await provider.listInstalled()
   const installedByDesktopId = new Map(installedRows.map((r) => [r.desktopId, r]))
   const manifestNames = new Set(manifest.map((e) => e.name))
 

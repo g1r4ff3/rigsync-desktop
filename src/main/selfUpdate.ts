@@ -24,6 +24,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import type { MaybePromise } from '../engine/async'
 import type {
   GearLeverAppConfig,
   GearLeverCommandResult
@@ -101,13 +102,13 @@ export function decideSelfRegistration(input: {
 export interface SelfRegistrationDeps {
   /** `process.env.APPIMAGE` -- 호출부가 읽어서 넘긴다(이 파일은 process.env를 직접 읽지 않는다). */
   readonly appImagePath: string | null
-  readonly isGearLeverAvailable: () => boolean
+  readonly isGearLeverAvailable: () => MaybePromise<boolean>
   readonly readAppConfig: (appImagePath: string) => GearLeverAppConfig | null
   readonly setUpdateSource: (
     appImagePath: string,
     manager: UpdateManagerModel,
     params: Readonly<Record<string, string>>
-  ) => GearLeverCommandResult
+  ) => MaybePromise<GearLeverCommandResult>
   readonly readState: () => SelfUpdateState | null
   readonly writeState: (state: SelfUpdateState) => void
   readonly now?: () => Date
@@ -119,14 +120,14 @@ export interface SelfRegistrationDeps {
  * `setUpdateSource`를 부른 뒤 성공/실패 무관하게 상태를 기록한다. 예외는
  * 여기서 전부 삼킨다(기동을 막지 않는다는 명세).
  */
-export function attemptSelfUpdateRegistration(
+export async function attemptSelfUpdateRegistration(
   deps: SelfRegistrationDeps
-): SelfRegistrationDecision {
+): Promise<SelfRegistrationDecision> {
   const log = deps.log ?? ((message: string): void => console.log(message))
   try {
     const state = deps.readState()
     const alreadyAttempted = state?.attempted === true
-    const gearLeverAvailable = deps.appImagePath ? deps.isGearLeverAvailable() : false
+    const gearLeverAvailable = deps.appImagePath ? await deps.isGearLeverAvailable() : false
     const existingConfig =
       deps.appImagePath && gearLeverAvailable ? deps.readAppConfig(deps.appImagePath) : null
 
@@ -147,7 +148,7 @@ export function attemptSelfUpdateRegistration(
     // deps.appImagePath는 decideSelfRegistration이 'attempt'를 반환했다는
     // 것만으로 non-null임이 보장된다(첫 분기가 null을 걸러낸다) -- TS 좁히기용.
     const appImagePath = deps.appImagePath as string
-    const result = deps.setUpdateSource(appImagePath, 'GithubUpdater', {
+    const result = await deps.setUpdateSource(appImagePath, 'GithubUpdater', {
       repo: `${SELF_UPDATE_SOURCE_OWNER}/${SELF_UPDATE_SOURCE_REPO}`,
       repo_filename: SELF_UPDATE_REPO_FILENAME_GLOB,
       allow_prereleases: 'false'

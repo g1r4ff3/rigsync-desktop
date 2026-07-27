@@ -8,9 +8,9 @@ import { makeFakeGitTransportProvider } from '../transport/testHelpers'
 import { checkManifestDirty } from './manifestDirtyCheck'
 
 describe('checkManifestDirty', () => {
-  it('is clean when the manifest dir is not a git repo', () => {
+  it('is clean when the manifest dir is not a git repo', async () => {
     const fixture = makeFixture('reference')
-    const result = checkManifestDirty(
+    const result = await checkManifestDirty(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: false })
     )
@@ -18,9 +18,9 @@ describe('checkManifestDirty', () => {
     fixture.cleanup()
   })
 
-  it('is clean when the git repo has no changed files', () => {
+  it('is clean when the git repo has no changed files', async () => {
     const fixture = makeFixture('reference')
-    const result = checkManifestDirty(
+    const result = await checkManifestDirty(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, changedFiles: [] })
     )
@@ -30,13 +30,13 @@ describe('checkManifestDirty', () => {
     fixture.cleanup()
   })
 
-  it('warns for a dirty follower manifest (F3 병인) and lists the changed files', () => {
+  it('warns for a dirty follower manifest (F3 병인) and lists the changed files', async () => {
     const fixture = makeFixture('follower')
     const files = [
       { status: ' M', path: 'dotfiles/.zshrc' },
       { status: '??', path: 'dotfiles/.newfile' }
     ]
-    const result = checkManifestDirty(
+    const result = await checkManifestDirty(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, changedFiles: files })
     )
@@ -49,10 +49,10 @@ describe('checkManifestDirty', () => {
     fixture.cleanup()
   })
 
-  it('gives a neutral note (not a warning) for a dirty reference manifest', () => {
+  it('gives a neutral note (not a warning) for a dirty reference manifest', async () => {
     const fixture = makeFixture('reference')
     const files = [{ status: ' M', path: 'dotfiles/.zshrc' }]
-    const result = checkManifestDirty(
+    const result = await checkManifestDirty(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, changedFiles: files })
     )
@@ -63,10 +63,10 @@ describe('checkManifestDirty', () => {
     fixture.cleanup()
   })
 
-  it('truncates the file list in the message to the first 5 entries', () => {
+  it('truncates the file list in the message to the first 5 entries', async () => {
     const fixture = makeFixture('follower')
     const files = Array.from({ length: 7 }, (_, i) => ({ status: ' M', path: `f${i}.toml` }))
-    const result = checkManifestDirty(
+    const result = await checkManifestDirty(
       fixture.ctx,
       makeFakeGitTransportProvider({ isGitRepo: true, changedFiles: files })
     )

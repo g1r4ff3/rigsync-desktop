@@ -6,8 +6,8 @@ import type { AppimageSystemCheckProvider } from '../../capabilities/appimage/pr
 import { run } from './exec'
 
 export class DpkgSystemCheckProvider implements AppimageSystemCheckProvider {
-  isPackageInstalled(debPackageName: string): boolean {
-    const result = run(['dpkg', '-s', debPackageName])
+  async isPackageInstalled(debPackageName: string): Promise<boolean> {
+    const result = await run(['dpkg', '-s', debPackageName])
     return result.code === 0
   }
 }

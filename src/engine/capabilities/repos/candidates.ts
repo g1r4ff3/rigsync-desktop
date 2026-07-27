@@ -5,7 +5,7 @@
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
-import type { SyncItemGroup } from '../../syncItems'
+import type { SyncItem, SyncItemGroup } from '../../syncItems'
 import { scanGitDirsDepth1, isGitWorktree } from './capture'
 import { contractHome, expandHome } from '../../paths'
 import { REPOS_KEY_FIELDS, REPOS_LAYER } from './constants'
@@ -32,20 +32,20 @@ export async function buildReposSyncGroup(
   // R6 R2: managed 항목은 이미 manifest에 remote URL이 있으니 재조회 없이 그대로
   // 쓴다. live/후보 항목만 git으로 원격 URL을 물어본다(개수가 적어 배치가
   // 필요 없다 -- apt처럼 수백 개가 아니다). 빈 문자열(원격 없음)은 표시할
-  // 설명이 없다는 뜻이라 undefined로 접는다.
-  return {
-    capability: 'repos',
-    title: 'repos',
-    items: names.map((name) => {
-      const url =
-        managedEntries.get(name)?.url ?? gitProvider.remoteUrl(expandHome(ctx, name)) ?? ''
-      return {
-        key: name,
-        label: name,
-        managed: managedSet.has(name),
-        ignored: ignore.has(name),
-        description: url || undefined
-      }
+  // 설명이 없다는 뜻이라 undefined로 접는다. 순차 조회 유지(새 병렬화를
+  // 발명하지 않는다 -- perf 3라운드 원칙).
+  const items: SyncItem[] = []
+  for (const name of names) {
+    const managedUrl = managedEntries.get(name)?.url
+    const url = managedUrl ?? (await gitProvider.remoteUrl(expandHome(ctx, name))) ?? ''
+    items.push({
+      key: name,
+      label: name,
+      managed: managedSet.has(name),
+      ignored: ignore.has(name),
+      description: url || undefined
     })
   }
+
+  return { capability: 'repos', title: 'repos', items }
 }

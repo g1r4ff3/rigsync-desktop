@@ -29,9 +29,9 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
     return commandExists('flatpak')
   }
 
-  remotes(): FlatpakRemoteRow[] {
+  async remotes(): Promise<FlatpakRemoteRow[]> {
     if (!this.isAvailable()) return []
-    const result = run(['flatpak', 'remotes', '--columns=name,url'])
+    const result = await run(['flatpak', 'remotes', '--columns=name,url'])
     if (result.code !== 0) return []
     const out: FlatpakRemoteRow[] = []
     for (const line of result.stdout.split('\n')) {
@@ -43,9 +43,14 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
     return out
   }
 
-  apps(): FlatpakAppRow[] {
+  async apps(): Promise<FlatpakAppRow[]> {
     if (!this.isAvailable()) return []
-    const result = run(['flatpak', 'list', '--app', '--columns=application,origin,installation'])
+    const result = await run([
+      'flatpak',
+      'list',
+      '--app',
+      '--columns=application,origin,installation'
+    ])
     if (result.code !== 0) return []
     const out: FlatpakAppRow[] = []
     for (const line of result.stdout.split('\n')) {
@@ -63,9 +68,9 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
     return out
   }
 
-  appDetails(): Readonly<Record<string, FlatpakAppDetail>> {
+  async appDetails(): Promise<Readonly<Record<string, FlatpakAppDetail>>> {
     if (!this.isAvailable()) return {}
-    const result = run(['flatpak', 'list', '--app', '--columns=application,name,description'])
+    const result = await run(['flatpak', 'list', '--app', '--columns=application,name,description'])
     if (result.code !== 0) return {}
     const out: Record<string, FlatpakAppDetail> = {}
     for (const line of result.stdout.split('\n')) {
@@ -77,18 +82,21 @@ export class LinuxFlatpakProvider implements FlatpakProvider {
     return out
   }
 
-  addRemoteUser(name: string, url: string): FlatpakCommandResult {
-    const result = run(['flatpak', 'remote-add', '--user', '--if-not-exists', name, url], 120_000)
+  async addRemoteUser(name: string, url: string): Promise<FlatpakCommandResult> {
+    const result = await run(
+      ['flatpak', 'remote-add', '--user', '--if-not-exists', name, url],
+      120_000
+    )
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 
-  installAppUser(origin: string, application: string): FlatpakCommandResult {
-    const result = run(['flatpak', 'install', '--user', '-y', origin, application], 1_800_000)
+  async installAppUser(origin: string, application: string): Promise<FlatpakCommandResult> {
+    const result = await run(['flatpak', 'install', '--user', '-y', origin, application], 1_800_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 
-  uninstallAppUser(application: string): FlatpakCommandResult {
-    const result = run(['flatpak', 'uninstall', '--user', '-y', application], 300_000)
+  async uninstallAppUser(application: string): Promise<FlatpakCommandResult> {
+    const result = await run(['flatpak', 'uninstall', '--user', '-y', application], 300_000)
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 

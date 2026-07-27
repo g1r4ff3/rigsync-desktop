@@ -69,11 +69,11 @@ export async function captureFlatpak(
   let addedRemotes = 0
   let addedApps = 0
   let addedOverrides = 0
-  for (const r of provider.remotes()) {
+  for (const r of await provider.remotes()) {
     if (!remotes.has(r.name)) addedRemotes += 1
     remotes.set(r.name, r)
   }
-  for (const a of provider.apps()) {
+  for (const a of await provider.apps()) {
     if (ignoreApps.has(a.application)) continue
     if (!apps.has(a.application)) addedApps += 1
     apps.set(a.application, a)
@@ -125,8 +125,8 @@ export async function diffFlatpak(
 
   const ignoreApps = readIgnoreSet(ctx, 'flatpak', 'apps')
   const manifest = readEffectivePackages(ctx).flatpak ?? {}
-  const liveRemotes = new Set(provider.remotes().map((r) => r.name))
-  const liveApps = provider.apps()
+  const liveRemotes = new Set((await provider.remotes()).map((r) => r.name))
+  const liveApps = await provider.apps()
   const liveAppNames = new Set(liveApps.map((a) => a.application))
   const manifestAppNames = new Set((manifest.app ?? []).map((a) => a.application))
 
@@ -239,7 +239,7 @@ export function planFlatpak(
       commands: [`flatpak remote-add --user --if-not-exists ${r.name} ${addRef}`],
       privileged: false,
       run: async () => {
-        const result = provider.addRemoteUser(r.name, addRef)
+        const result = await provider.addRemoteUser(r.name, addRef)
         return { ok: result.ok, detail: result.output }
       }
     })
@@ -252,7 +252,7 @@ export function planFlatpak(
       commands: [`flatpak install --user -y ${a.origin} ${a.application}`],
       privileged: false,
       run: async () => {
-        const result = provider.installAppUser(a.origin, a.application)
+        const result = await provider.installAppUser(a.origin, a.application)
         return { ok: result.ok, detail: result.output }
       }
     })
@@ -275,11 +275,11 @@ export function planFlatpak(
  * unprivileged로 실제 실행되며(install과 대칭), apt와 달리 개별 app마다
  * 별도 액션이다(코디네이터 지시 — apt만 한 명령으로 묶는다).
  */
-export function planFlatpakUninstall(
+export async function planFlatpakUninstall(
   ctx: RigsyncContext,
   provider: FlatpakProvider,
   requestedAppIds: readonly string[]
-): CapabilityUninstallResult {
+): Promise<CapabilityUninstallResult> {
   if (!provider.isAvailable()) {
     return {
       actions: [],
@@ -294,7 +294,7 @@ export function planFlatpakUninstall(
   const manifest = readEffectivePackages(ctx).flatpak ?? {}
   const managedSet = new Set((manifest.app ?? []).map((a) => a.application))
   const ignore = readIgnoreSet(ctx, 'flatpak', 'apps')
-  const installedSet = new Set(provider.apps().map((a) => a.application))
+  const installedSet = new Set((await provider.apps()).map((a) => a.application))
 
   const actions: PlanAction[] = []
   const excluded: UninstallExclusion[] = []
@@ -326,7 +326,7 @@ export function planFlatpakUninstall(
       commands: [`flatpak uninstall --user -y ${appId}`],
       privileged: false,
       run: async () => {
-        const result = provider.uninstallAppUser(appId)
+        const result = await provider.uninstallAppUser(appId)
         return { ok: result.ok, detail: result.output }
       }
     })

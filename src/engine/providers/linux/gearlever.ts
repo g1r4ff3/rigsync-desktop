@@ -41,14 +41,14 @@ function toBooleanIni(value: string | undefined): boolean | undefined {
 }
 
 export class LinuxGearLeverProvider implements GearLeverProvider {
-  isAvailable(): boolean {
+  async isAvailable(): Promise<boolean> {
     if (!commandExists('flatpak')) return false
-    const result = run(['flatpak', 'info', GEARLEVER_APP_ID])
+    const result = await run(['flatpak', 'info', GEARLEVER_APP_ID])
     return result.code === 0
   }
 
-  version(): string | null {
-    const result = run(['flatpak', 'list', '--app', '--columns=application,version'])
+  async version(): Promise<string | null> {
+    const result = await run(['flatpak', 'list', '--app', '--columns=application,version'])
     if (result.code !== 0) return null
     for (const line of result.stdout.split('\n')) {
       const [app, ver] = line.split('\t')
@@ -57,9 +57,12 @@ export class LinuxGearLeverProvider implements GearLeverProvider {
     return null
   }
 
-  listInstalled(): GearLeverInstalledRow[] {
+  async listInstalled(): Promise<GearLeverInstalledRow[]> {
     // --json은 --help에 안 나오는 숨은 플래그 (FORWARD.md §7 실측).
-    const result = run(['flatpak', 'run', GEARLEVER_APP_ID, '--list-installed', '--json'], 30_000)
+    const result = await run(
+      ['flatpak', 'run', GEARLEVER_APP_ID, '--list-installed', '--json'],
+      30_000
+    )
     if (result.code !== 0) return []
     try {
       const parsed = JSON.parse(result.stdout) as { installed?: RawInstalledRow[] }
@@ -101,21 +104,21 @@ export class LinuxGearLeverProvider implements GearLeverProvider {
     }
   }
 
-  integrate(appImagePath: string): GearLeverCommandResult {
-    const result = run(
+  async integrate(appImagePath: string): Promise<GearLeverCommandResult> {
+    const result = await run(
       ['flatpak', 'run', GEARLEVER_APP_ID, '--integrate', appImagePath, '--yes'],
       60_000
     )
     return { ok: result.code === 0, output: result.stdout + result.stderr }
   }
 
-  setUpdateSource(
+  async setUpdateSource(
     appImagePath: string,
     manager: UpdateManagerModel,
     params: Readonly<Record<string, string>>
-  ): GearLeverCommandResult {
+  ): Promise<GearLeverCommandResult> {
     const kvArgs = Object.entries(params).map(([k, v]) => `${k}=${v}`)
-    const result = run(
+    const result = await run(
       [
         'flatpak',
         'run',

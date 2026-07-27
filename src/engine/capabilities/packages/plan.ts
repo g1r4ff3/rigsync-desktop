@@ -11,14 +11,15 @@ import { planFlatpak } from './flatpak'
 import type { PackageProviders } from './providerTypes'
 import type { PackagesDiffReport } from './types'
 
-export function planPackages(
+export async function planPackages(
   ctx: RigsyncContext,
   providers: PackageProviders,
   diff: PackagesDiffReport,
   runTs: string
-): PlanAction[] {
-  return [
-    ...planApt(ctx, providers.apt, diff.apt),
-    ...planFlatpak(ctx, providers.flatpak, diff.flatpak, runTs)
-  ]
+): Promise<PlanAction[]> {
+  // 순차 유지 -- 원래도 순차 평가였다(병렬화는 상위 diff 단계에서만, 이
+  // 라운드에서 새 병렬화를 발명하지 않는다는 perf 3라운드 원칙).
+  const apt = await planApt(ctx, providers.apt, diff.apt)
+  const flatpak = await planFlatpak(ctx, providers.flatpak, diff.flatpak, runTs)
+  return [...apt, ...flatpak]
 }

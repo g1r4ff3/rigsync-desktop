@@ -129,18 +129,18 @@ export function parseInstalledPriorities(raw: string): Map<string, string> {
  * 규칙 4(기본값 사용자)로 떨어진다 — "보이지 않는 필터링 금지"(스펙 판단
  * 원칙 2)의 안전한 실패 방향: 숨기는 쪽이 아니라 다 보여주는 쪽으로 실패한다.
  */
-export function classifyAptPackages(
+export async function classifyAptPackages(
   provider: AptProvider,
   names: readonly string[]
-): Map<string, AptPackageClass> {
+): Promise<Map<string, AptPackageClass>> {
   const result = new Map<string, AptPackageClass>()
   if (names.length === 0) return result
 
-  const priorities = parseInstalledPriorities(provider.prioritiesRaw())
+  const priorities = parseInstalledPriorities(await provider.prioritiesRaw())
   const metapackages = [...priorities.keys()].filter((p) => DISTRO_METAPACKAGE_RE.test(p)).sort()
-  const closure = parseDependsClosure(provider.dependsClosureRaw(metapackages))
-  const sourceOrigins = parsePolicySources(provider.policySourcesRaw())
-  const packageSources = parsePolicyPackages(provider.policyPackagesRaw(names))
+  const closure = parseDependsClosure(await provider.dependsClosureRaw(metapackages))
+  const sourceOrigins = parsePolicySources(await provider.policySourcesRaw())
+  const packageSources = parsePolicyPackages(await provider.policyPackagesRaw(names))
 
   for (const name of names) {
     const sources = packageSources.get(name) ?? []

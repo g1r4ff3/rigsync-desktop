@@ -137,7 +137,7 @@ describe('captureApt / diffApt / planApt', () => {
     )
     const provider = makeFakeAptProvider({ manual: [] })
     const diff = await diffApt(fixture.ctx, provider)
-    const actions = planApt(fixture.ctx, provider, diff)
+    const actions = await planApt(fixture.ctx, provider, diff)
 
     const summaries = actions.map((a) => a.summary)
     expect(summaries).toEqual([
@@ -156,7 +156,7 @@ describe('captureApt / diffApt / planApt', () => {
       sourcesMissing: [],
       sourcesContentChanged: []
     }
-    const actions = planApt(fixture.ctx, provider, diff)
+    const actions = await planApt(fixture.ctx, provider, diff)
     expect(actions).toHaveLength(1)
     expect(actions[0].privileged).toBe(true)
     expect(actions[0].commands[0]).toBe('sudo apt-get install -y git curl')
@@ -173,7 +173,7 @@ describe('captureApt / diffApt / planApt', () => {
       process.env.PATH = originalPath ?? ''
     })
 
-    it('warns when a same-named executable exists on PATH and is not dpkg-owned', () => {
+    it('warns when a same-named executable exists on PATH and is not dpkg-owned', async () => {
       process.env.PATH = '/fake/bin'
       const provider = makeFakeAptProvider({
         manual: [],
@@ -187,7 +187,7 @@ describe('captureApt / diffApt / planApt', () => {
         sourcesMissing: [],
         sourcesContentChanged: []
       }
-      const actions = planApt(fixture.ctx, provider, diff)
+      const actions = await planApt(fixture.ctx, provider, diff)
       expect(actions).toHaveLength(1)
       expect(actions[0].commands).toHaveLength(2)
       expect(actions[0].commands[1]).toContain('/fake/bin/rclone')
@@ -195,7 +195,7 @@ describe('captureApt / diffApt / planApt', () => {
       expect(actions[0].commands[1]).toContain('dpkg 밖')
     })
 
-    it('does not warn when the same-named PATH executable is dpkg-owned', () => {
+    it('does not warn when the same-named PATH executable is dpkg-owned', async () => {
       process.env.PATH = '/fake/bin'
       const provider = makeFakeAptProvider({
         manual: [],
@@ -209,12 +209,12 @@ describe('captureApt / diffApt / planApt', () => {
         sourcesMissing: [],
         sourcesContentChanged: []
       }
-      const actions = planApt(fixture.ctx, provider, diff)
+      const actions = await planApt(fixture.ctx, provider, diff)
       expect(actions).toHaveLength(1)
       expect(actions[0].commands).toHaveLength(1)
     })
 
-    it('does not warn when no same-named executable exists on PATH', () => {
+    it('does not warn when no same-named executable exists on PATH', async () => {
       process.env.PATH = '/fake/bin'
       const provider = makeFakeAptProvider({ manual: [] })
       const diff = {
@@ -224,7 +224,7 @@ describe('captureApt / diffApt / planApt', () => {
         sourcesMissing: [],
         sourcesContentChanged: []
       }
-      const actions = planApt(fixture.ctx, provider, diff)
+      const actions = await planApt(fixture.ctx, provider, diff)
       expect(actions).toHaveLength(1)
       expect(actions[0].commands).toHaveLength(1)
     })
@@ -515,7 +515,7 @@ describe('planAptUninstall', () => {
     writeIgnore(fixture, { apt: { packages: ['ripgrep'] } })
     const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
 
-    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ripgrep'])
 
     expect(result.actions).toEqual([])
     expect(result.excluded).toEqual([
@@ -529,7 +529,7 @@ describe('planAptUninstall', () => {
 
   it('rejects a package that is not ignored (paused) yet', async () => {
     const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
-    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ripgrep'])
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('일시중지')
   })
@@ -537,7 +537,7 @@ describe('planAptUninstall', () => {
   it('rejects a package that is not actually installed on this machine', async () => {
     writeIgnore(fixture, { apt: { packages: ['ghost-package'] } })
     const provider = makeFakeAptProvider({ manual: [] })
-    const result = planAptUninstall(fixture.ctx, provider, ['ghost-package'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ghost-package'])
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
   })
@@ -548,7 +548,7 @@ describe('planAptUninstall', () => {
       manual: ['wpasupplicant'],
       classify: { wpasupplicant: 'distro' }
     })
-    const result = planAptUninstall(fixture.ctx, provider, ['wpasupplicant'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['wpasupplicant'])
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('배포판 기본')
   })
@@ -564,7 +564,7 @@ describe('planAptUninstall', () => {
       ].join('\n')
     })
 
-    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep', 'fd-find'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ripgrep', 'fd-find'])
 
     expect(result.actions).toHaveLength(1)
     const action = result.actions[0]
@@ -589,7 +589,7 @@ describe('planAptUninstall', () => {
       ].join('\n')
     })
 
-    const result = planAptUninstall(fixture.ctx, provider, ['curl'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['curl'])
 
     expect(result.dependencies?.extra).toEqual(['rustdesk'])
   })
@@ -597,13 +597,13 @@ describe('planAptUninstall', () => {
   it('a privileged remove action is never actually run by the plan executor path', async () => {
     writeIgnore(fixture, { apt: { packages: ['ripgrep'] } })
     const provider = makeFakeAptProvider({ manual: ['ripgrep'] })
-    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ripgrep'])
     await expect(result.actions[0].run()).rejects.toThrow('P2b')
   })
 
   it('reports skipped-with-reason when apt-mark is unavailable', async () => {
     const provider = makeFakeAptProvider({ available: false })
-    const result = planAptUninstall(fixture.ctx, provider, ['ripgrep'])
+    const result = await planAptUninstall(fixture.ctx, provider, ['ripgrep'])
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('apt-mark')
   })

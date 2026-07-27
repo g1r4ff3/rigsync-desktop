@@ -5,7 +5,14 @@
  * 명령 호출 금지, provider는 인터페이스 뒤로 격리". 테스트는 이 인터페이스의
  * fake 구현을 주입하고, 실제 구현(`src/engine/providers/linux/*`)은 dev에서만
  * 쓰인다.
+ *
+ * **perf 3라운드(providers 비동기화)**: 실제 시스템 명령을 spawn하는 메서드는
+ * `MaybePromise<T>`를 돌려준다 — 실제 구현(`providers/linux/*`)은 `Promise<T>`
+ * (비동기 execFile), 테스트 fake는 기존처럼 `T`를 그대로 동기 반환해도 유효하다
+ * (`src/engine/async.ts` 참조). 순수 fs 조회(`listSourceFiles`/`fileExists`/
+ * `readFileBytes` 등)는 그대로 동기.
  */
+import type { MaybePromise } from '../../async'
 
 export interface AptSourceFile {
   readonly name: string
@@ -16,7 +23,7 @@ export interface AptProvider {
   /** apt-mark가 PATH에 있는지 (없으면 이 provider는 skip 취급). */
   isAvailable(): boolean
   /** `apt-mark showmanual` — 사용자가 수동 설치한 패키지 이름 목록. */
-  manualInstalled(): string[]
+  manualInstalled(): MaybePromise<string[]>
   /** `/etc/apt/sources.list.d/*` 각 파일의 이름+내용. */
   listSourceFiles(): AptSourceFile[]
   /** 임의의 절대경로가 실제로 존재하는 일반 파일인지 (sources.list.d 항목·키링 경로 확인용). */
@@ -31,7 +38,7 @@ export interface AptProvider {
    * 채택한다. 조회 실패·미지원 패키지는 결과 맵에서 그냥 빠진다(에러로
    * 화면을 막지 않는다).
    */
-  descriptions(names: readonly string[]): Readonly<Record<string, string>>
+  descriptions(names: readonly string[]): MaybePromise<Readonly<Record<string, string>>>
   /**
    * `apt-get remove --dry-run <names…>` 원문 stdout+stderr 그대로. **부작용
    * 없음** — 실기 확인(2026-07-26, 이 머신에서 `apt-get remove --dry-run curl`
@@ -41,16 +48,16 @@ export interface AptProvider {
    * 원문을 받는 캡ability 레이어의 순수 함수(`parseAptRemoveDryRun`)가
    * 담당한다 — provider는 원문만 돌려줘 실행을 격리한다.
    */
-  removeDryRun(names: readonly string[]): string
+  removeDryRun(names: readonly string[]): MaybePromise<string>
   /**
    * refactor-spec-v0.2 §1: 무상태 분류의 원료 4종 — 전부 read-only 조회의
    * **원문 stdout**을 그대로 돌려주고, 파싱은 capability 레이어의 순수 함수
    * (`classify.ts`)가 담당한다(`removeDryRun` 전례). 배치 1회 호출 원칙 유지.
    */
   /** `apt-cache policy` (인자 없음) — 소스 테이블 + `release o=` 라벨 원문. */
-  policySourcesRaw(): string
+  policySourcesRaw(): MaybePromise<string>
   /** `apt-cache policy <names…>` 배치 — 패키지별 설치본 소스 라인 원문. */
-  policyPackagesRaw(names: readonly string[]): string
+  policyPackagesRaw(names: readonly string[]): MaybePromise<string>
   /**
    * `apt-cache depends --recurse --installed --no-suggests --no-conflicts
    * --no-breaks --no-replaces --no-enhances <metapackages…>` 원문 — 의존+추천
@@ -58,9 +65,9 @@ export interface AptProvider {
    * 재귀해 폐포가 부푼다(실측 2026-07-27: 기본 1494 → 엄격 1422, 분류 결과
    * 스펙 실측 28/131과 일치는 엄격 쪽만).
    */
-  dependsClosureRaw(metapackages: readonly string[]): string
+  dependsClosureRaw(metapackages: readonly string[]): MaybePromise<string>
   /** `dpkg-query -W -f='${Package}\t${Priority}\t${db:Status-Status}\n'` 원문 — 설치본 전체 priority. */
-  prioritiesRaw(): string
+  prioritiesRaw(): MaybePromise<string>
   /**
    * `dpkg -S <absPath…>` 배치 상당 — 주어진 절대경로들 중 dpkg가 관리하는
    * 어느 패키지에든 소속된(dpkg 자신이 설치한) 것들의 집합만 돌려준다. apt
@@ -76,7 +83,7 @@ export interface AptProvider {
    * 못 찾으면 0이 아니게 되므로(부분 매치 포함) **종료코드가 아니라 stdout에
    * 실제로 찍힌 경로만 소속으로 판정한다**(`package: /path` 형식 라인 파싱).
    */
-  dpkgOwnsPaths(absPaths: readonly string[]): ReadonlySet<string>
+  dpkgOwnsPaths(absPaths: readonly string[]): MaybePromise<ReadonlySet<string>>
 }
 
 export interface SnapListRow {
@@ -87,7 +94,7 @@ export interface SnapListRow {
 export interface SnapProvider {
   isAvailable(): boolean
   /** `snap list` 파싱 결과. */
-  list(): SnapListRow[]
+  list(): MaybePromise<SnapListRow[]>
 }
 
 export interface FlatpakRemoteRow {
@@ -119,28 +126,28 @@ export interface FlatpakAppDetail {
 
 export interface FlatpakProvider {
   isAvailable(): boolean
-  remotes(): FlatpakRemoteRow[]
-  apps(): FlatpakAppRow[]
+  remotes(): MaybePromise<FlatpakRemoteRow[]>
+  apps(): MaybePromise<FlatpakAppRow[]>
   /**
    * R6 R2: `flatpak list --app --columns=application,name,description` —
    * application(패키지 ID)마다 사람이 읽는 이름+한 줄 설명이 이미 나온다
    * (apt와 달리 별도 조회 명령이 필요 없다). 조회 실패·미설치 항목은 결과
    * 맵에서 빠진다.
    */
-  appDetails(): Readonly<Record<string, FlatpakAppDetail>>
+  appDetails(): MaybePromise<Readonly<Record<string, FlatpakAppDetail>>>
   /**
    * `flatpak remote-add --user --if-not-exists <name> <url>`. `--user`라
    * unprivileged로 실행 가능(P2a 결정 ②) — apt/snap과 달리 실제로 실행된다.
    */
-  addRemoteUser(name: string, url: string): FlatpakCommandResult
+  addRemoteUser(name: string, url: string): MaybePromise<FlatpakCommandResult>
   /** `flatpak install --user -y <origin> <application>`. */
-  installAppUser(origin: string, application: string): FlatpakCommandResult
+  installAppUser(origin: string, application: string): MaybePromise<FlatpakCommandResult>
   /**
    * `flatpak uninstall --user -y <application>`. install과 대칭으로
    * unprivileged라(`--user`) 실제로 실행된다 — apt와 달리 executor가 skip하지
    * 않는다.
    */
-  uninstallAppUser(application: string): FlatpakCommandResult
+  uninstallAppUser(application: string): MaybePromise<FlatpakCommandResult>
   /**
    * `~/.local/share/flatpak/overrides/*` 각 파일의 appId(파일명)+내용 —
    * 정책 §3.2 "권한 오버라이드는 반드시 함께 동기화" (P2c 결정 ④). apt의

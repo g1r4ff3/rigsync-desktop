@@ -91,11 +91,11 @@ export interface AptNonDpkgConflict {
  * PATH 해석은 셸 규칙과 동일하게 **앞 디렉터리가 이긴다** — 각 이름당 첫
  * 히트에서 멈춘다.
  */
-export function findNonDpkgConflicts(
+export async function findNonDpkgConflicts(
   provider: Pick<AptProvider, 'fileExists' | 'dpkgOwnsPaths'>,
   names: readonly string[],
   pathDirs: readonly string[]
-): AptNonDpkgConflict[] {
+): Promise<AptNonDpkgConflict[]> {
   // 1단계: 이름당 PATH 첫 히트만 고른다(fs.stat뿐 -- subprocess 없음).
   const firstHits: { readonly name: string; readonly absPath: string }[] = []
   for (const name of names) {
@@ -108,7 +108,7 @@ export function findNonDpkgConflicts(
   }
   // 2단계: dpkg 소속 여부를 후보 전부에 대해 한 번에 배치 조회한다
   // (실측 2026-07-27: 이름당 개별 `dpkg -S`는 프로세스 기동 비용이 누적된다).
-  const owned = provider.dpkgOwnsPaths(firstHits.map((h) => h.absPath))
+  const owned = await provider.dpkgOwnsPaths(firstHits.map((h) => h.absPath))
   return firstHits
     .filter((h) => !owned.has(h.absPath))
     .map((h) => ({ name: h.name, absPath: h.absPath }))
@@ -154,13 +154,13 @@ export async function captureApt(
     }
   }
 
-  const manualAll = provider.manualInstalled()
+  const manualAll = await provider.manualInstalled()
   const notes: string[] = []
 
   // 무상태 분류(refactor-spec-v0.2 §1) -- "배포판 기본분인가"를 상태 파일
   // 없이 매 조회 계산한다. 사용자 판정 + include 예외만 자동 추가 대상
   // (기존 additive-only·ignore 규약은 그대로).
-  const classification = classifyAptPackagesCached(provider, manualAll)
+  const classification = await classifyAptPackagesCached(provider, manualAll)
   const include = readAptIncludeSet(ctx)
   const manual = manualAll.filter((p) => classification.get(p) === 'user' || include.has(p))
   const distroFiltered = manualAll.length - manual.length
@@ -272,8 +272,8 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
     }
   }
 
-  const manualAll = provider.manualInstalled()
-  const classification = classifyAptPackagesCached(provider, manualAll)
+  const manualAll = await provider.manualInstalled()
+  const classification = await classifyAptPackagesCached(provider, manualAll)
   const include = readAptIncludeSet(ctx)
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
@@ -317,11 +317,11 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
   return { skipped: false, toInstall, uncaptured, sourcesMissing, sourcesContentChanged }
 }
 
-export function planApt(
+export async function planApt(
   ctx: RigsyncContext,
   provider: AptProvider,
   diff: AptDiffReport
-): PlanAction[] {
+): Promise<PlanAction[]> {
   if (diff.skipped) return []
   // v0.1.7 순서 수정(신선한 머신 첫 apply 실사고): install은 sources 복원·
   // keyring 복원·apt-get update **뒤**에 와야 한다 — 앞에 두면 PPA/서드파티
@@ -384,10 +384,10 @@ export function planApt(
     // 동일 이름의 dpkg 밖 실행파일이 PATH에 이미 있으면 사전 경고 줄을
     // commands 미리보기에 덧붙인다. Candidate 버전은 충돌이 실제로 있을
     // 때만 조회한다(불필요한 apt-cache 호출을 피한다).
-    const conflicts = findNonDpkgConflicts(provider, diff.toInstall, currentPathDirs())
+    const conflicts = await findNonDpkgConflicts(provider, diff.toInstall, currentPathDirs())
     if (conflicts.length > 0) {
       const candidates = parsePolicyCandidates(
-        provider.policyPackagesRaw(conflicts.map((c) => c.name))
+        await provider.policyPackagesRaw(conflicts.map((c) => c.name))
       )
       for (const c of conflicts) {
         const version = candidates.get(c.name) ?? '알 수 없음'
@@ -472,11 +472,11 @@ async function notExecutedUntilP2bRemove(): Promise<{ ok: boolean; detail: strin
  * 범위를 넓히지 않는다. 의존성 경고(`dependencies`)는 항상 계산해서
  * 돌려준다 — dry-run 자체는 root 없이도 안전(실기 확인, provider 주석 참조).
  */
-export function planAptUninstall(
+export async function planAptUninstall(
   ctx: RigsyncContext,
   provider: AptProvider,
   requestedNames: readonly string[]
-): CapabilityUninstallResult & { readonly dependencies?: AptRemoveDependencyReport } {
+): Promise<CapabilityUninstallResult & { readonly dependencies?: AptRemoveDependencyReport }> {
   if (!provider.isAvailable()) {
     return {
       actions: [],
@@ -491,8 +491,8 @@ export function planAptUninstall(
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const managedSet = new Set(manifest.packages ?? [])
   const ignore = readIgnoreSet(ctx, 'apt', 'packages')
-  const classification = classifyAptPackagesCached(provider, requestedNames)
-  const installedSet = new Set(provider.manualInstalled())
+  const classification = await classifyAptPackagesCached(provider, requestedNames)
+  const installedSet = new Set(await provider.manualInstalled())
 
   const excluded: UninstallExclusion[] = []
   const validNames: string[] = []
@@ -530,7 +530,7 @@ export function planAptUninstall(
   }
 
   const sortedNames = [...validNames].sort()
-  const dependencies = parseAptRemoveDryRun(provider.removeDryRun(sortedNames), sortedNames)
+  const dependencies = parseAptRemoveDryRun(await provider.removeDryRun(sortedNames), sortedNames)
 
   const cmd = ['sudo', 'apt-get', 'remove', '-y', ...sortedNames]
   const action: PlanAction = {

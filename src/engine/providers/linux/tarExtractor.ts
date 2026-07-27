@@ -18,8 +18,8 @@ import path from 'node:path'
 import type { TarExtractor, TarExtractResult } from '../../capabilities/binaries/providerTypes'
 import { run } from './exec'
 
-function listEntries(tarPath: string, listFlag: string): string[] | null {
-  const result = run(['tar', listFlag, tarPath], 30_000)
+async function listEntries(tarPath: string, listFlag: string): Promise<string[] | null> {
+  const result = await run(['tar', listFlag, tarPath], 30_000)
   if (result.code !== 0) return null
   return result.stdout
     .split('\n')
@@ -27,14 +27,16 @@ function listEntries(tarPath: string, listFlag: string): string[] | null {
     .filter(Boolean)
 }
 
-function extract(
+// 순차 의존 -- 목록 조회(list)가 끝나야 대상이 정해지고, 그래야 추출(extract)이
+// 의미 있다(순서 파괴 금지, perf 3라운드 비동기화 원칙).
+async function extract(
   tarPath: string,
   destDir: string,
   filter: (entryName: string) => boolean,
   listFlag: string,
   extractFlag: string
-): TarExtractResult {
-  const entries = listEntries(tarPath, listFlag)
+): Promise<TarExtractResult> {
+  const entries = await listEntries(tarPath, listFlag)
   if (entries === null) {
     return { ok: false, extractedPaths: [], detail: `tar 목록 조회 실패: ${tarPath}` }
   }
@@ -47,7 +49,7 @@ function extract(
   fs.mkdirSync(destDir, { recursive: true })
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-tar-'))
   try {
-    const result = run(['tar', extractFlag, tarPath, '-C', tmpDir, ...matched], 60_000)
+    const result = await run(['tar', extractFlag, tarPath, '-C', tmpDir, ...matched], 60_000)
     if (result.code !== 0) {
       return { ok: false, extractedPaths: [], detail: `tar 추출 실패: ${result.stderr}` }
     }
@@ -75,7 +77,7 @@ export class LinuxTarExtractor implements TarExtractor {
     tarPath: string,
     destDir: string,
     filter: (entryName: string) => boolean
-  ): TarExtractResult {
+  ): Promise<TarExtractResult> {
     return extract(tarPath, destDir, filter, '-tzf', '-xzf')
   }
 
@@ -83,7 +85,7 @@ export class LinuxTarExtractor implements TarExtractor {
     tarPath: string,
     destDir: string,
     filter: (entryName: string) => boolean
-  ): TarExtractResult {
+  ): Promise<TarExtractResult> {
     return extract(tarPath, destDir, filter, '-tjf', '-xjf')
   }
 }

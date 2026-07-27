@@ -4,7 +4,12 @@
  * 릴리스 조회, asset 다운로드를 전부 인터페이스 뒤에 격리한다(P2c 결정 —
  * "gearlever provider는 실제 CLI 호출 없이 fake로 테스트"). 실제 구현은
  * `src/engine/providers/linux/gearlever.ts`(dev 전용).
+ *
+ * **perf 3라운드(providers 비동기화)**: 실제 CLI를 spawn하는 메서드는
+ * `MaybePromise<T>`(`src/engine/async.ts`)를 돌려준다 — 실제 구현은
+ * `Promise<T>`, 테스트 fake는 동기 `T` 그대로 유효.
  */
+import type { MaybePromise } from '../../async'
 import type { UpdateManagerModel } from './types'
 
 /** `--list-installed --json`의 `installed[]` 엔트리 하나 (FORWARD.md §7 실측 스키마). */
@@ -42,23 +47,23 @@ export interface GearLeverCommandResult {
 }
 
 export interface GearLeverProvider {
-  isAvailable(): boolean
+  isAvailable(): MaybePromise<boolean>
   /** 설치된 Gear Lever flatpak 버전 문자열(예: "4.6.2"), 확인 불가하면 null. */
-  version(): string | null
-  listInstalled(): GearLeverInstalledRow[]
+  version(): MaybePromise<string | null>
+  listInstalled(): MaybePromise<GearLeverInstalledRow[]>
   /**
    * `gearlever.conf`를 읽기 전용으로 파싱해 이 AppImage 경로에 대응하는 설정을
    * 찾는다(조인 키 = md5(path), FORWARD.md §7 실측). 못 찾으면 null.
    */
   readAppConfig(appImagePath: string): GearLeverAppConfig | null
   /** `--integrate <path> --yes`. */
-  integrate(appImagePath: string): GearLeverCommandResult
+  integrate(appImagePath: string): MaybePromise<GearLeverCommandResult>
   /** `--set-update-source <path> --manager <model> key=value…`. */
   setUpdateSource(
     appImagePath: string,
     manager: UpdateManagerModel,
     params: Readonly<Record<string, string>>
-  ): GearLeverCommandResult
+  ): MaybePromise<GearLeverCommandResult>
 }
 
 export interface ReleaseAsset {
@@ -90,5 +95,5 @@ export interface Downloader {
 
 /** libfuse2t64/AppImageLauncher 같은 dpkg 패키지 존재 여부 조회 (doctor성 선행 조건). */
 export interface AppimageSystemCheckProvider {
-  isPackageInstalled(debPackageName: string): boolean
+  isPackageInstalled(debPackageName: string): MaybePromise<boolean>
 }

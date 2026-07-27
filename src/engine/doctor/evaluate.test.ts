@@ -9,12 +9,12 @@ import { makeFakeDoctorSystemProvider } from './testHelpers'
 // 대신 "config.toml 존재 여부"로 판정 기준을 옮겼다 -- evaluate.ts 주석 참조).
 
 describe('evaluateCheck', () => {
-  it('file: passes when a match exists', () => {
+  it('file: passes when a match exists', async () => {
     const fixture = makeFixture('reference')
     const provider = makeFakeDoctorSystemProvider({
       fileMatches: { '/opt/resolve': ['/opt/resolve'] }
     })
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'davinci-resolve', type: 'file', target: '/opt/resolve' },
       provider,
@@ -25,10 +25,10 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('file: fails when there is no match', () => {
+  it('file: fails when there is no match', async () => {
     const fixture = makeFixture('reference')
     const provider = makeFakeDoctorSystemProvider({})
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'zoom', type: 'file', target: '/opt/zoom' },
       provider,
@@ -39,10 +39,10 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('apt: passes when dpkg reports the package installed', () => {
+  it('apt: passes when dpkg reports the package installed', async () => {
     const fixture = makeFixture('reference')
     const provider = makeFakeDoctorSystemProvider({ aptInstalled: { tailscale: true } })
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'tailscale-pkg', type: 'apt', target: 'tailscale' },
       provider,
@@ -52,12 +52,12 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('cmd: passes on exit 0 with expected output substring', () => {
+  it('cmd: passes on exit 0 with expected output substring', async () => {
     const fixture = makeFixture('reference')
     const provider = makeFakeDoctorSystemProvider({
       shellResults: { 'tailscale status': { code: 0, combinedOutput: '100.x.x.x  logged in\n' } }
     })
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'tailscale', type: 'cmd', target: 'tailscale status', expect: 'logged in' },
       provider,
@@ -67,12 +67,12 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('cmd: fails when the expected substring is missing', () => {
+  it('cmd: fails when the expected substring is missing', async () => {
     const fixture = makeFixture('reference')
     const provider = makeFakeDoctorSystemProvider({
       shellResults: { 'tailscale status': { code: 0, combinedOutput: 'Stopped\n' } }
     })
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'tailscale', type: 'cmd', target: 'tailscale status', expect: 'logged in' },
       provider,
@@ -82,9 +82,9 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('test_fails_when_role_file_missing (adapted: fails when config.toml is not yet configured)', () => {
+  it('test_fails_when_role_file_missing (adapted: fails when config.toml is not yet configured)', async () => {
     const fixture = makeFixture('reference')
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'machine-role', type: 'role', target: '~/.config/rigsync/role' },
       makeFakeDoctorSystemProvider(),
@@ -94,9 +94,9 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('test_passes_when_role_reference (adapted: passes once config.toml exists)', () => {
+  it('test_passes_when_role_reference (adapted: passes once config.toml exists)', async () => {
     const fixture = makeFixture('reference')
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'machine-role', type: 'role', target: '~/.config/rigsync/role' },
       makeFakeDoctorSystemProvider(),
@@ -107,9 +107,9 @@ describe('evaluateCheck', () => {
     fixture.cleanup()
   })
 
-  it('test_passes_when_role_follower (adapted: passes once config.toml exists)', () => {
+  it('test_passes_when_role_follower (adapted: passes once config.toml exists)', async () => {
     const fixture = makeFixture('follower')
-    const result = evaluateCheck(
+    const result = await evaluateCheck(
       fixture.ctx,
       { name: 'machine-role', type: 'role', target: '~/.config/rigsync/role' },
       makeFakeDoctorSystemProvider(),

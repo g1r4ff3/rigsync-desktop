@@ -63,18 +63,18 @@ describe('cloneErrorGuidance', () => {
 })
 
 describe('cloneManifestRepo (fake provider — auth/network/unknown 분류 확인)', () => {
-  it('propagates a classified error when the provider reports failure', () => {
+  it('propagates a classified error when the provider reports failure', async () => {
     const provider = makeFakeGitTransportProvider({
       cloneResult: { ok: false, output: 'fatal: Authentication failed for https://x' }
     })
-    const result = cloneManifestRepo('https://x/private.git', '/tmp/whatever', provider)
+    const result = await cloneManifestRepo('https://x/private.git', '/tmp/whatever', provider)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('auth-failed')
   })
 
-  it('reports ok:true when the provider succeeds', () => {
+  it('reports ok:true when the provider succeeds', async () => {
     const provider = makeFakeGitTransportProvider({ cloneResult: { ok: true, output: '' } })
-    const result = cloneManifestRepo('https://x/repo.git', '/tmp/whatever', provider)
+    const result = await cloneManifestRepo('https://x/repo.git', '/tmp/whatever', provider)
     expect(result).toEqual({ ok: true })
   })
 })
@@ -106,26 +106,26 @@ describe('cloneManifestRepo (real local git, no network)', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  it('clones a real local bare repo into a fresh target directory', () => {
+  it('clones a real local bare repo into a fresh target directory', async () => {
     const targetDir = path.join(root, 'follower-manifest')
-    const result = cloneManifestRepo(bareDir, targetDir, provider)
+    const result = await cloneManifestRepo(bareDir, targetDir, provider)
     expect(result).toEqual({ ok: true })
     expect(fs.existsSync(path.join(targetDir, 'common.toml'))).toBe(true)
   })
 
-  it('reports target-not-empty when the target directory already has files', () => {
+  it('reports target-not-empty when the target directory already has files', async () => {
     const targetDir = path.join(root, 'occupied')
     fs.mkdirSync(targetDir)
     fs.writeFileSync(path.join(targetDir, 'something.txt'), 'x')
 
-    const result = cloneManifestRepo(bareDir, targetDir, provider)
+    const result = await cloneManifestRepo(bareDir, targetDir, provider)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('target-not-empty')
   })
 
-  it('reports not-found when the source path does not exist', () => {
+  it('reports not-found when the source path does not exist', async () => {
     const targetDir = path.join(root, 'nope')
-    const result = cloneManifestRepo(path.join(root, 'no-such-repo.git'), targetDir, provider)
+    const result = await cloneManifestRepo(path.join(root, 'no-such-repo.git'), targetDir, provider)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('not-found')
   })

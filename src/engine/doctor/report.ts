@@ -32,7 +32,7 @@ import type { DoctorSystemProvider } from './providerTypes'
 import { checkManifestPortability } from './portabilityCheck'
 import { checkSecretScanPreflight } from './secretScanCheck'
 import { checkSelfUpdateStatus } from './selfUpdateCheck'
-import type { ChecksManifest, DoctorReport } from './types'
+import type { ChecksManifest, CheckResult, DoctorReport } from './types'
 
 export const CHECKS_LAYER = 'checks'
 
@@ -64,22 +64,26 @@ export async function buildDoctorReport(
   // ignore된 check는 doctor 표에서 완전히 사라진다 -- 구 repo와 동일하게 "skip
   // 표시" 없이 그냥 목록에서 빠진다.
   const activeChecks = (manifest.check ?? []).filter((c) => !ignoreNames.has(c.name))
-  const checks = activeChecks.map((c) =>
-    evaluateCheck(ctx, c, systemProvider, { configConfigured: options.configConfigured })
-  )
+  // 순차 조회 유지(새 병렬화를 발명하지 않는다 -- perf 3라운드 원칙).
+  const checks: CheckResult[] = []
+  for (const c of activeChecks) {
+    checks.push(
+      await evaluateCheck(ctx, c, systemProvider, { configConfigured: options.configConfigured })
+    )
+  }
   const exitCode = checks.some((r) => r.result === 'fail') ? 1 : 0
 
-  const appimage = checkAppimagePreflight(gearLeverProvider, appimageSystemCheck)
+  const appimage = await checkAppimagePreflight(gearLeverProvider, appimageSystemCheck)
   const fontsDiff = await diffFonts(ctx)
   const fonts = checkFontsPreflight(ctx, fontsDiff, fontsSystemProvider)
   const binaries = checkBinariesPreflight(ctx)
-  const nvidia = checkNvidiaDriverMismatch(nvidiaProvider)
+  const nvidia = await checkNvidiaDriverMismatch(nvidiaProvider)
   const secretScan = checkSecretScanPreflight(ctx)
   const portability = checkManifestPortability(ctx)
-  const aptShadow = checkAptShadowing(ctx, aptProvider)
+  const aptShadow = await checkAptShadowing(ctx, aptProvider)
   const manualSyncNotes = readManualSyncNotes(ctx)
-  const emptyFollower = checkEmptyFollower(ctx, gitTransportProvider)
-  const manifestDirty = checkManifestDirty(ctx, gitTransportProvider)
+  const emptyFollower = await checkEmptyFollower(ctx, gitTransportProvider)
+  const manifestDirty = await checkManifestDirty(ctx, gitTransportProvider)
 
   const appImagePath =
     options.appImagePath !== undefined ? options.appImagePath : (process.env.APPIMAGE ?? null)

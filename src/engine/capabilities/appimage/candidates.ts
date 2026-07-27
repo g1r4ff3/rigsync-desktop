@@ -15,14 +15,14 @@ export async function buildAppimageSyncGroup(
   ctx: RigsyncContext,
   provider: GearLeverProvider
 ): Promise<SyncItemGroup | null> {
-  if (!provider.isAvailable()) return null
+  if (!(await provider.isAvailable())) return null
 
   const ignore = readIgnoreSet(ctx, 'appimage', 'names')
   const manifest =
     (effectiveLayer(ctx, APPIMAGE_LAYER, APPIMAGE_KEY_FIELDS).app as AppimageEntry[] | undefined) ??
     []
   const managedSet = new Set(manifest.map((e) => e.name))
-  const installed = provider.listInstalled()
+  const installed = await provider.listInstalled()
   const liveSet = new Set(installed.map((r) => r.desktopId))
   // R6 R2: 설명 필드가 따로 없어 Gear Lever JSON의 `name`(버전 포함, 예:
   // "tev (2.13.1)")을 그대로 한 줄 설명으로 쓴다 -- 실제로 설치돼 있어야만

@@ -20,7 +20,7 @@ describe('checkAptShadowing', () => {
     fixture.cleanup()
   })
 
-  it('warns when a dpkg-unowned executable earlier on PATH shadows the dpkg-owned managed package', () => {
+  it('warns when a dpkg-unowned executable earlier on PATH shadows the dpkg-owned managed package', async () => {
     writeCommonAptSection(fixture.ctx, { packages: ['rclone'] })
     const provider = makeFakeAptProvider({
       files: {
@@ -30,7 +30,7 @@ describe('checkAptShadowing', () => {
       dpkgOwnedPaths: ['/usr/bin/rclone']
     })
 
-    const result = checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
+    const result = await checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
 
     expect(result.findings).toEqual([
       {
@@ -46,20 +46,20 @@ describe('checkAptShadowing', () => {
     expect(result.warnings[0]).toContain('/usr/bin/rclone')
   })
 
-  it('is silent when the dpkg-owned executable is the first PATH hit (normal case)', () => {
+  it('is silent when the dpkg-owned executable is the first PATH hit (normal case)', async () => {
     writeCommonAptSection(fixture.ctx, { packages: ['git'] })
     const provider = makeFakeAptProvider({
       files: { '/usr/bin/git': 'ELF-dpkg' },
       dpkgOwnedPaths: ['/usr/bin/git']
     })
 
-    const result = checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
+    const result = await checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
 
     expect(result.findings).toEqual([])
     expect(result.warnings).toEqual([])
   })
 
-  it('does not inspect a package outside the managed (manifest) list even if it would otherwise be shadowed', () => {
+  it('does not inspect a package outside the managed (manifest) list even if it would otherwise be shadowed', async () => {
     // wget이 설치돼 있고 가려지고 있어도, manifest에 선언(managed)돼 있지
     // 않으면 이 검사의 대상이 아니다 -- planApt 쪽(설치 전 경고)의 몫이다.
     writeCommonAptSection(fixture.ctx, { packages: ['git'] })
@@ -72,17 +72,17 @@ describe('checkAptShadowing', () => {
       dpkgOwnedPaths: ['/usr/bin/wget', '/usr/bin/git']
     })
 
-    const result = checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
+    const result = await checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
 
     expect(result.findings).toEqual([])
     expect(result.warnings).toEqual([])
   })
 
-  it('reports nothing when apt is unavailable on this machine', () => {
+  it('reports nothing when apt is unavailable on this machine', async () => {
     writeCommonAptSection(fixture.ctx, { packages: ['git'] })
     const provider = makeFakeAptProvider({ available: false })
 
-    const result = checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
+    const result = await checkAptShadowing(fixture.ctx, provider, ['/usr/local/bin', '/usr/bin'])
 
     expect(result.findings).toEqual([])
     expect(result.warnings).toEqual([])

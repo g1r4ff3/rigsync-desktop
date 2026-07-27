@@ -15,12 +15,12 @@ export interface EvaluateCheckExtra {
   readonly configConfigured: boolean
 }
 
-export function evaluateCheck(
+export async function evaluateCheck(
   ctx: Pick<RigsyncContext, 'homeDir' | 'role'>,
   check: CheckEntry,
   provider: DoctorSystemProvider,
   extra: EvaluateCheckExtra
-): CheckResult {
+): Promise<CheckResult> {
   const { name, type, target, hint } = check
 
   if (type === 'file') {
@@ -36,7 +36,7 @@ export function evaluateCheck(
   }
 
   if (type === 'apt') {
-    const ok = provider.isAptPackageInstalled(target)
+    const ok = await provider.isAptPackageInstalled(target)
     return { name, type, target, result: ok ? 'pass' : 'fail', detail: `dpkg -s ${target}`, hint }
   }
 
@@ -56,7 +56,7 @@ export function evaluateCheck(
   }
 
   // cmd
-  const result = provider.runShellCmd(target)
+  const result = await provider.runShellCmd(target)
   const combined = result.combinedOutput
   const pass = result.code === 0 && (!check.expect || combined.includes(check.expect))
   const trimmed = combined.trim()

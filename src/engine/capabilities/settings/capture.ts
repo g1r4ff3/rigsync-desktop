@@ -54,7 +54,7 @@ export async function captureSettings(
   let written = 0
 
   for (const p of paths) {
-    const dump = provider.dump(p)
+    const dump = await provider.dump(p)
     if (!dump.trim()) {
       skippedEmpty.push(p)
       continue

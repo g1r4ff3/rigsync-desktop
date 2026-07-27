@@ -3,7 +3,13 @@
  * commit/push/pull은 엔진이 수행하고 UI는 상태(동기화됨/뒤처짐/로컬 전용/
  * 오류)만 본다. manifest dir이 git repo가 아니거나 원격이 없으면 **로컬
  * 모드로 조용히 정상 동작**한다(에러 아님).
+ *
+ * perf 3라운드(providers 비동기화): 전 메서드가 실제 git 프로세스를 spawn하므로
+ * `MaybePromise<T>`(`src/engine/async.ts`)를 돌려준다. `addAllAndCommit`처럼
+ * 순차 의존(add→commit)이 있는 메서드는 실제 구현 내부에서 await 체인을
+ * 유지한다 — 이 인터페이스 변경 자체가 순서를 바꾸지 않는다.
  */
+import type { MaybePromise } from '../async'
 
 export interface GitCommandResult {
   readonly ok: boolean
@@ -24,18 +30,18 @@ export interface GitChangedFile {
  * 로컬 실행이라 안전).
  */
 export interface GitTransportProvider {
-  isGitRepo(dir: string): boolean
+  isGitRepo(dir: string): MaybePromise<boolean>
   /** `git remote`가 하나라도 있는지. */
-  hasRemote(dir: string): boolean
-  fetch(dir: string): GitCommandResult
+  hasRemote(dir: string): MaybePromise<boolean>
+  fetch(dir: string): MaybePromise<GitCommandResult>
   /**
    * fast-forward만 허용하는 pull. 비FF·충돌이면 **어떤 자동 해결도 시도하지
    * 않고** `ok:false`로 보고한다(호출자가 "수동 해결 필요"로 표면화).
    */
-  pullFastForward(dir: string): GitCommandResult
+  pullFastForward(dir: string): MaybePromise<GitCommandResult>
   /** `fetch()` 이후 기준 — origin의 upstream 대비 몇 커밋 뒤처졌는지. */
-  behindCount(dir: string): number
-  hasUncommittedChanges(dir: string): boolean
+  behindCount(dir: string): MaybePromise<number>
+  hasUncommittedChanges(dir: string): MaybePromise<boolean>
   /**
    * `git status --porcelain` 상당의 구조화된 변경 파일 목록 — P3(F3) Doctor
    * "manifest dirty" 검사가 역할별 안내(follower: 경고, reference: 정보)에
@@ -43,9 +49,9 @@ export interface GitTransportProvider {
    * 정보가 필요해 추가한다. 순서는 porcelain 출력 순서 그대로(경로순 정렬은
    * 호출자 책임 -- 이 provider는 git 그대로만 옮긴다).
    */
-  changedFiles(dir: string): readonly GitChangedFile[]
-  addAllAndCommit(dir: string, message: string): GitCommandResult
-  push(dir: string): GitCommandResult
+  changedFiles(dir: string): MaybePromise<readonly GitChangedFile[]>
+  addAllAndCommit(dir: string, message: string): MaybePromise<GitCommandResult>
+  push(dir: string): MaybePromise<GitCommandResult>
   /**
    * `git clone <url> <targetDir>` — 온보딩 "저장소에서 클론"(follower의 정상
    * 진입 경로)과 Settings의 복구용 클론이 공유하는 진입점. `targetDir`은
@@ -53,7 +59,7 @@ export interface GitTransportProvider {
    * `ok:false`에 git의 원문 stderr가 담긴다. 분류는 `transport/clone.ts`가
    * 이 원문 텍스트를 해석해서 한다).
    */
-  cloneManifest(url: string, targetDir: string): GitCommandResult
+  cloneManifest(url: string, targetDir: string): MaybePromise<GitCommandResult>
 }
 
 export type SyncStatus =

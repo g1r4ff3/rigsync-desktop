@@ -3,7 +3,6 @@
  * `probe_crontab`(rigsync.py:616) 행동 이식: `crontab -l`이 0이 아닌 종료코드를
  * 내면(크론탭 없음 포함) null로 취급한다.
  */
-import { spawnSync } from 'node:child_process'
 import type { CronCommandResult, CronProvider } from '../../capabilities/scheduled/providerTypes'
 import { commandExists, run } from './exec'
 
@@ -12,16 +11,16 @@ export class LinuxCronProvider implements CronProvider {
     return commandExists('crontab')
   }
 
-  readCrontab(): string | null {
-    const result = run(['crontab', '-l'])
+  async readCrontab(): Promise<string | null> {
+    const result = await run(['crontab', '-l'])
     if (result.code !== 0) return null
     return result.stdout
   }
 
-  writeCrontab(content: string): CronCommandResult {
-    const result = spawnSync('crontab', ['-'], { input: content, encoding: 'utf-8' })
-    if (result.error || result.status !== 0) {
-      return { ok: false, output: (result.stdout ?? '') + (result.stderr ?? '') }
+  async writeCrontab(content: string): Promise<CronCommandResult> {
+    const result = await run(['crontab', '-'], 20_000, content)
+    if (result.code !== 0) {
+      return { ok: false, output: result.stdout + result.stderr }
     }
     return { ok: true, output: '' }
   }

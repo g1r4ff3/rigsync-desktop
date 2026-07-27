@@ -28,7 +28,7 @@ export async function diffScheduled(
 
   const storedPath = scheduledStorePath(ctx)
   const stored = fs.existsSync(storedPath) ? fs.readFileSync(storedPath, 'utf-8') : null
-  const live = provider.readCrontab()
+  const live = await provider.readCrontab()
 
   if (stored === null && live === null) {
     return {

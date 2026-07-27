@@ -10,9 +10,9 @@ export class LinuxSnapProvider implements SnapProvider {
     return commandExists('snap')
   }
 
-  list(): SnapListRow[] {
+  async list(): Promise<SnapListRow[]> {
     if (!this.isAvailable()) return []
-    const result = run(['snap', 'list'])
+    const result = await run(['snap', 'list'])
     if (result.code !== 0) return []
     const lines = result.stdout.split('\n')
     if (lines.length < 2) return []

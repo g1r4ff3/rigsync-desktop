@@ -48,7 +48,7 @@ export async function completeOnboarding(
     if (!repoUrl) {
       throw new Error('저장소 URL을 입력하세요')
     }
-    const result = cloneManifestRepo(repoUrl, manifestDir, deps.gitTransportProvider)
+    const result = await cloneManifestRepo(repoUrl, manifestDir, deps.gitTransportProvider)
     if (!result.ok) {
       // 실패하면 config를 쓰지 않고 여기서 던진다 -- 온보딩은 그대로 머문다.
       throw new Error(cloneErrorGuidance(result.error))

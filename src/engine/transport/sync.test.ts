@@ -87,30 +87,30 @@ describe('git transport (real local git, no network)', () => {
     fixture.cleanup()
   })
 
-  it('getSyncStatus is local-only for a plain (non-git) directory', () => {
+  it('getSyncStatus is local-only for a plain (non-git) directory', async () => {
     const plainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-plain-'))
-    const status = getSyncStatus({ manifestDir: plainDir }, provider)
+    const status = await getSyncStatus({ manifestDir: plainDir }, provider)
     expect(status).toEqual({ kind: 'local-only' })
     fs.rmSync(plainDir, { recursive: true, force: true })
   })
 
-  it('getSyncStatus is local-only for a git repo with no remote', () => {
+  it('getSyncStatus is local-only for a git repo with no remote', async () => {
     const dir = path.join(fixture.root, 'no-remote')
     fs.mkdirSync(dir)
     sh(dir, ['git', 'init', '-q'])
-    expect(getSyncStatus({ manifestDir: dir }, provider)).toEqual({ kind: 'local-only' })
+    expect(await getSyncStatus({ manifestDir: dir }, provider)).toEqual({ kind: 'local-only' })
   })
 
   it('syncReference commits an uncommitted change and pushes it -- status becomes synced', async () => {
     fs.writeFileSync(path.join(fixture.referenceDir, 'apt.toml'), 'packages = ["git"]\n')
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(true)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(true)
 
     const status = await syncReference(
       { manifestDir: fixture.referenceDir, machineId: 'testhost' },
       provider
     )
     expect(status).toEqual({ kind: 'synced' })
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
 
     const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
       encoding: 'utf-8'
@@ -158,7 +158,7 @@ describe('git transport (real local git, no network)', () => {
       expect(status.message).not.toContain(FAKE_GITHUB_PAT)
     }
     // 커밋은 됐어야 한다(로컬, 회수 가능) -- push만 막힌다.
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
     const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
       encoding: 'utf-8'
     })
@@ -191,10 +191,10 @@ describe('git transport (real local git, no network)', () => {
 
     // fetch 전: 로컬이 아직 origin의 새 커밋을 모른다 -- synced로 보인다(오판이
     // 아니라 "마지막으로 알려진 상태" 계약, 문서화된 동작).
-    expect(getSyncStatus({ manifestDir: followerDir }, provider)).toEqual({ kind: 'synced' })
+    expect(await getSyncStatus({ manifestDir: followerDir }, provider)).toEqual({ kind: 'synced' })
 
-    provider.fetch(followerDir)
-    expect(getSyncStatus({ manifestDir: followerDir }, provider)).toEqual({
+    await provider.fetch(followerDir)
+    expect(await getSyncStatus({ manifestDir: followerDir }, provider)).toEqual({
       kind: 'behind',
       behindBy: 1
     })
@@ -253,14 +253,14 @@ describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () 
     // 라이브 편집 시뮬레이션 -- withAutoSync가 실제 capability write를 부르기
     // 전 시점의 dirty 상태.
     fs.writeFileSync(path.join(fixture.referenceDir, 'dotfiles-zshrc.txt'), 'live edit\n')
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(true)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(true)
 
     const sweepStatus = await sweepLiveEditsIfDirty(
       { manifestDir: fixture.referenceDir, role: 'reference' },
       provider
     )
     expect(sweepStatus).toEqual({ kind: 'synced' })
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
 
     // 이제 (withAutoSync의 run()에 해당하는) 캡처 자신의 쓰기가 일어난다 --
     // 트리는 스윕 덕분에 깨끗한 상태에서 시작했다.
@@ -293,7 +293,7 @@ describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () 
   it('follower is never swept, even if the tree is dirty (역할 가드)', async () => {
     const followerDir = cloneFollower(fixture, 'follower-live-edit')
     fs.writeFileSync(path.join(followerDir, 'local.conf'), 'edited locally\n')
-    expect(provider.hasUncommittedChanges(followerDir)).toBe(true)
+    expect(await provider.hasUncommittedChanges(followerDir)).toBe(true)
 
     const status = await sweepLiveEditsIfDirty(
       { manifestDir: followerDir, role: 'follower' },
@@ -302,7 +302,7 @@ describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () 
 
     expect(status).toBeNull()
     // 커밋되지 않은 채 그대로 dirty해야 한다 -- follower는 절대 저작하지 않는다.
-    expect(provider.hasUncommittedChanges(followerDir)).toBe(true)
+    expect(await provider.hasUncommittedChanges(followerDir)).toBe(true)
   })
 
   it('does not call the provider at all for a follower role (fake provider spy)', async () => {
@@ -342,7 +342,7 @@ describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () 
       expect(status.message).not.toContain(FAKE_GITHUB_PAT)
     }
     // 커밋은 로컬에 남아있어야 한다(회수 가능) -- push만 막힌다.
-    expect(provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
     const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
       encoding: 'utf-8'
     })

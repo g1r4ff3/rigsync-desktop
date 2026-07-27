@@ -4,7 +4,11 @@
  * `src/engine/providers/linux/`, 테스트는 여기 인터페이스를 fake로 주입한다.
  * 폰트 디렉터리 스캔 자체는 provider가 아니다(`scan.ts` — dotfiles와 동일하게
  * ctx.homeDir 기준 순수 fs라 fake가 필요 없다).
+ *
+ * perf 3라운드(providers 비동기화): `runFcCache`는 실제 `fc-cache`를 spawn하므로
+ * `MaybePromise<T>`(`src/engine/async.ts`)를 돌려준다.
  */
+import type { MaybePromise } from '../../async'
 
 export interface FontReleaseAsset {
   readonly name: string
@@ -64,5 +68,5 @@ export interface FontsSystemCommandResult {
 export interface FontsSystemProvider {
   fcCacheAvailable(): boolean
   fcListAvailable(): boolean
-  runFcCache(): FontsSystemCommandResult
+  runFcCache(): MaybePromise<FontsSystemCommandResult>
 }

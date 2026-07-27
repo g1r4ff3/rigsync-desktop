@@ -20,8 +20,13 @@ export class LinuxNvidiaCheckProvider implements NvidiaCheckProvider {
     }
   }
 
-  listInstalledDriverPackages(): readonly NvidiaDriverPackage[] {
-    const result = run(['dpkg-query', '-W', '-f=${Package}\\t${Version}\\n', 'nvidia-driver-*'])
+  async listInstalledDriverPackages(): Promise<readonly NvidiaDriverPackage[]> {
+    const result = await run([
+      'dpkg-query',
+      '-W',
+      '-f=${Package}\\t${Version}\\n',
+      'nvidia-driver-*'
+    ])
     if (result.code !== 0) return []
     const out: NvidiaDriverPackage[] = []
     for (const line of result.stdout.split('\n')) {

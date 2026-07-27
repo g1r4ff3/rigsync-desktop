@@ -15,12 +15,12 @@ export async function buildToolsSyncGroup(
   ctx: RigsyncContext,
   provider: ToolsProvider
 ): Promise<SyncItemGroup | null> {
-  if (!provider.npmNodeAvailable()) return null
+  if (!(await provider.npmNodeAvailable())) return null
 
   const ignore = readIgnoreSet(ctx, 'tools', 'packages')
   const manifest = effectiveLayer(ctx, TOOLS_LAYER) as ToolsManifest
   const managedSet = new Set(manifest.packages ?? [])
-  const liveSet = new Set(Object.keys(provider.npmGlobals()))
+  const liveSet = new Set(Object.keys(await provider.npmGlobals()))
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 

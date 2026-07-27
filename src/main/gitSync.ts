@@ -13,7 +13,10 @@ import type { GitTransportProvider, SyncStatus } from '../engine/transport/types
 
 let lastStatus: SyncStatus | null = null
 
-export function getLastSyncStatus(ctx: RigsyncContext, provider: GitTransportProvider): SyncStatus {
+export async function getLastSyncStatus(
+  ctx: RigsyncContext,
+  provider: GitTransportProvider
+): Promise<SyncStatus> {
   // 아직 한 번도 syncNow가 안 돌았으면(예: 앱 막 시작) 부작용 없는 상태 조회로 대체.
   return lastStatus ?? getSyncStatus(ctx, provider)
 }

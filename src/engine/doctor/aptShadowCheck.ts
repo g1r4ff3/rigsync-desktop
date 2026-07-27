@@ -44,11 +44,11 @@ function currentPathDirs(): string[] {
   return (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)
 }
 
-export function checkAptShadowing(
+export async function checkAptShadowing(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
   provider: Pick<AptProvider, 'isAvailable' | 'fileExists' | 'dpkgOwnsPaths'>,
   pathDirs: readonly string[] = currentPathDirs()
-): AptShadowCheckResult {
+): Promise<AptShadowCheckResult> {
   if (!provider.isAvailable()) return { findings: [], warnings: [] }
 
   const managed = readEffectivePackages(ctx).apt?.packages ?? []
@@ -69,7 +69,7 @@ export function checkAptShadowing(
   // 조회한다(실측 2026-07-27: 패키지당 개별 `dpkg -S`는 관리 패키지 100여개
   // 기준 2.4초 이상 -- 거의 전부 subprocess 기동 비용).
   const allCandidates = [...candidatesByName.values()].flat()
-  const owned = provider.dpkgOwnsPaths(allCandidates)
+  const owned = await provider.dpkgOwnsPaths(allCandidates)
 
   // 3단계: 원래 알고리즘을 그대로 재생한다 -- PATH 순서상 첫 dpkg 소유본을
   // 만나면 멈추고(그 앞에 비관리본이 있었을 때만 finding), 없으면 끝까지 본다.

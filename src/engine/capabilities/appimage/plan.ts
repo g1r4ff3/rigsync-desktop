@@ -76,12 +76,12 @@ function makeInstallAction(
         return { ok: false, detail: downloadResult.detail }
       }
 
-      const integrateResult = provider.integrate(destPath)
+      const integrateResult = await provider.integrate(destPath)
       if (!integrateResult.ok) {
         return { ok: false, detail: integrateResult.output || '통합(integrate) 실패' }
       }
 
-      const setSourceResult = provider.setUpdateSource(destPath, 'GithubUpdater', {
+      const setSourceResult = await provider.setUpdateSource(destPath, 'GithubUpdater', {
         repo: entry.coordinate,
         repo_filename: entry.repoFilename,
         allow_prereleases: 'false'

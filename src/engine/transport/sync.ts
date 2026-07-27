@@ -9,14 +9,17 @@ import { scanManifestForSecrets } from '../safety/manifestScan'
 import type { GitTransportProvider, SyncStatus } from './types'
 
 /** 부작용 없는 상태 조회 — behindCount는 마지막 fetch 기준이라 갱신하려면 fetch를 먼저 해야 한다. */
-export function getSyncStatus(
+export async function getSyncStatus(
   ctx: Pick<RigsyncContext, 'manifestDir'>,
   provider: GitTransportProvider
-): SyncStatus {
-  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) {
+): Promise<SyncStatus> {
+  if (
+    !(await provider.isGitRepo(ctx.manifestDir)) ||
+    !(await provider.hasRemote(ctx.manifestDir))
+  ) {
     return { kind: 'local-only' }
   }
-  const behindBy = provider.behindCount(ctx.manifestDir)
+  const behindBy = await provider.behindCount(ctx.manifestDir)
   return behindBy > 0 ? { kind: 'behind', behindBy } : { kind: 'synced' }
 }
 
@@ -49,7 +52,7 @@ async function pushAfterSecretScan(
     }
   }
 
-  const push = provider.push(ctx.manifestDir)
+  const push = await provider.push(ctx.manifestDir)
   if (!push.ok)
     return { kind: 'error', message: push.output || 'push 실패 -- "지금 동기화"로 재시도하세요' }
   return getSyncStatus(ctx, provider)
@@ -62,12 +65,15 @@ export async function syncReference(
   ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
   provider: GitTransportProvider
 ): Promise<SyncStatus> {
-  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) {
+  if (
+    !(await provider.isGitRepo(ctx.manifestDir)) ||
+    !(await provider.hasRemote(ctx.manifestDir))
+  ) {
     return { kind: 'local-only' }
   }
-  if (provider.hasUncommittedChanges(ctx.manifestDir)) {
+  if (await provider.hasUncommittedChanges(ctx.manifestDir)) {
     const message = `capture: ${ctx.machineId} ${new Date().toISOString().slice(0, 10)}`
-    const commit = provider.addAllAndCommit(ctx.manifestDir, message)
+    const commit = await provider.addAllAndCommit(ctx.manifestDir, message)
     if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
   }
 
@@ -100,10 +106,11 @@ export async function sweepLiveEditsIfDirty(
   provider: GitTransportProvider
 ): Promise<SyncStatus | null> {
   if (ctx.role !== 'reference') return null
-  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) return null
-  if (!provider.hasUncommittedChanges(ctx.manifestDir)) return null
+  if (!(await provider.isGitRepo(ctx.manifestDir)) || !(await provider.hasRemote(ctx.manifestDir)))
+    return null
+  if (!(await provider.hasUncommittedChanges(ctx.manifestDir))) return null
 
-  const commit = provider.addAllAndCommit(ctx.manifestDir, LIVE_EDIT_COMMIT_MESSAGE)
+  const commit = await provider.addAllAndCommit(ctx.manifestDir, LIVE_EDIT_COMMIT_MESSAGE)
   if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
 
   return pushAfterSecretScan(ctx, provider)
@@ -114,15 +121,18 @@ export async function syncFollower(
   ctx: Pick<RigsyncContext, 'manifestDir'>,
   provider: GitTransportProvider
 ): Promise<SyncStatus> {
-  if (!provider.isGitRepo(ctx.manifestDir) || !provider.hasRemote(ctx.manifestDir)) {
+  if (
+    !(await provider.isGitRepo(ctx.manifestDir)) ||
+    !(await provider.hasRemote(ctx.manifestDir))
+  ) {
     return { kind: 'local-only' }
   }
-  const fetch = provider.fetch(ctx.manifestDir)
+  const fetch = await provider.fetch(ctx.manifestDir)
   if (!fetch.ok) return { kind: 'error', message: fetch.output || 'fetch 실패' }
 
-  const behindBy = provider.behindCount(ctx.manifestDir)
+  const behindBy = await provider.behindCount(ctx.manifestDir)
   if (behindBy > 0) {
-    const pull = provider.pullFastForward(ctx.manifestDir)
+    const pull = await provider.pullFastForward(ctx.manifestDir)
     if (!pull.ok) {
       return {
         kind: 'error',

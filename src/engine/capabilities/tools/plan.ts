@@ -28,7 +28,7 @@ export function planTools(
       commands: [cmd],
       privileged: false,
       run: async () => {
-        const result = provider.installNvm(nvmVersion)
+        const result = await provider.installNvm(nvmVersion)
         return {
           ok: result.ok,
           detail: result.ok
@@ -48,7 +48,7 @@ export function planTools(
       commands: [cmd],
       privileged: false,
       run: async () => {
-        const result = provider.installNodeAndSetDefault(nodeVersion)
+        const result = await provider.installNodeAndSetDefault(nodeVersion)
         return {
           ok: result.ok,
           detail: result.ok
@@ -67,7 +67,7 @@ export function planTools(
       commands: [cmd],
       privileged: false,
       run: async () => {
-        const result = provider.installGlobalPackage(pkg)
+        const result = await provider.installGlobalPackage(pkg)
         return { ok: result.ok, detail: result.output || (result.ok ? 'ok' : '설치 실패') }
       }
     })

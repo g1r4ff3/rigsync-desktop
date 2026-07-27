@@ -36,7 +36,7 @@ export function planSettings(
       privileged: false,
       run: async () => {
         const data = fs.readFileSync(storedPath, 'utf-8')
-        const result = provider.load(p, data)
+        const result = await provider.load(p, data)
         return { ok: result.ok, detail: result.output || (result.ok ? `loaded ${p}` : '로드 실패') }
       }
     })
