@@ -110,6 +110,7 @@ import {
   linuxAppimageSystemCheck
 } from '../engine/providers/linux'
 import { detectReclassifications } from '../engine/reclassification'
+import { type MethodKind, RequestScheduler } from './requestScheduler'
 import { moveEntryToCommonLayer, moveEntryToHostLayer } from '../engine/hostLayerMove'
 import {
   listSyncItemGroups,
@@ -687,6 +688,60 @@ const handlers: Record<string, Handler> = {
 }
 
 // ---------------------------------------------------------------------------
+// 동시성 규율 (v0.1.17 성능 2라운드 2단계) — requestScheduler.ts 참조.
+// ---------------------------------------------------------------------------
+
+/**
+ * 읽기 전용(diff·조회) — 서로 동시 실행 허용 + in-flight 병합 대상. 여기 없는
+ * 메서드는 `WRITE_METHODS`나 `UNLOCKED_METHODS`에 있지 않는 한 기본이 'write'다
+ * (새 IPC 메서드를 추가하면서 이 목록 갱신을 까먹었을 때 "배타적으로 취급"이
+ * "동시 실행 허용"보다 훨씬 안전한 fail-closed 기본값이라 그렇게 뒀다).
+ */
+const READ_METHODS = new Set<string>([
+  'getStatus',
+  'diffDotfiles',
+  'diffPackages',
+  'diffAppimage',
+  'diffFonts',
+  'diffBinaries',
+  'diffSettings',
+  'diffServices',
+  'diffScheduled',
+  'diffTools',
+  'diffRepos',
+  'getDoctorReport',
+  'runDriftCheck',
+  'validateManifestPath',
+  'getSyncStatus',
+  'getConfig',
+  'detectDuplicates',
+  'detectReclassifications',
+  'listSyncItems',
+  'planUninstall'
+])
+
+/**
+ * 락을 아예 건너뛰는 메서드 — `cancelApply`는 진행 중인 `apply`(write 락 보유)를
+ * 중단시키는 신호라, 그 자신이 write 락 뒤에 줄서면 apply가 끝날 때까지
+ * 영원히 실행되지 못해 취소가 불가능해진다.
+ */
+const UNLOCKED_METHODS = new Set<string>(['cancelApply'])
+
+function classifyMethod(method: string): MethodKind {
+  if (UNLOCKED_METHODS.has(method)) return 'unlocked'
+  if (READ_METHODS.has(method)) return 'read'
+  return 'write'
+}
+
+// 병합(coalescing) 대상은 읽기 전용으로 한정한다 — 변조 연산은 멱등이
+// 아닐 수 있어(예: 두 번째 capture가 첫 번째 이후 상태를 다시 잡아야 함)
+// 자동 병합하면 위험하다. 배타 락이 이미 순서를 보장하므로 각자 새로 실행된다.
+const scheduler = new RequestScheduler({
+  classify: classifyMethod,
+  coalesce: (method) => READ_METHODS.has(method)
+})
+
+// ---------------------------------------------------------------------------
 // 메시지 루프
 // ---------------------------------------------------------------------------
 
@@ -716,7 +771,7 @@ async function dispatch(request: WorkerRequest): Promise<void> {
     return
   }
   try {
-    const result = await handler(request.args)
+    const result = await scheduler.run(request.method, request.args, () => handler(request.args))
     process.parentPort.postMessage({ id: request.id, ok: true, result: result ?? null })
   } catch (err) {
     process.parentPort.postMessage({ id: request.id, ok: false, error: serializeError(err) })
