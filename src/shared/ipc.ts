@@ -1042,6 +1042,42 @@ export interface RegisterEntryRequest {
 export type UnregisterEntryRequest = RegisterEntryRequest
 
 /**
+ * WS3 UI: "Remove from catalog" 보조 액션을 보여줄 capability — `RegisterCapability`
+ * 전부(dotfiles 포함 — 이미 등록된 dotfiles entry는 재캡처뿐 아니라 삭제도
+ * registry.ts가 지원한다).
+ */
+export const REGISTERABLE_CAPABILITIES: readonly RegisterCapability[] = [
+  'apt',
+  'flatpak',
+  'appimage',
+  'fonts',
+  'tools',
+  'repos',
+  'dotfiles'
+]
+
+export function isRegisterableCapability(
+  capability: SyncItemCapability
+): capability is RegisterCapability {
+  return (REGISTERABLE_CAPABILITIES as readonly string[]).includes(capability)
+}
+
+/**
+ * WS3 UI: pending-add/unresolvable 행에 "Register" 단건 버튼을 보여줄
+ * capability — dotfiles는 제외한다(이번 배치는 기존 엔트리 재캡처만 지원,
+ * `registerEntry`가 manifest에 없는 dotfiles home을 명시 에러로 거부한다 —
+ * `DotfileEntryNotRegisteredError`, registry.ts).
+ */
+export const PENDING_REGISTERABLE_CAPABILITIES: readonly Exclude<RegisterCapability, 'dotfiles'>[] =
+  ['apt', 'flatpak', 'appimage', 'fonts', 'tools', 'repos']
+
+export function isPendingRegisterableCapability(
+  capability: SyncItemCapability
+): capability is Exclude<RegisterCapability, 'dotfiles'> {
+  return (PENDING_REGISTERABLE_CAPABILITIES as readonly string[]).includes(capability)
+}
+
+/**
  * `engine:registerEntry`/`engine:unregisterEntry` 응답 — git push 결과를
  * `sync`에 동봉한다(명시적 사용자 액션이라 "됐는지 안 됐는지 알 수 없음"
  * 재발 방지, IPC_CHANNELS 주석 참조). `groups`는 갱신된 Candidates 화면

@@ -22,6 +22,7 @@ import {
   dotfilesToLinkExplainCopy,
   emptyStateCopy,
   helpCopy,
+  recaptureActionCopy,
   sectionCopy
 } from '../copy'
 import { captureAll, revalidateAfterCapture, type CaptureAllReport } from '../captureAll'
@@ -203,9 +204,12 @@ function DriftRow({
  */
 function DotfilesDriftRow({
   kind,
+  action,
   children
 }: {
   readonly kind: StatusKind
+  /** WS3("창고 모델" 등록): 행 끝에 붙는 단건 액션(예: "다시 캡처") — 없으면 기존과 동일. */
+  readonly action?: React.ReactNode
   readonly children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -214,14 +218,15 @@ function DotfilesDriftRow({
       <span
         className={
           kind === 'error'
-            ? 'text-status-error'
+            ? 'text-status-error flex-1'
             : kind === 'warn'
-              ? 'text-status-warn'
-              : 'text-muted-foreground'
+              ? 'text-status-warn flex-1'
+              : 'text-muted-foreground flex-1'
         }
       >
         {children}
       </span>
+      {action}
     </li>
   )
 }
@@ -255,6 +260,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   // v0.1.20 1번: 마지막 Capture 결과 — 다음 Capture 시작 시 비운다(핸들러의
   // setCaptureReport(null)).
   const [captureReport, setCaptureReport] = useState<CaptureAllReport | null>(null)
+  // WS3("창고 모델" 등록): dotfiles 드리프트 행의 "다시 캡처"(재등록, upsert)
+  // 전용 busy 상태 — Apply·Capture 버튼과 독립된 컨트롤이라 별도로 둔다.
+  const [pendingRecaptureKeys, setPendingRecaptureKeys] = useState<Record<string, boolean>>({})
 
   const [preview, setPreview] = useState<ApplyResponse | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -276,6 +284,28 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   // Slot이 이미 in-flight를 병합하므로 중복 호출은 안전하다.
   async function refreshDiff(): Promise<void> {
     await diffSnapshotSlot.revalidate(() => fetchDiffSnapshot(status))
+  }
+
+  // WS3("창고 모델" 등록): 드리프트 행의 "다시 캡처" — 홈의 현재 내용을
+  // 스토어로 다시 복사한다(registry.ts `registerDotfileEntry`, upsert). 어느
+  // 머신에서든 실행 가능하다(배치 A로 follower도 git 저작 경로를 갖췄다 —
+  // role 가드 없음). `contentChanged` 문자열은 권한만 다르면
+  // "<home> (mode a != b)" 형태라(engine diff.ts) 접미사를 떼고 home만 쓴다.
+  async function recaptureDotfile(driftEntry: string): Promise<void> {
+    const home = driftEntry.split(' (mode ')[0]
+    setPendingRecaptureKeys((prev) => ({ ...prev, [home]: true }))
+    setError(null)
+    try {
+      const response = await window.api.engine.registerEntry({ capability: 'dotfiles', key: home })
+      if (response.sync.kind === 'error') {
+        setError(`${recaptureActionCopy.pushFailedPrefix}${response.sync.message}`)
+      }
+      await refreshDiff()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingRecaptureKeys((prev) => ({ ...prev, [home]: false }))
+    }
   }
 
   useEffect(() => {
@@ -766,11 +796,28 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
               {dotfilesStateCopy.toLink} — <span className="font-mono">{home}</span>
             </DotfilesDriftRow>
           ))}
-          {dotfilesDiff?.contentChanged.map((item) => (
-            <DotfilesDriftRow key={`changed-${item}`} kind="warn">
-              {dotfilesStateCopy.contentChanged} — <span className="font-mono">{item}</span>
-            </DotfilesDriftRow>
-          ))}
+          {dotfilesDiff?.contentChanged.map((item) => {
+            const home = item.split(' (mode ')[0]
+            return (
+              <DotfilesDriftRow
+                key={`changed-${item}`}
+                kind="warn"
+                action={
+                  <ActionButton
+                    variant="secondary"
+                    size="xs"
+                    label={recaptureActionCopy.label}
+                    subtitle={recaptureActionCopy.subtitle}
+                    busy={pendingRecaptureKeys[home]}
+                    disabled={pendingRecaptureKeys[home]}
+                    onClick={() => recaptureDotfile(item)}
+                  />
+                }
+              >
+                {dotfilesStateCopy.contentChanged} — <span className="font-mono">{item}</span>
+              </DotfilesDriftRow>
+            )
+          })}
           {dotfilesDiff?.missingHome.map((home) => (
             <DotfilesDriftRow key={`missing-${home}`} kind="error">
               {dotfilesStateCopy.missingHome} — <span className="font-mono">{home}</span>

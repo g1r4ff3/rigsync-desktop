@@ -9,7 +9,11 @@ import {
   syncItemStateCopy,
   toggleDisabledReason,
   detectionOnlyDisabledReason,
-  followerToggleDisabledReason
+  followerToggleDisabledReason,
+  bulkSubscribeCopy,
+  registerActionCopy,
+  subscribeToggleCopy,
+  unregisterActionCopy
 } from './copy'
 
 /**
@@ -154,21 +158,62 @@ describe('captureReportCopy', () => {
 })
 
 describe('shouldShowPendingCaptureBanner', () => {
-  it('reference는 보류 건수가 있으면 배너를 띄운다', () => {
-    expect(shouldShowPendingCaptureBanner(1, 'reference')).toBe(true)
+  it('보류 건수가 있으면 role과 무관하게 배너를 띄운다', () => {
+    expect(shouldShowPendingCaptureBanner(1)).toBe(true)
   })
 
-  it('follower는 보류 건수가 있어도 배너를 띄우지 않는다 — capture 불가에 "Capture를 실행하세요"는 불가능한 행동 지시', () => {
-    expect(shouldShowPendingCaptureBanner(99, 'follower')).toBe(false)
+  // WS3("창고 모델" 전 머신 저작): 배치 A(WS5)로 follower도 git 저작 경로를
+  // 갖춰 개별 등록(register)이 가능해졌다 — 더는 "Capture를 실행하세요"가
+  // follower에 불가능한 행동 지시가 아니므로(각 행의 Register 버튼으로 대체
+  // 가능) follower도 배너를 띄운다(내용은 registerInsteadText로 갈린다).
+  it('follower도 보류 건수가 있으면 배너를 띄운다(개별 등록 안내로 대체)', () => {
+    expect(shouldShowPendingCaptureBanner(99)).toBe(true)
   })
 
-  it('보류 건수가 0이면 role과 무관하게 배너를 띄우지 않는다', () => {
-    expect(shouldShowPendingCaptureBanner(0, 'reference')).toBe(false)
-    expect(shouldShowPendingCaptureBanner(0, 'follower')).toBe(false)
+  it('보류 건수가 0이면 배너를 띄우지 않는다', () => {
+    expect(shouldShowPendingCaptureBanner(0)).toBe(false)
+  })
+})
+
+describe('pendingChangesCopy.registerInsteadText', () => {
+  it('개수와 함께 개별 등록 안내를 만든다', () => {
+    expect(pendingChangesCopy.registerInsteadText(3)).toBe(
+      '3개 항목을 개별 등록할 수 있습니다 — 각 행의 Register 버튼을 누르세요.'
+    )
+  })
+})
+
+describe('subscribeToggleCopy / registerActionCopy / unregisterActionCopy / bulkSubscribeCopy', () => {
+  it('subscribeToggleCopy는 라벨과 on/off 툴팁을 제공한다', () => {
+    expect(subscribeToggleCopy.label).toBe('Subscribe')
+    expect(subscribeToggleCopy.onTooltip).toMatch(/구독합니다/)
+    expect(subscribeToggleCopy.offTooltip).toMatch(/구독하지 않습니다/)
   })
 
-  it('role이 아직 없을 때(로딩 중)는 reference와 동일하게 취급한다', () => {
-    expect(shouldShowPendingCaptureBanner(1, undefined)).toBe(true)
+  it('registerActionCopy 라벨은 영어(버튼), 부제는 한국어(언어 정책)', () => {
+    expect(registerActionCopy.label).toBe('Register')
+    expect(registerActionCopy.subtitle).toMatch(/창고에 등록/)
+  })
+
+  it('unregisterActionCopy는 기존 Delete와 구분되는 라벨·로컬 불간섭 안내를 담는다', () => {
+    expect(unregisterActionCopy.label).toBe('Remove from catalog')
+    expect(unregisterActionCopy.label).not.toBe('Delete')
+    expect(unregisterActionCopy.localFilesNotice).toMatch(/로컬 파일·설치는 절대 건드리지 않습니다/)
+    expect(unregisterActionCopy.dialogTitle('zsh')).toBe('Remove "zsh" from catalog?')
+  })
+
+  it('unregisterActionCopy.subscribersFound/noSubscribersFound/unlistableSubscribersNotice — 정직한 한계 안내', () => {
+    expect(unregisterActionCopy.subscribersFound(['lab-main', 'lab-2'])).toBe(
+      '선택 구독 머신 중 구독: lab-main, lab-2'
+    )
+    expect(unregisterActionCopy.noSubscribersFound).toMatch(/구독 중인 곳은 없습니다/)
+    expect(unregisterActionCopy.unlistableSubscribersNotice).toMatch(/열거할 수 없습니다/)
+  })
+
+  it('bulkSubscribeCopy는 all-on/all-off/mixed 세 상태의 버튼 문구를 제공한다', () => {
+    expect(bulkSubscribeCopy.allOn.label).toBe('Unsubscribe all')
+    expect(bulkSubscribeCopy.allOff.label).toBe('Subscribe all')
+    expect(bulkSubscribeCopy.mixed.label).toBe('Subscribe all')
   })
 })
 

@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, PackageMinus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { BulkDeleteChecklistDialog } from '@/components/BulkDeleteChecklistDialog'
@@ -7,6 +7,7 @@ import { CandidateStateControl } from '@/components/CandidateStateControl'
 import { CandidateStateIcon } from '@/components/CandidateStateIcon'
 import { CaptureReportSummary } from '@/components/CaptureReportSummary'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { UnregisterConfirmDialog } from '@/components/UnregisterConfirmDialog'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -14,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { captureAll, revalidateAfterCapture, type CaptureAllReport } from '../captureAll'
 import {
   bulkDeleteCopy,
+  bulkSubscribeCopy,
   buttonCopy,
   candidatesIntroCopy,
   describeSyncItemState,
@@ -24,8 +26,11 @@ import {
   hostLayerToggleCopy,
   isFollowerToggleDisabled,
   pendingChangesCopy,
+  registerActionCopy,
   shouldShowPendingCaptureBanner,
-  toggleDisabledReason
+  subscribeToggleCopy,
+  toggleDisabledReason,
+  unregisterActionCopy
 } from '../copy'
 import {
   collectDeletableItems,
@@ -33,6 +38,15 @@ import {
   controlValueForItem,
   type DeletableItem
 } from '../deleteEligibility'
+import {
+  computeSubscribeGroupState,
+  isSubscribeEligible,
+  nextBulkSubscribedValue,
+  showsRegisterButton,
+  showsUnregisterButton,
+  subscribeEligibleKeys,
+  type SubscribeGroupState
+} from '../registryUiHelpers'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusText } from '../status'
 import {
@@ -45,6 +59,7 @@ import {
   isIgnoreUnsupportedCapability,
   type EngineStatus,
   type HostLayerCapability,
+  type RegisterCapability,
   type ScreenshotRoute,
   type SyncItemGroupDto,
   type SyncItemState
@@ -138,6 +153,14 @@ type Row =
       readonly stateCounts: StateCounts
       /** R7: detectionOnly 그룹 전용 집계 — 비-detectionOnly 그룹은 항상 0. */
       readonly detectedCount: number
+      /**
+       * WS3("창고 모델" 구독) — 그룹 단위 "모두 구독/해제" 버튼의 상태. 구독
+       * 개념이 성립하는 항목(managed && !ignored)이 하나도 없으면 null이고,
+       * 그 경우 버튼 자체를 숨긴다(registryUiHelpers `computeSubscribeGroupState`).
+       */
+      readonly subscribeGroupState: SubscribeGroupState | null
+      /** 위 버튼이 벌크 토글할 대상 key 목록(검색 필터 무관 — 항상 그룹 전체). */
+      readonly subscribeKeys: readonly string[]
     }
   | {
       readonly kind: 'item'
@@ -225,6 +248,13 @@ function mergeStateCounts(groups: readonly StateCounts[]): StateCounts {
   )
 }
 
+/** WS3: SubscribeGroupState → bulkSubscribeCopy 키(문구 3종 매핑). */
+function toBulkSubscribeCopyKey(state: SubscribeGroupState): 'allOn' | 'allOff' | 'mixed' {
+  if (state === 'all-on') return 'allOn'
+  if (state === 'all-off') return 'allOff'
+  return 'mixed'
+}
+
 /** 그룹의 유일 식별자 — apt는 subgroup까지 필요(두 그룹), 나머지는 capability. */
 function groupIdOf(group: SyncItemGroupDto): string {
   return group.subgroup ?? group.capability
@@ -306,6 +336,21 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   // 별개 컨트롤이라 같은 행에서 둘이 동시에 눌려도(이론상) 서로의 busy를
   // 밟지 않는다.
   const [pendingHostKeys, setPendingHostKeys] = useState<Record<string, boolean>>({})
+  // WS3("창고 모델" 구독) — 구독 Switch·그룹 벌크 구독 버튼 전용 busy 상태
+  // (ignore 토글 pendingKeys와는 별개 컨트롤이라 서로의 busy를 밟지 않는다,
+  // pendingHostKeys와 같은 이유).
+  const [pendingSubscribeKeys, setPendingSubscribeKeys] = useState<Record<string, boolean>>({})
+  const [pendingSubscribeGroups, setPendingSubscribeGroups] = useState<Record<string, boolean>>({})
+  // WS4("창고 모델" 등록) — Register 버튼 전용 busy 상태.
+  const [pendingRegisterKeys, setPendingRegisterKeys] = useState<Record<string, boolean>>({})
+  // WS4 "Remove from catalog" 확인 다이얼로그 상태 — DeleteConfirmDialog와 같은
+  // "열 때마다 key를 올려 리마운트" 패턴.
+  const [unregisterItem, setUnregisterItem] = useState<{
+    readonly capability: RegisterCapability
+    readonly key: string
+    readonly label: string
+  } | null>(null)
+  const [unregisterSeq, setUnregisterSeq] = useState(0)
   // refactor-spec-v0.2 §1: 그룹 접기 상태 — 명시 오버라이드만 저장하고,
   // 없으면 그룹의 collapsedByDefault를 따른다(refresh로 groups가 갈려도
   // 사용자가 펼친 상태가 유지된다). 검색 중엔 접힘을 무시한다 — 접힌 그룹
@@ -454,7 +499,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         // R7: detectionOnly면 stateCounts는 무의미하니 안 채우고(0으로 둠)
         // detectedCount만 채운다 — 렌더가 detectionOnly 분기에서 골라 쓴다.
         stateCounts: detectionOnly ? EMPTY_STATE_COUNTS : computeStateCounts(group.items),
-        detectedCount: detectionOnly ? group.items.length : 0
+        detectedCount: detectionOnly ? group.items.length : 0,
+        // WS3: detectionOnly 그룹(snap)엔 구독 개념이 없다 — appimage/candidates.ts류와
+        // 같은 원칙으로 그냥 비워둔다.
+        subscribeGroupState: detectionOnly ? null : computeSubscribeGroupState(group.items),
+        subscribeKeys: detectionOnly ? [] : subscribeEligibleKeys(group.items)
       })
       if (collapsed) continue
       for (const item of items) {
@@ -574,6 +623,96 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     } finally {
       setPendingHostKeys((prev) => ({ ...prev, [rowKey]: false }))
     }
+  }
+
+  // WS3: 머신별 구독 Switch — mode 무관(select/all 둘 다 setSubscribed가 처리,
+  // selection.ts 참조) managed && !ignored 행에서 동작한다. host 계층 이동과
+  // 달리 follower도 비활성화하지 않는다(selection.toml은 머신별 파일이라
+  // 다른 머신과 충돌하지 않고, 배치 A로 follower도 git 저작 경로를 갖췄다).
+  async function toggleSubscribeItem(
+    capability: SyncItemGroupDto['capability'],
+    key: string,
+    subscribed: boolean
+  ): Promise<void> {
+    const rowKey = `${capability}:${key}`
+    setPendingSubscribeKeys((prev) => ({ ...prev, [rowKey]: true }))
+    try {
+      const next = await window.api.engine.toggleSubscribe({ capability, key, subscribed })
+      syncItemsSnapshotSlot.set(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingSubscribeKeys((prev) => ({ ...prev, [rowKey]: false }))
+    }
+  }
+
+  // WS3: 그룹 단위 "모두 구독/해제" — 1커밋으로 묶기 위해 toggleSubscribeBulk를 쓴다.
+  async function toggleSubscribeGroupAll(
+    groupId: string,
+    capability: SyncItemGroupDto['capability'],
+    state: SubscribeGroupState,
+    keys: readonly string[]
+  ): Promise<void> {
+    setPendingSubscribeGroups((prev) => ({ ...prev, [groupId]: true }))
+    try {
+      const next = await window.api.engine.toggleSubscribeBulk({
+        capability,
+        keys,
+        subscribed: nextBulkSubscribedValue(state)
+      })
+      syncItemsSnapshotSlot.set(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingSubscribeGroups((prev) => ({ ...prev, [groupId]: false }))
+    }
+  }
+
+  // WS4: pending-add/unresolvable 행의 "Register" 단건 액션 — 성공하면 그
+  // 행이 synced(또는 not-subscribed)로 즉시 갱신된다. git push까지 await하는
+  // IPC라(engine:registerEntry) 응답에 동봉된 sync가 error면 "등록은 됐지만
+  // 동기화 실패"를 그 자리에서 알린다(이 repo의 반복된 교훈 — "됐는지 안
+  // 됐는지 알 수 없음" 재발 방지).
+  async function registerItem(
+    capability: SyncItemGroupDto['capability'],
+    key: string
+  ): Promise<void> {
+    const rowKey = `${capability}:${key}`
+    setPendingRegisterKeys((prev) => ({ ...prev, [rowKey]: true }))
+    setError(null)
+    try {
+      const response = await window.api.engine.registerEntry({
+        capability: capability as RegisterCapability,
+        key
+      })
+      syncItemsSnapshotSlot.set(response.groups)
+      if (response.sync.kind === 'error') {
+        setError(`${registerActionCopy.pushFailedPrefix}${response.sync.message}`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingRegisterKeys((prev) => ({ ...prev, [rowKey]: false }))
+    }
+  }
+
+  // WS4: "Remove from catalog" — 확인 다이얼로그를 연다(즉시 실행 아님, 삭제와
+  // 동일하게 확인 게이트를 거친다).
+  function openUnregisterDialog(row: Extract<Row, { kind: 'item' }>): void {
+    setUnregisterSeq((n) => n + 1)
+    setUnregisterItem({
+      capability: row.capability as RegisterCapability,
+      key: row.itemKey,
+      label: row.label
+    })
+  }
+
+  function closeUnregisterDialog(): void {
+    setUnregisterItem(null)
+  }
+
+  function handleUnregisterCompleted(): void {
+    refresh().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }
 
   async function toggleGroup(
@@ -726,15 +865,20 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       )}
 
       {/* R6 R1: 보류 중 변경이 있을 때만 배너를 띄운다(0건이면 안 보임).
-          R8: follower에는 이 배너를 아예 안 띄운다 — capture가 불가능한
-          머신에 "Capture를 실행하세요"라고 지시하는 건 불가능한 행동 지시다
-          (실사용 실패 그 자체 — follower에서 버튼을 눌러도 아무 일도 안
-          일어났다). 위 intro 줄 + 항목별 role-aware 상태 설명이 "무엇을 봤는지"
-          설명을 대신한다. */}
-      {shouldShowPendingCaptureBanner(pendingCount, status?.role) && (
+          WS3("창고 모델" 전 머신 저작): R8 시절엔 follower에서 아예 숨겼지만
+          (capture 불가에 "Capture를 실행하세요"는 불가능한 행동 지시), 배치
+          A(WS5)로 follower도 git 저작 경로를 갖춰 각 행의 Register 버튼으로
+          개별 등록할 수 있게 됐다 — role과 무관하게 배너를 띄우되, 벌크
+          Capture 버튼은 reference 전용으로 남기고 비reference는 개별 등록
+          안내로 대체한다(shouldShowPendingCaptureBanner 주석 참조). */}
+      {shouldShowPendingCaptureBanner(pendingCount) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-status-warn/40 bg-status-warn/10 px-3 py-2">
           <div className="min-w-0 flex-1">
-            <StatusText kind="warn">{pendingChangesCopy.bannerText(pendingCount)}</StatusText>
+            <StatusText kind="warn">
+              {isFollower
+                ? pendingChangesCopy.registerInsteadText(pendingCount)
+                : pendingChangesCopy.bannerText(pendingCount)}
+            </StatusText>
             {/* v0.1.20 2번: 항목 이름까지 — "N건"만으로는 뭐가 바뀌는지 안 보였다. */}
             <p
               className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
@@ -743,15 +887,17 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
               {pendingChangesCopy.bannerItemNames(pendingItemNames)}
             </p>
           </div>
-          <ActionButton
-            variant="secondary"
-            size="sm"
-            label={buttonCopy.capture.label}
-            subtitle={pendingChangesCopy.captureSubtitle}
-            busy={captureBusy}
-            disabled={captureBusy}
-            onClick={handleCapture}
-          />
+          {!isFollower && (
+            <ActionButton
+              variant="secondary"
+              size="sm"
+              label={buttonCopy.capture.label}
+              subtitle={pendingChangesCopy.captureSubtitle}
+              busy={captureBusy}
+              disabled={captureBusy}
+              onClick={handleCapture}
+            />
+          )}
         </div>
       )}
 
@@ -827,6 +973,34 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                           )
                         }
                       />
+                      {/* WS3("창고 모델" 구독): 그룹 단위 "모두 구독/해제" —
+                          구독 개념이 성립하는 항목이 하나도 없으면(예: 전부
+                          미관리) subscribeGroupState가 null이라 버튼 자체가
+                          안 뜬다. ignore 토글(위 GroupCheckbox)과 독립된
+                          컨트롤이라 별도 busy 상태(pendingSubscribeGroups)를 쓴다. */}
+                      {row.subscribeGroupState !== null && (
+                        <ActionButton
+                          variant="ghost"
+                          size="xs"
+                          label={
+                            bulkSubscribeCopy[toBulkSubscribeCopyKey(row.subscribeGroupState)].label
+                          }
+                          subtitle={
+                            bulkSubscribeCopy[toBulkSubscribeCopyKey(row.subscribeGroupState)]
+                              .subtitle
+                          }
+                          busy={!!pendingSubscribeGroups[row.groupId]}
+                          disabled={!!pendingSubscribeGroups[row.groupId]}
+                          onClick={() =>
+                            toggleSubscribeGroupAll(
+                              row.groupId,
+                              row.capability,
+                              row.subscribeGroupState as SubscribeGroupState,
+                              row.subscribeKeys
+                            )
+                          }
+                        />
+                      )}
                       {/* refactor-spec-v0.2 §1: 접을 수 있는 그룹(배포판 기본)은
                           헤더 전체가 아니라 명시적 chevron 버튼으로 펼친다 —
                           접혀 있어도 헤더·집계는 항상 보인다(절대 숨기지 않는다). */}
@@ -940,6 +1114,76 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                           </TooltipContent>
                         </Tooltip>
                       )}
+                      {/* WS3("창고 모델" 구독): 이 머신이 이 항목을 구독하는지
+                          — mode 무관 managed && !ignored 행에서만 뜬다(그 조건은
+                          state가 'synced'/'not-subscribed' 둘 중 하나일 때와
+                          정확히 같다, registryUiHelpers `isSubscribeEligible`
+                          참조). host 계층 스위치와 달리 follower도 비활성화
+                          하지 않는다(selection.toml은 머신별 파일). */}
+                      {isSubscribeEligible(row) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <label className="flex shrink-0 items-center gap-1.5">
+                              <Switch
+                                size="sm"
+                                checked={row.state !== 'not-subscribed'}
+                                disabled={pendingSubscribeKeys[row.key]}
+                                onCheckedChange={(checked) =>
+                                  toggleSubscribeItem(row.capability, row.itemKey, checked)
+                                }
+                                aria-label={`${row.label} — ${subscribeToggleCopy.label}`}
+                              />
+                              <span className="text-muted-foreground">
+                                {subscribeToggleCopy.label}
+                              </span>
+                            </label>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {row.state !== 'not-subscribed'
+                              ? subscribeToggleCopy.onTooltip
+                              : subscribeToggleCopy.offTooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {/* WS4("창고 모델" 등록): pending-add/unresolvable 행의
+                          단건 등록 — dotfiles(재캡처만 지원)·비발견형
+                          capability는 showsRegisterButton이 걸러 버튼 자체가
+                          안 뜬다. unresolvable이면 사유를 그대로 비활성 툴팁에
+                          싣는다(capture와 같은 "추가 불가" 판정을 재사용). */}
+                      {showsRegisterButton(row.capability, row.state) && (
+                        <ActionButton
+                          variant="secondary"
+                          size="xs"
+                          label={registerActionCopy.label}
+                          subtitle={registerActionCopy.subtitle}
+                          busy={pendingRegisterKeys[row.key]}
+                          disabled={
+                            pendingRegisterKeys[row.key] ||
+                            (row.state === 'unresolvable' && !!row.unresolvableReason)
+                          }
+                          disabledReason={row.unresolvableReason}
+                          onClick={() => registerItem(row.capability, row.itemKey)}
+                        />
+                      )}
+                      {/* WS4: "Remove from catalog" — 기존 Delete(로컬 시스템
+                          삭제)와 완전히 다른 연산이라 별도 아이콘·라벨로
+                          시각적으로 분리한다(unregisterActionCopy 주석 참조).
+                          managed 항목에만 뜨고, registry.ts가 지원하지 않는
+                          capability(services·binaries·snap 등)에는 안 뜬다. */}
+                      {showsUnregisterButton(row.capability, row.managed) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => openUnregisterDialog(row)}
+                              className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                              aria-label={`${row.label} — ${unregisterActionCopy.label}`}
+                            >
+                              <PackageMinus className="size-3.5" aria-hidden="true" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{unregisterActionCopy.subtitle}</TooltipContent>
+                        </Tooltip>
+                      )}
                       <CandidateStateControl
                         // 사용자 명세: 3상태(Sync/Pause/Delete)가 각각 직접
                         // 선택 가능한 세그먼트 컨트롤. Sync/Pause는 기존
@@ -998,6 +1242,14 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         open={deleteDialogItems !== null}
         onOpenChange={(next) => !next && closeDeleteDialog()}
         onCompleted={handleDeleteCompleted}
+      />
+
+      <UnregisterConfirmDialog
+        key={unregisterSeq}
+        item={unregisterItem}
+        open={unregisterItem !== null}
+        onOpenChange={(next) => !next && closeUnregisterDialog()}
+        onCompleted={handleUnregisterCompleted}
       />
     </div>
   )

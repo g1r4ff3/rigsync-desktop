@@ -314,18 +314,89 @@ export const hostLayerToggleCopy = {
 } as const
 
 /**
- * R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내".
- * R8: follower는 이 배너를 아예 띄우지 않는다 — capture가 불가능한 머신에
- * "Capture를 실행하세요"라고 지시하는 건 불가능한 행동 지시(실사용 실패
- * 2번: 사용자가 지시대로 눌렀지만 follower라 차단돼 아무 일도 안 일어났다).
- * 다른 문구로 대체하는 대신 화면 상단의 `candidatesIntroCopy.follower` +
- * 항목별 role-aware 상태 설명이 그 역할을 대신한다(중복 정보를 늘리지 않는다).
+ * WS3("창고 모델 1차" — cheerful-growing-fairy 계획): 머신별 구독 Switch —
+ * 계획 원안은 mode=select 한정이었으나, mode=all 머신도 단건 opt-out이
+ * 필요했던 실사용 아픔(v4l-utils를 함대 전역 ignore로 빼버렸던 사건 — 이
+ * 기능의 출발점)이 있어 **mode 무관** managed && !ignored 행에 뜨는 것으로
+ * 확정했다(selection.ts `setSubscribed`가 양쪽 모드를 이미 처리하므로 UI는
+ * 분기가 필요 없다). host 계층 이동과 달리 follower도 비활성화하지 않는다 —
+ * selection.toml은 머신별 파일이라 다른 머신과 충돌할 여지가 없고, 배치
+ * A(WS5)로 follower도 git 저작 경로를 갖췄다.
  */
-export function shouldShowPendingCaptureBanner(
-  pendingCount: number,
-  role: EngineRole | undefined
-): boolean {
-  return pendingCount > 0 && role !== 'follower'
+export const subscribeToggleCopy = {
+  label: 'Subscribe',
+  onTooltip: '이 머신이 이 항목을 구독합니다 — 다음 Apply 때 이 머신에 반영됩니다.',
+  offTooltip:
+    '이 머신은 이 항목을 구독하지 않습니다 — 카탈로그(manifest)엔 그대로 남고 다른 머신은 영향받지 않습니다. Apply도 이 항목을 건드리지 않습니다(설치/제거 어느 쪽으로도).'
+} as const
+
+/**
+ * WS3/WS4: 등록(register) 액션 — pending-add(또는 unresolvable) 행에 뜨는
+ * 단건 버튼. dotfiles는 이번 배치에서 재캡처(upsert)만 지원해 pending-add
+ * 행에는 뜨지 않는다(`isPendingRegisterableCapability` — shared/ipc.ts).
+ */
+export const registerActionCopy = {
+  label: 'Register',
+  subtitle: '창고에 등록 — 다른 머신이 구독할 수 있습니다',
+  runningLabel: '등록 중…',
+  pushFailedPrefix: '등록됨 — 단 동기화 실패: '
+} as const
+
+/**
+ * WS3: DiffView 드리프트 행의 "다시 캡처" — 이미 카탈로그에 있는 dotfiles
+ * entry의 홈 내용을 스토어로 다시 복사한다(registry.ts `registerDotfileEntry`,
+ * upsert). registerActionCopy(신규 등록 후보용)와 다른 문구를 쓰는 이유: 이건
+ * "새로 등록"이 아니라 "이미 있는 항목의 드리프트를 해소"하는 재캡처라
+ * real-world match상 별도 라벨이 맞다.
+ */
+export const recaptureActionCopy = {
+  label: 'Recapture',
+  subtitle: '이 항목을 다시 캡처 — 홈의 현재 내용을 스토어에 반영합니다',
+  pushFailedPrefix: '다시 캡처됨 — 단 동기화 실패: '
+} as const
+
+/**
+ * WS4: 삭제(unregister, "Remove from catalog") 액션·확인 다이얼로그 — 기존
+ * Delete(CandidateStateControl의 로컬 삭제 3상태)와 혼동되지 않도록 라벨·
+ * 문구를 분리한다: Delete는 이 머신의 실제 설치를 제거하고, 이건 카탈로그
+ * (manifest) 등재만 지운다.
+ */
+export const unregisterActionCopy = {
+  label: 'Remove from catalog',
+  subtitle: '창고 등재만 지웁니다 — 이 머신의 로컬 파일·설치는 그대로 둡니다',
+  runningLabel: '삭제 중…',
+  dialogTitle: (label: string): string => `Remove "${label}" from catalog?`,
+  localFilesNotice: '이 작업은 로컬 파일·설치는 절대 건드리지 않습니다 — 카탈로그 등재만 지웁니다.',
+  loadingSubscribers: '구독 중인 머신을 확인하는 중…',
+  subscribersFound: (hosts: readonly string[]): string =>
+    `선택 구독 머신 중 구독: ${hosts.join(', ')}`,
+  noSubscribersFound: '선택 구독(mode=select) 머신 중 구독 중인 곳은 없습니다.',
+  /** listEntrySubscribers의 정직한 한계(selection.ts jsdoc) — UI에도 그대로 안내. */
+  unlistableSubscribersNotice:
+    '전체 구독(mode=all) 머신은 selection.toml이 없어 열거할 수 없습니다 — 그런 머신은 이 항목이 다음 동기화 때 그냥 사라집니다.',
+  confirmButton: { label: 'Remove', subtitle: '카탈로그에서 이 항목을 지웁니다' },
+  cancelButton: { label: 'Cancel', subtitle: '아무것도 지우지 않고 닫습니다' },
+  closeButton: { label: 'Close', subtitle: '닫고 목록으로 돌아갑니다' }
+} as const
+
+/** WS3: 그룹 단위 모두 구독/해제 버튼 — GroupCheckbox(ignore) 옆의 별도 버튼. */
+export const bulkSubscribeCopy = {
+  allOn: { label: 'Unsubscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독 해제합니다' },
+  allOff: { label: 'Subscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독합니다' },
+  mixed: { label: 'Subscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독합니다' }
+} as const
+
+/**
+ * R6 R1: 보류 중 변경(추가/제거 예정) 배너 — State 층 "다음 행동 안내".
+ * WS3("창고 모델 1차"): R8 시절엔 follower가 아무 것도 할 수 없어 이 배너를
+ * 아예 숨겼지만("Capture를 실행하세요"가 follower엔 불가능한 행동 지시),
+ * 배치 A(WS5 전 머신 git 저작 경로)로 follower도 이제 항목을 개별 등록
+ * (register)할 수 있게 됐다 — 그래서 role과 무관하게 배너를 띄우되, 안내
+ * 내용만 role별로 갈라 말한다(SyncItemsView가 role에 따라 Capture 버튼 대신
+ * `pendingChangesCopy.registerInsteadText`를 보여준다).
+ */
+export function shouldShowPendingCaptureBanner(pendingCount: number): boolean {
+  return pendingCount > 0
 }
 
 /** v0.1.20 2번: 배너 두 번째 줄에 나열할 항목 이름 상한 — 넘으면 "외 M건"으로 접는다. */
@@ -344,7 +415,14 @@ export const pendingChangesCopy = {
     const rest = names.length - shown.length
     return rest > 0 ? `${shown.join(', ')} 외 ${rest}건` : shown.join(', ')
   },
-  captureSubtitle: '보류 중인 변경을 지금 manifest에 반영합니다'
+  captureSubtitle: '보류 중인 변경을 지금 manifest에 반영합니다',
+  /**
+   * WS3: 비reference(follower) 배너 문구 — 벌크 Capture 버튼 대신 각 행의
+   * Register 버튼으로 개별 등록할 수 있다는 사실을 안내한다(전 머신 저작
+   * 경로 전제, shouldShowPendingCaptureBanner 주석 참조).
+   */
+  registerInsteadText: (count: number): string =>
+    `${count}개 항목을 개별 등록할 수 있습니다 — 각 행의 Register 버튼을 누르세요.`
 } as const
 
 /**
