@@ -24,7 +24,8 @@ import {
   helpCopy,
   sectionCopy
 } from '../copy'
-import { captureAll } from '../captureAll'
+import { captureAll, revalidateAfterCapture, type CaptureAllReport } from '../captureAll'
+import { CaptureReportSummary } from '@/components/CaptureReportSummary'
 import { diffSnapshotSlot, fetchDiffSnapshot, useDiffSnapshot } from '../diffSnapshotStore'
 import { SCREENSHOT_GOTO_EVENT } from '../screenshotBus'
 import { StatusIcon, StatusText } from '../status'
@@ -251,6 +252,9 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   const reclassifications = snapshotData?.reclassifications ?? []
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // v0.1.20 1번: 마지막 Capture 결과 — 다음 Capture 시작 시 비운다(핸들러의
+  // setCaptureReport(null)).
+  const [captureReport, setCaptureReport] = useState<CaptureAllReport | null>(null)
 
   const [preview, setPreview] = useState<ApplyResponse | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -472,12 +476,20 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
   // capture-first: 전 capability를 한 번에 캡처한다 (결정 ③ — additive-only).
   // R6: 실제 IPC 호출 목록은 captureAll()(renderer 공용 헬퍼)로 뺐다 —
   // Candidates 화면의 "보류 중 변경 반영" 배너도 정확히 같은 동작이 필요하다.
+  // v0.1.20 1번: captureAll()이 이제 구조화된 리포트를 돌려준다(더 이상
+  // throw하지 않는다) — 화면 아래 CaptureReportSummary로 그대로 보여준다.
+  // v0.1.20 3번: 이 화면 자신의 refreshDiff()에 더해 Candidates 스토어도
+  // 강제 재검증한다(revalidateAfterCapture) — 이 Capture로 그쪽의 보류 배너·
+  // 집계도 바뀔 수 있는데 그 탭이 지금 마운트돼 있지 않을 수 있다.
   async function handleCapture(): Promise<void> {
     setBusy(true)
     setError(null)
+    setCaptureReport(null)
     try {
-      await captureAll()
+      const report = await captureAll()
+      setCaptureReport(report)
       await refreshDiff()
+      await revalidateAfterCapture(status)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -688,6 +700,14 @@ function DiffView({ status }: DiffViewProps): React.JSX.Element {
         <StatusText kind="error" className="mb-2">
           {error ?? diffSnapshot.error}
         </StatusText>
+      )}
+
+      {/* v0.1.20 1번: Capture 결과 — 다음 Capture 시작 시 비워지고, 사용자가
+          닫기를 눌러도 비워진다(둘 다 setCaptureReport(null)). */}
+      {captureReport && (
+        <div className="mb-2">
+          <CaptureReportSummary report={captureReport} onDismiss={() => setCaptureReport(null)} />
+        </div>
       )}
 
       <h3 className="mb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

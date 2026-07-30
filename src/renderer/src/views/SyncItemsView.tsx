@@ -5,12 +5,13 @@ import { ActionButton } from '@/components/ActionButton'
 import { BulkDeleteChecklistDialog } from '@/components/BulkDeleteChecklistDialog'
 import { CandidateStateControl } from '@/components/CandidateStateControl'
 import { CandidateStateIcon } from '@/components/CandidateStateIcon'
+import { CaptureReportSummary } from '@/components/CaptureReportSummary'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { captureAll } from '../captureAll'
+import { captureAll, revalidateAfterCapture, type CaptureAllReport } from '../captureAll'
 import {
   bulkDeleteCopy,
   buttonCopy,
@@ -93,6 +94,12 @@ interface StateCounts {
   readonly excluded: number
   /** refactor-spec-v0.2 §1: apt-distro 그룹에서만 0이 아닐 수 있다. */
   readonly distroDefault: number
+  /**
+   * v0.1.20 4번: appimage 전용 — capture가 담을 수 없는 항목. `pendingAdd`와
+   * 겉보기 조건은 같지만 별도 버킷이다(engine `computeSyncItemState` 참조) —
+   * 그래서 위 "보류 중인 변경" 배너·pendingCount(아래)에서 자동으로 빠진다.
+   */
+  readonly unresolvable: number
 }
 
 const EMPTY_STATE_COUNTS: StateCounts = {
@@ -100,7 +107,8 @@ const EMPTY_STATE_COUNTS: StateCounts = {
   pendingAdd: 0,
   pendingRemove: 0,
   excluded: 0,
-  distroDefault: 0
+  distroDefault: 0,
+  unresolvable: 0
 }
 
 type Row =
@@ -154,6 +162,12 @@ type Row =
        * 에서만 의미가 있다(다른 그룹은 항상 false).
        */
       readonly hostOnly: boolean
+      /**
+       * v0.1.20 4번: state가 'unresolvable'일 때만 채워지는, capture가 이
+       * 항목을 담지 못하는 구체적 사유(appimage 전용, SyncItemGroupDto
+       * `unresolvableReason` 그대로) — 행에 직접 보여준다(사유 표시).
+       */
+      readonly unresolvableReason?: string
     }
 
 /**
@@ -192,6 +206,7 @@ function computeStateCounts(items: SyncItemGroupDto['items']): StateCounts {
     if (item.state === 'pending-remove') return { ...acc, pendingRemove: acc.pendingRemove + 1 }
     if (item.state === 'excluded') return { ...acc, excluded: acc.excluded + 1 }
     if (item.state === 'distro-default') return { ...acc, distroDefault: acc.distroDefault + 1 }
+    if (item.state === 'unresolvable') return { ...acc, unresolvable: acc.unresolvable + 1 }
     return acc
   }, EMPTY_STATE_COUNTS)
 }
@@ -203,7 +218,8 @@ function mergeStateCounts(groups: readonly StateCounts[]): StateCounts {
       pendingAdd: acc.pendingAdd + c.pendingAdd,
       pendingRemove: acc.pendingRemove + c.pendingRemove,
       excluded: acc.excluded + c.excluded,
-      distroDefault: acc.distroDefault + c.distroDefault
+      distroDefault: acc.distroDefault + c.distroDefault,
+      unresolvable: acc.unresolvable + c.unresolvable
     }),
     EMPTY_STATE_COUNTS
   )
@@ -296,6 +312,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   // 안의 매치가 소리 없이 숨는 것은 스펙 판단 원칙 2 위반.
   const [collapsedOverrides, setCollapsedOverrides] = useState<Record<string, boolean>>({})
   const [captureBusy, setCaptureBusy] = useState(false)
+  // v0.1.20 1번: 마지막 Capture 결과 — DiffView와 같은 패턴(다음 Capture 시작 시 비운다).
+  const [captureReport, setCaptureReport] = useState<CaptureAllReport | null>(null)
   // 항목 삭제(uninstall) 다이얼로그 상태 — 단건(행의 Delete)·일괄(체크리스트
   // "Continue") 둘 다 같은 DeleteConfirmDialog를 연다. `deleteRowKey`는 단건
   // 삭제일 때만 채워 그 행의 컨트롤을 시각적으로 "Delete" 선택 상태로 보여준다
@@ -335,6 +353,21 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     [groups]
   )
   const pendingCount = overallCounts.pendingAdd + overallCounts.pendingRemove
+
+  // v0.1.20 2번: "보류 중인 변경 N건" 배너에 항목 이름까지 나열한다 — 위
+  // overallCounts와 정확히 같은 필터(detectionOnly 그룹 제외)로 모은다.
+  // pendingChangesCopy.bannerItemNames가 5개까지만 자르고 나머지는 "외 M건"으로
+  // 접는다(apt 100개짜리 그룹이 배너를 뒤덮지 않게).
+  const pendingItemNames = useMemo(
+    () =>
+      (groups ?? [])
+        .filter((g) => !g.detectionOnly)
+        .flatMap((g) =>
+          g.items.filter((i) => i.state === 'pending-add' || i.state === 'pending-remove')
+        )
+        .map((i) => i.label),
+    [groups]
+  )
 
   // 일괄 삭제 툴바 버튼 노출·체크리스트 기본 목록 — 검색 필터와 무관하게
   // 항상 전체 groups를 대상으로 한다(그룹 헤더 집계와 같은 원칙 — R6 R1).
@@ -446,7 +479,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
           detectionOnly,
           deleteEligible: eligibility.eligible,
           hostOnly: !!item.hostOnly,
-          ...(eligibility.reason ? { deleteDisabledReason: eligibility.reason } : {})
+          ...(eligibility.reason ? { deleteDisabledReason: eligibility.reason } : {}),
+          ...(item.unresolvableReason ? { unresolvableReason: item.unresolvableReason } : {})
         })
       }
     }
@@ -572,12 +606,18 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   // R6 R1: 보류 중(pending-add/pending-remove)이 있을 때 Capture로 안내한다
   // (State 층 — "다음 행동 안내"). 실제 capture-all 호출은 DiffView와 공유하는
   // captureAll() 헬퍼 하나로 처리한다.
+  // v0.1.20 1번: captureAll()의 구조화된 리포트를 CaptureReportSummary로 보여준다.
+  // v0.1.20 3번: 이 화면 자신의 refresh()에 더해 Differences 스토어도 강제
+  // 재검증한다(revalidateAfterCapture) — DiffView의 handleCapture와 대칭.
   async function handleCapture(): Promise<void> {
     setCaptureBusy(true)
     setError(null)
+    setCaptureReport(null)
     try {
-      await captureAll()
+      const report = await captureAll()
+      setCaptureReport(report)
       await refresh()
+      await revalidateAfterCapture(status)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -693,7 +733,16 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
           설명을 대신한다. */}
       {shouldShowPendingCaptureBanner(pendingCount, status?.role) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-status-warn/40 bg-status-warn/10 px-3 py-2">
-          <StatusText kind="warn">{pendingChangesCopy.bannerText(pendingCount)}</StatusText>
+          <div className="min-w-0 flex-1">
+            <StatusText kind="warn">{pendingChangesCopy.bannerText(pendingCount)}</StatusText>
+            {/* v0.1.20 2번: 항목 이름까지 — "N건"만으로는 뭐가 바뀌는지 안 보였다. */}
+            <p
+              className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
+              title={pendingItemNames.join(', ')}
+            >
+              {pendingChangesCopy.bannerItemNames(pendingItemNames)}
+            </p>
+          </div>
           <ActionButton
             variant="secondary"
             size="sm"
@@ -704,6 +753,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
             onClick={handleCapture}
           />
         </div>
+      )}
+
+      {/* v0.1.20 1번: 마지막 Capture 결과 — DiffView와 같은 컴포넌트·같은 위치 규칙
+          (에러 바로 위, 목록 바로 아래). */}
+      {captureReport && (
+        <CaptureReportSummary report={captureReport} onDismiss={() => setCaptureReport(null)} />
       )}
 
       {(error ?? syncItemsSnapshot.error) && (
@@ -836,6 +891,17 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         {row.description && (
                           <span className="truncate text-muted-foreground" title={row.description}>
                             — {row.description}
+                          </span>
+                        )}
+                        {/* v0.1.20 4번: capture가 담을 수 없는 구체적 사유를 행에서 바로
+                            보여준다(해소 방법은 위 title 툴팁 — describeSyncItemState의
+                            unresolvable description에 있다). */}
+                        {row.state === 'unresolvable' && row.unresolvableReason && (
+                          <span
+                            className="truncate text-status-warn"
+                            title={row.unresolvableReason}
+                          >
+                            — {row.unresolvableReason}
                           </span>
                         )}
                       </span>

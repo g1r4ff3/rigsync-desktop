@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, MinusCircle, Package, PlusCircle } from 'lucide-react'
+import { Ban, CheckCircle2, Circle, MinusCircle, Package, PlusCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SyncItemState } from '../../../shared/ipc'
 
@@ -21,7 +21,11 @@ const ICON_BY_STATE = {
   // refactor-spec-v0.2 §1: 배포판 기본 판정 — 분류가 뺀 안정 상태. excluded/
   // detected와 같은 muted 색이지만 모양(Package)으로 "배포판 구성물"임을 가른다
   // (색만으로 구분 금지 규칙).
-  'distro-default': Package
+  'distro-default': Package,
+  // v0.1.20 4번: capture가 담을 수 없는 항목 — pending-add(PlusCircle)와
+  // 모양으로 명확히 구분한다(색만으로 구분 금지 규칙 — pending-add도 warn이라
+  // 색으로는 안 갈린다).
+  unresolvable: Ban
 } as const
 
 const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
@@ -30,7 +34,8 @@ const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
   'pending-remove': 'text-status-warn',
   excluded: 'text-status-muted',
   detected: 'text-status-muted',
-  'distro-default': 'text-status-muted'
+  'distro-default': 'text-status-muted',
+  unresolvable: 'text-status-warn'
 }
 
 export function CandidateStateIcon({

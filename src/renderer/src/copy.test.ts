@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  captureReportCopy,
   describeSyncItemState,
   formatSyncItemStateSummary,
   isFollowerToggleDisabled,
+  pendingChangesCopy,
   shouldShowPendingCaptureBanner,
   syncItemStateCopy,
   toggleDisabledReason,
@@ -99,6 +101,55 @@ describe('formatSyncItemStateSummary', () => {
       'reference'
     )
     expect(summary).toBe('')
+  })
+
+  // v0.1.20 4번: appimage 전용 "추가 불가" 상태 — 있을 때만 보이고, pendingAdd와는
+  // 별개 카운트라 서로의 값에 섞이지 않는다.
+  it('unresolvable 카운트가 있으면 "추가 불가 N"이 붙는다 (있을 때만)', () => {
+    const summary = formatSyncItemStateSummary({ ...counts, unresolvable: 3 }, 'reference')
+    expect(summary).toContain('추가 불가 3')
+    const without = formatSyncItemStateSummary(counts, 'reference')
+    expect(without).not.toContain('추가 불가')
+  })
+})
+
+describe('syncItemStateCopy.unresolvable / describeSyncItemState', () => {
+  it('role과 무관하게 같은 설명을 쓴다 — capture 가능 여부는 role이 아니라 gearlever.conf 상태의 문제', () => {
+    expect(describeSyncItemState('unresolvable', 'reference')).toEqual(
+      syncItemStateCopy.unresolvable
+    )
+    expect(describeSyncItemState('unresolvable', 'follower')).toEqual(
+      syncItemStateCopy.unresolvable
+    )
+  })
+
+  it('설명에 해소 방법(Gear Lever)이 포함된다', () => {
+    expect(syncItemStateCopy.unresolvable.description).toContain('Gear Lever')
+  })
+})
+
+describe('pendingChangesCopy.bannerItemNames', () => {
+  it('5개 이하면 전부 그대로 나열한다', () => {
+    expect(pendingChangesCopy.bannerItemNames(['a', 'b', 'c'])).toBe('a, b, c')
+  })
+
+  it('5개를 넘으면 앞 5개 + "외 M건"으로 접는다', () => {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    expect(pendingChangesCopy.bannerItemNames(names)).toBe('a, b, c, d, e 외 2건')
+  })
+
+  it('빈 배열이면 빈 문자열', () => {
+    expect(pendingChangesCopy.bannerItemNames([])).toBe('')
+  })
+})
+
+describe('captureReportCopy', () => {
+  it('changesHeading은 신규·갱신을 나눠 보여준다', () => {
+    expect(captureReportCopy.changesHeading(3, 2)).toBe('반영 5건 (신규 3 · 갱신 2)')
+  })
+
+  it('errorsHeading은 실패한 capability 수를 말한다', () => {
+    expect(captureReportCopy.errorsHeading(2)).toContain('2')
   })
 })
 

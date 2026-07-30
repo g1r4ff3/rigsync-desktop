@@ -106,6 +106,19 @@ export const syncItemStateCopy = {
     label: '배포판 기본',
     description:
       '배포판 기본 구성(메타패키지 의존·표준 priority)으로 판정되어 자동 추가 대상이 아닙니다 — 스위치를 켜면 예외(include)로 기록되어 다음 Capture가 manifest에 담습니다.'
+  },
+  /**
+   * v0.1.20 4번: appimage 전용 — capture가 update source 좌표(gearlever.conf)를
+   * 해석하지 못해 다음 Capture로도 담을 수 없는 항목. `pending-add`와 겉보기
+   * 조건(managed=false, ignored=false)은 같지만 "다음 Capture가 추가할 것"이
+   * 거짓이라는 게 이 상태의 존재 이유(실사용 사고 "반영이 됐는지 안 됐는지
+   * 알 수 없었다" 재발 방지) — 구체적 사유(항목별 `unresolvableReason`)는
+   * 행에 별도로 표시된다(SyncItemsView), 여기 description은 해소 방법만 말한다.
+   */
+  unresolvable: {
+    label: '추가 불가',
+    description:
+      '이 항목의 update source를 해석하지 못해 capture가 담을 수 없습니다 — Gear Lever 앱에서 이 AppImage의 업데이트 소스를 다시 설정하면 다음 Capture부터 반영됩니다.'
   }
 } as const
 
@@ -175,6 +188,8 @@ export function formatSyncItemStateSummary(
     readonly excluded: number
     /** refactor-spec-v0.2 §1: apt-distro 그룹만 0이 아닐 수 있다. */
     readonly distroDefault?: number
+    /** v0.1.20 4번: appimage 전용 — 다른 capability는 항상 0. */
+    readonly unresolvable?: number
   },
   role: EngineRole | undefined
 ): string {
@@ -189,6 +204,9 @@ export function formatSyncItemStateSummary(
   if (counts.excluded > 0) parts.push(`${syncItemStateCopy.excluded.label} ${counts.excluded}`)
   if ((counts.distroDefault ?? 0) > 0) {
     parts.push(`${syncItemStateCopy['distro-default'].label} ${counts.distroDefault}`)
+  }
+  if ((counts.unresolvable ?? 0) > 0) {
+    parts.push(`${syncItemStateCopy.unresolvable.label} ${counts.unresolvable}`)
   }
   return parts.join(' · ')
 }
@@ -299,10 +317,38 @@ export function shouldShowPendingCaptureBanner(
   return pendingCount > 0 && role !== 'follower'
 }
 
+/** v0.1.20 2번: 배너 두 번째 줄에 나열할 항목 이름 상한 — 넘으면 "외 M건"으로 접는다. */
+const PENDING_BANNER_NAME_LIMIT = 5
+
 export const pendingChangesCopy = {
   bannerText: (count: number): string =>
     `보류 중인 변경 ${count}건 — 반영하려면 Capture를 실행하세요.`,
+  /**
+   * v0.1.20 2번: "N건"만으로는 무엇이 바뀌는지 안 보였다(실사용 사고 계열) —
+   * 항목 이름을 5개까지 그대로 나열하고, 넘으면 앞 5개 + "외 M건"으로 접는다
+   * (전부 나열하면 apt 100개짜리 그룹에서 배너가 화면을 뒤덮는다).
+   */
+  bannerItemNames: (names: readonly string[]): string => {
+    const shown = names.slice(0, PENDING_BANNER_NAME_LIMIT)
+    const rest = names.length - shown.length
+    return rest > 0 ? `${shown.join(', ')} 외 ${rest}건` : shown.join(', ')
+  },
   captureSubtitle: '보류 중인 변경을 지금 manifest에 반영합니다'
+} as const
+
+/**
+ * v0.1.20 1번: Capture 완료 피드백 — 실사용 사고("Capture를 눌렀는데 반영된
+ * 건지 안 된 건지 알 수 없었다") 재발 방지. captureAll()의 구조화된 리포트
+ * (renderer/captureAll.ts `CaptureAllReport`)를 그대로 요약 문구로 옮긴다 —
+ * 성공/실패를 숨기지 않는다(Explanability 계약 State 층).
+ */
+export const captureReportCopy = {
+  changesHeading: (added: number, updated: number): string =>
+    `반영 ${added + updated}건 (신규 ${added} · 갱신 ${updated})`,
+  noChangesHeading: '반영된 변경 없음',
+  errorsHeading: (failedCount: number): string => `캡처 일부 실패 (${failedCount}개 capability)`,
+  notesLabel: '상세',
+  dismiss: '닫기'
 } as const
 
 /**
