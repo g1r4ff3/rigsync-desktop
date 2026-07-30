@@ -8,7 +8,9 @@ import { makeFakeGitTransportProvider } from './testHelpers'
 import {
   getSyncStatus,
   LIVE_EDIT_COMMIT_MESSAGE,
+  prepareAuthoredPull,
   sweepLiveEditsIfDirty,
+  syncAuthoredWrite,
   syncFollower,
   syncReference
 } from './sync'
@@ -351,5 +353,208 @@ describe('sweepLiveEditsIfDirty (P4/F4/D3-a) -- real local git, no network', () 
       encoding: 'utf-8'
     })
     expect(remoteLog.stdout.trim()).not.toBe(LIVE_EDIT_COMMIT_MESSAGE)
+  })
+})
+
+// WS5("창고 모델 1차" — cheerful-growing-fairy 계획) 전 머신 git 저작 경로.
+// syncAuthoredWrite/prepareAuthoredPull는 role을 가리지 않으므로 role 필드
+// 없는 ctx로 호출한다(follower 전용 시나리오도 "role과 무관하다"는 사실
+// 자체를 증명하는 게 목적이지, role 값 자체가 로직에 관여하지 않는다).
+describe('syncAuthoredWrite (WS5 — real local git, no network)', () => {
+  let fixture: GitFixture
+
+  beforeEach(() => {
+    fixture = makeGitFixture()
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('commits an uncommitted change under the given provenance message and pushes it', async () => {
+    fs.writeFileSync(path.join(fixture.referenceDir, 'selection.toml'), 'mode = "select"\n')
+
+    const status = await syncAuthoredWrite(
+      { manifestDir: fixture.referenceDir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:v4l-utils (on)'
+    )
+
+    expect(status).toEqual({ kind: 'synced' })
+    const log = spawnSync('git', ['-C', fixture.referenceDir, 'log', '-1', '--pretty=%s'], {
+      encoding: 'utf-8'
+    })
+    expect(log.stdout.trim()).toBe('ignore: lab-main apt:v4l-utils (on)')
+  })
+
+  it('is a no-op commit (push-only) when the tree is already clean', async () => {
+    const status = await syncAuthoredWrite(
+      { manifestDir: fixture.referenceDir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:v4l-utils (on)'
+    )
+    expect(status).toEqual({ kind: 'synced' })
+  })
+
+  it('commits but refuses to push when the manifest contains a secret (push 게이트 우회 금지)', async () => {
+    fs.mkdirSync(path.join(fixture.referenceDir, 'common'), { recursive: true })
+    fs.writeFileSync(
+      path.join(fixture.referenceDir, 'common', 'leaky.toml'),
+      `token = "${FAKE_GITHUB_PAT}"\n`
+    )
+
+    const status = await syncAuthoredWrite(
+      { manifestDir: fixture.referenceDir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:token (on)'
+    )
+
+    expect(status.kind).toBe('error')
+    if (status.kind === 'error') {
+      expect(status.message).toContain('push 중단')
+      expect(status.message).not.toContain(FAKE_GITHUB_PAT)
+    }
+    // 커밋은 됐어야 한다(로컬, 회수 가능) -- push만 막힌다.
+    expect(await provider.hasUncommittedChanges(fixture.referenceDir)).toBe(false)
+  })
+
+  it('commits locally and reports local-only when there is no remote', async () => {
+    const dir = path.join(fixture.root, 'no-remote-authored')
+    fs.mkdirSync(dir)
+    sh(dir, ['git', 'init', '-q', '-b', 'main'])
+    sh(dir, ['git', 'config', 'user.email', 'test@example.com'])
+    sh(dir, ['git', 'config', 'user.name', 'Test'])
+    fs.writeFileSync(path.join(dir, 'x.toml'), 'x = 1\n')
+
+    const status = await syncAuthoredWrite(
+      { manifestDir: dir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:x (on)'
+    )
+    expect(status).toEqual({ kind: 'local-only' })
+    expect(await provider.hasUncommittedChanges(dir)).toBe(false)
+  })
+
+  // 계획서의 "ff-pull 재시도" 문구 정정(sync.ts jsdoc 참조): 로컬 커밋이 이미
+  // 있으니 fast-forward는 정의상 불가능하고, 재시도는 rebase여야 한다.
+  it('retries with rebase once after a push rejection, then succeeds', async () => {
+    const authoredDir = cloneFollower(fixture, 'authored-a')
+
+    // 다른 머신이 먼저 push해 origin을 앞서게 만든다 -- authoredDir의 다음
+    // push는 확실히 거부된다(비-FF).
+    fs.writeFileSync(path.join(fixture.referenceDir, 'other-host.toml'), 'other = true\n')
+    commitAll(fixture.referenceDir, 'other host change')
+    sh(fixture.referenceDir, ['git', 'push', '-q'])
+
+    // 이제 이 머신(authoredDir)의 저작 쓰기 -- fetch 없이 곧바로 커밋+push
+    // 시도(withAuthoredWrite의 prepareAuthoredPull이 보통 먼저 최신화하지만,
+    // syncAuthoredWrite 자체는 그 전제 없이도 거부->재시도로 복구돼야 한다).
+    fs.writeFileSync(path.join(authoredDir, 'this-host.toml'), 'mine = true\n')
+
+    const status = await syncAuthoredWrite(
+      { manifestDir: authoredDir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:mine (on)'
+    )
+
+    expect(status).toEqual({ kind: 'synced' })
+    // rebase로 양쪽 커밋이 다 남아있어야 한다.
+    expect(fs.existsSync(path.join(authoredDir, 'other-host.toml'))).toBe(true)
+    expect(fs.existsSync(path.join(authoredDir, 'this-host.toml'))).toBe(true)
+    const remoteLog = spawnSync(
+      'git',
+      ['-C', fixture.bareDir, 'log', '--pretty=%s', '-2', '--reverse'],
+      { encoding: 'utf-8' }
+    )
+    expect(remoteLog.stdout.trim().split('\n')).toEqual([
+      'other host change',
+      'ignore: lab-main apt:mine (on)'
+    ])
+  })
+
+  it('surfaces an error when the rebase retry itself fails (conflicting change)', async () => {
+    const authoredDir = cloneFollower(fixture, 'authored-conflict')
+
+    // 다른 머신이 같은 파일의 같은 줄을 바꿔 push -- rebase가 충돌하게 만든다.
+    fs.writeFileSync(path.join(fixture.referenceDir, 'seed.toml'), 'seed = "from-other-host"\n')
+    commitAll(fixture.referenceDir, 'other host edits seed.toml')
+    sh(fixture.referenceDir, ['git', 'push', '-q'])
+
+    fs.writeFileSync(path.join(authoredDir, 'seed.toml'), 'seed = "from-this-host"\n')
+
+    const status = await syncAuthoredWrite(
+      { manifestDir: authoredDir, machineId: 'lab-main' },
+      provider,
+      'ignore: lab-main apt:seed (on)'
+    )
+
+    expect(status.kind).toBe('error')
+    if (status.kind === 'error') {
+      expect(status.message).toContain('rebase')
+    }
+    // rebase가 최종적으로 실패해도 abort로 작업 트리를 정리했어야 한다(다음
+    // git 명령이 걸리지 않는다) -- rebase 중간 상태 파일이 안 남는다.
+    expect(fs.existsSync(path.join(authoredDir, '.git', 'rebase-merge'))).toBe(false)
+    expect(fs.existsSync(path.join(authoredDir, '.git', 'rebase-apply'))).toBe(false)
+  })
+})
+
+describe('prepareAuthoredPull (WS5 — real local git, no network)', () => {
+  let fixture: GitFixture
+
+  beforeEach(() => {
+    fixture = makeGitFixture()
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it('passes through (null) for a plain non-git directory (local-only)', async () => {
+    const plainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigsync-plain-authored-'))
+    const status = await prepareAuthoredPull({ manifestDir: plainDir }, provider)
+    expect(status).toBeNull()
+    fs.rmSync(plainDir, { recursive: true, force: true })
+  })
+
+  it('blocks with an error when the tree is already dirty (등록 진행 금지)', async () => {
+    const dir = cloneFollower(fixture, 'authored-dirty')
+    fs.writeFileSync(path.join(dir, 'uncommitted.toml'), 'x = 1\n')
+
+    const status = await prepareAuthoredPull({ manifestDir: dir }, provider)
+
+    expect(status?.kind).toBe('error')
+    if (status?.kind === 'error') {
+      expect(status.message).toContain('커밋되지 않은 변경')
+    }
+  })
+
+  it('fast-forward pulls when clean and behind', async () => {
+    const dir = cloneFollower(fixture, 'authored-behind')
+    fs.writeFileSync(path.join(fixture.referenceDir, 'new.toml'), 'x = 1\n')
+    commitAll(fixture.referenceDir, 'new file')
+    sh(fixture.referenceDir, ['git', 'push', '-q'])
+
+    const status = await prepareAuthoredPull({ manifestDir: dir }, provider)
+
+    expect(status).toBeNull()
+    expect(fs.existsSync(path.join(dir, 'new.toml'))).toBe(true)
+  })
+
+  it('refuses to auto-resolve a non-fast-forward divergence', async () => {
+    const dir = cloneFollower(fixture, 'authored-diverged')
+    fs.writeFileSync(path.join(dir, 'local-only.toml'), 'x = 1\n')
+    commitAll(dir, 'local divergent commit')
+
+    fs.writeFileSync(path.join(fixture.referenceDir, 'ref-only.toml'), 'y = 1\n')
+    commitAll(fixture.referenceDir, 'reference commit')
+    sh(fixture.referenceDir, ['git', 'push', '-q'])
+
+    const status = await prepareAuthoredPull({ manifestDir: dir }, provider)
+
+    expect(status?.kind).toBe('error')
+    if (status?.kind === 'error') {
+      expect(status.message).toContain('수동 해결 필요')
+    }
   })
 })

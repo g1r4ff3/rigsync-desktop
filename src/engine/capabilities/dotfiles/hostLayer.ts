@@ -38,7 +38,7 @@ import {
   type ManifestDocument
 } from '../../manifest'
 import { expandHome } from '../../paths'
-import { FollowerHostLayerMoveBlockedError, HostLayerEntryNotFoundError } from '../hostLayerErrors'
+import { HostLayerEntryNotFoundError } from '../hostLayerErrors'
 import { DOTFILES_LAYER } from './constants'
 import { copyTreeMirror, resolveDotfileStorePath } from './fsTree'
 import type { DotfileEntry } from './types'
@@ -109,10 +109,18 @@ function writeHostDotfilesLayer(
   writeManifestFile(hostLayerPath(ctx, DOTFILES_LAYER), next)
 }
 
-/** dotfiles entry를 common에서 이 머신의 host 계층으로 옮긴다 ("이 머신 전용" 켬). */
+/**
+ * dotfiles entry를 common에서 이 머신의 host 계층으로 옮긴다 ("이 머신 전용" 켬).
+ *
+ * WS5("창고 모델" 전 머신 저작): 예전엔 follower를 거부했지만(role 가드),
+ * 이 라운드부터 host 계층 이동은 전 머신에서 허용된다 — capture(저작 10곳,
+ * 벌크 capture·심링크 배포·live-edit sweep의 reference 전용은 그대로 유지)와
+ * 달리, 이 연산은 단일 entry의 common↔host 재배치일 뿐이라 follower도 안전하게
+ * 할 수 있다는 게 이번 배치의 판단(엔진 워커의 `withAuthoredWrite`가 실제
+ * commit+push를 role 무관하게 수행한다, transport/sync.ts `syncAuthoredWrite`
+ * 참조).
+ */
 export function moveDotfileEntryToHostLayer(ctx: RigsyncContext, home: string): void {
-  if (ctx.role === 'follower') throw new FollowerHostLayerMoveBlockedError()
-
   const commonDoc = readCommonLayer(ctx, DOTFILES_LAYER)
   const commonEntries = entriesOf(commonDoc)
   const entry = commonEntries.find((e) => e.home === home)
@@ -133,10 +141,8 @@ export function moveDotfileEntryToHostLayer(ctx: RigsyncContext, home: string): 
   )
 }
 
-/** dotfiles entry를 이 머신의 host 계층에서 common으로 되돌린다 ("이 머신 전용" 끔). */
+/** dotfiles entry를 이 머신의 host 계층에서 common으로 되돌린다 ("이 머신 전용" 끔). WS5: follower도 허용(위 moveDotfileEntryToHostLayer 참조). */
 export function moveDotfileEntryToCommonLayer(ctx: RigsyncContext, home: string): void {
-  if (ctx.role === 'follower') throw new FollowerHostLayerMoveBlockedError()
-
   const hostDoc = readHostLayer(ctx, DOTFILES_LAYER)
   const hostEntries = entriesOf(hostDoc)
   const entry = hostEntries.find((e) => e.home === home)

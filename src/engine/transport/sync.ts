@@ -150,3 +150,110 @@ export async function syncNow(
 ): Promise<SyncStatus> {
   return ctx.role === 'reference' ? syncReference(ctx, provider) : syncFollower(ctx, provider)
 }
+
+// ---------------------------------------------------------------------------
+// WS5("창고 모델 1차" — cheerful-growing-fairy 계획): 전 머신 git 저작 경로.
+// toggleIgnore/moveEntryToHostLayer류(engineWorker.ts `withAuthoredWrite`)가
+// role과 무관하게 commit+push할 수 있게 한다 — 지금까지 follower엔 commit/push
+// 경로 자체가 없어(syncFollower는 순수 pull), 이 화면 조작이 로컬에만 남아
+// 다음 pull이 깨질 위험이 있었다(copy.ts `followerToggleDisabledReason` 참조).
+// ---------------------------------------------------------------------------
+
+/**
+ * `withAuthoredWrite`의 비-reference(=지금까지 저작 경로가 없던 role) 사전
+ * 단계. reference는 대신 기존 `sweepLiveEditsBeforeWrite`(main/gitSync.ts)를
+ * 쓴다 — 이 함수는 항상 role 무관하게 호출해도 되지만 reference에 쓰면
+ * 라이브 편집 스윕과 별개로 dirty 체크가 등록/토글을 막아버려(reference는
+ * 기존에 그런 제약이 없었다) 회귀가 되므로 호출부가 role로 분기한다.
+ *
+ * - repo가 아니거나 remote가 없으면(local-only) 통과 — 막을 이유가 없다.
+ * - 작업 트리가 이미 dirty하면 진행 자체를 막는다(`null`이 아니라 error를
+ *   반환) — 이 머신의 정체 모를 로컬 변경과 지금 하려는 저작이 한 커밋에
+ *   섞이는 걸 막는다.
+ * - fetch 후 뒤처졌으면 fast-forward pull로 최신화한다(아직 로컬 커밋이
+ *   없는 시점이라 FF가 가능하다 — syncFollower와 같은 이유).
+ * - 비FF/충돌이면 error(자동 해결 금지 — syncFollower와 동일 원칙).
+ *
+ * 반환값 `null` = 통과(이어서 진행해도 됨). `SyncStatus`(kind:'error') =
+ * 호출부가 진행을 막아야 함.
+ */
+export async function prepareAuthoredPull(
+  ctx: Pick<RigsyncContext, 'manifestDir'>,
+  provider: GitTransportProvider
+): Promise<SyncStatus | null> {
+  if (
+    !(await provider.isGitRepo(ctx.manifestDir)) ||
+    !(await provider.hasRemote(ctx.manifestDir))
+  ) {
+    return null
+  }
+
+  if (await provider.hasUncommittedChanges(ctx.manifestDir)) {
+    return {
+      kind: 'error',
+      message:
+        'manifest에 커밋되지 않은 변경이 있습니다 -- 진행하기 전에 먼저 정리하거나 ' +
+        '"지금 동기화"로 반영하세요.'
+    }
+  }
+
+  const fetch = await provider.fetch(ctx.manifestDir)
+  if (!fetch.ok) return { kind: 'error', message: fetch.output || 'fetch 실패' }
+
+  const behindBy = await provider.behindCount(ctx.manifestDir)
+  if (behindBy > 0) {
+    const pull = await provider.pullFastForward(ctx.manifestDir)
+    if (!pull.ok) {
+      return {
+        kind: 'error',
+        message: `수동 해결 필요 -- fast-forward 불가(비-FF 또는 충돌): ${pull.output}`
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * 전 머신 저작 쓰기 — commit(주어진 provenance 메시지) → `pushAfterSecretScan`
+ * → push 거부 시 재시도. `syncReference`(reference 전용, 날짜 기반 "capture: …"
+ * 메시지)와 달리 role을 가리지 않고, 메시지도 호출부가 정한다(engineWorker.ts
+ * `authoredWriteMessage.ts`의 어휘 — `ignore: …`/`host-layer: …`).
+ *
+ * **재시도가 rebase인 이유(계획서 "ff-pull 재시도" 문구 정정)**: 이 함수는
+ * 먼저 로컬에 커밋한 뒤 push를 시도한다. push가 거부되면 그 시점엔 이미
+ * 로컬 커밋이 origin보다 앞서 있어(로컬이 origin의 조상이 아니라 갈라진
+ * 상태) fast-forward pull은 정의상 성립할 수 없다 — ff는 "로컬이 origin의
+ * 직계 조상일 때"만 가능한데, 로컬 커밋이 이미 있으므로 그 전제가 깨진다.
+ * 그래서 재시도는 반드시 `pullRebase`(로컬 커밋을 최신 origin 위로 재배치)
+ * 여야 한다.
+ */
+export async function syncAuthoredWrite(
+  ctx: Pick<RigsyncContext, 'manifestDir' | 'machineId'>,
+  provider: GitTransportProvider,
+  message: string
+): Promise<SyncStatus> {
+  if (await provider.hasUncommittedChanges(ctx.manifestDir)) {
+    const commit = await provider.addAllAndCommit(ctx.manifestDir, message)
+    if (!commit.ok) return { kind: 'error', message: commit.output || '커밋 실패' }
+  }
+
+  if (
+    !(await provider.isGitRepo(ctx.manifestDir)) ||
+    !(await provider.hasRemote(ctx.manifestDir))
+  ) {
+    return { kind: 'local-only' }
+  }
+
+  const first = await pushAfterSecretScan(ctx, provider)
+  if (first.kind !== 'error') return first
+
+  const rebase = await provider.pullRebase(ctx.manifestDir)
+  if (!rebase.ok) {
+    return {
+      kind: 'error',
+      message: `push 실패 후 rebase도 실패했습니다 -- 수동 해결이 필요합니다: ${rebase.output}`
+    }
+  }
+  return pushAfterSecretScan(ctx, provider)
+}

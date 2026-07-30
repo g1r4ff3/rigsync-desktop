@@ -35,6 +35,15 @@ export class LinuxGitTransportProvider implements GitTransportProvider {
     return { ok: result.code === 0, output: result.text }
   }
 
+  async pullRebase(dir: string): Promise<GitCommandResult> {
+    const result = await git(dir, ['pull', '--rebase'], 60_000)
+    if (result.code === 0) return { ok: true, output: result.text }
+    // best-effort abort -- 실패해도(예: rebase가 애초에 시작 안 됐을 때) 원래
+    // 실패 원문을 그대로 반환한다(abort 결과로 원인을 덮지 않는다).
+    await git(dir, ['rebase', '--abort'])
+    return { ok: false, output: result.text }
+  }
+
   async behindCount(dir: string): Promise<number> {
     const result = await git(dir, ['rev-list', '--count', 'HEAD..@{u}'])
     if (result.code !== 0) return 0

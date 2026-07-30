@@ -17,6 +17,8 @@ export interface FakeGitTransportState {
   readonly pushResult?: GitCommandResult
   readonly pullResult?: GitCommandResult
   readonly commitResult?: GitCommandResult
+  /** WS5: `git pull --rebase` fake 결과. */
+  readonly rebaseResult?: GitCommandResult
 }
 
 const OK: GitCommandResult = { ok: true, output: '' }
@@ -32,6 +34,7 @@ export function makeFakeGitTransportProvider(
     hasRemote: () => Promise.resolve(state.hasRemote ?? false),
     fetch: () => Promise.resolve(state.fetchResult ?? OK),
     pullFastForward: () => Promise.resolve(state.pullResult ?? OK),
+    pullRebase: () => Promise.resolve(state.rebaseResult ?? OK),
     behindCount: () => Promise.resolve(state.behindCount ?? 0),
     hasUncommittedChanges: () => Promise.resolve(state.hasUncommittedChanges ?? false),
     changedFiles: () => Promise.resolve(state.changedFiles ?? []),

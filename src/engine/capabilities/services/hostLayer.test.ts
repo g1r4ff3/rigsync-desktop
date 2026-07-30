@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { effectiveLayer, readCommonLayer, readHostLayer, writeCommonLayer } from '../../manifest'
 import { makeFixture, type TestFixture } from '../../testFixtures'
-import { FollowerHostLayerMoveBlockedError, HostLayerEntryNotFoundError } from '../hostLayerErrors'
+import { HostLayerEntryNotFoundError } from '../hostLayerErrors'
 import { SERVICES_KEY_FIELDS, SERVICES_LAYER } from './constants'
 import { moveServiceEntryToCommonLayer, moveServiceEntryToHostLayer } from './hostLayer'
 import type { ServicesManifest, ServiceUnitEntry } from './types'
@@ -25,14 +25,18 @@ function hostUnitsOf(fixture: TestFixture): readonly ServiceUnitEntry[] {
 }
 
 describe('moveServiceEntryToHostLayer / moveServiceEntryToCommonLayer', () => {
-  it('rejects on a follower machine', () => {
+  // WS5("창고 모델" 전 머신 저작): dotfiles/hostLayer.test.ts와 동일한 이유로
+  // follower도 이제 성공한다(role 가드 제거).
+  it('succeeds on a follower machine (WS5: role 가드 제거)', () => {
     const fixture = makeFixture('follower')
-    expect(() => moveServiceEntryToHostLayer(fixture.ctx, UNIT.name)).toThrow(
-      FollowerHostLayerMoveBlockedError
-    )
-    expect(() => moveServiceEntryToCommonLayer(fixture.ctx, UNIT.name)).toThrow(
-      FollowerHostLayerMoveBlockedError
-    )
+    writeCommonLayer(fixture.ctx, SERVICES_LAYER, { unit: [UNIT] })
+
+    expect(() => moveServiceEntryToHostLayer(fixture.ctx, UNIT.name)).not.toThrow()
+    expect(hostUnitsOf(fixture)).toEqual([UNIT])
+
+    expect(() => moveServiceEntryToCommonLayer(fixture.ctx, UNIT.name)).not.toThrow()
+    expect(commonUnitsOf(fixture)).toEqual([UNIT])
+
     fixture.cleanup()
   })
 

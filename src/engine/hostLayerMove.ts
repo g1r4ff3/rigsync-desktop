@@ -45,7 +45,4 @@ export function moveEntryToCommonLayer(
   }
 }
 
-export {
-  FollowerHostLayerMoveBlockedError,
-  HostLayerEntryNotFoundError
-} from './capabilities/hostLayerErrors'
+export { HostLayerEntryNotFoundError } from './capabilities/hostLayerErrors'

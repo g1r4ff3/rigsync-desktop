@@ -22,7 +22,7 @@ import {
   writeManifestFile,
   type ManifestDocument
 } from '../../manifest'
-import { FollowerHostLayerMoveBlockedError, HostLayerEntryNotFoundError } from '../hostLayerErrors'
+import { HostLayerEntryNotFoundError } from '../hostLayerErrors'
 import { SERVICES_LAYER } from './constants'
 import type { ServicesManifest, ServiceUnitEntry } from './types'
 
@@ -41,10 +41,12 @@ function writeHostServicesLayer(
   writeManifestFile(hostLayerPath(ctx, SERVICES_LAYER), next)
 }
 
-/** services unit entry를 common에서 이 머신의 host 계층으로 옮긴다 ("이 머신 전용" 켬). */
+/**
+ * services unit entry를 common에서 이 머신의 host 계층으로 옮긴다 ("이 머신
+ * 전용" 켬). WS5("창고 모델" 전 머신 저작): dotfiles/hostLayer.ts와 동일하게
+ * follower도 이 라운드부터 허용(role 가드 제거 — capture 10곳은 그대로 유지).
+ */
 export function moveServiceEntryToHostLayer(ctx: RigsyncContext, name: string): void {
-  if (ctx.role === 'follower') throw new FollowerHostLayerMoveBlockedError()
-
   const commonDoc = readCommonLayer(ctx, SERVICES_LAYER) as ServicesManifest
   const commonUnits = unitsOf(commonDoc)
   const entry = commonUnits.find((u) => u.name === name)
@@ -59,10 +61,8 @@ export function moveServiceEntryToHostLayer(ctx: RigsyncContext, name: string): 
   writeCommonLayer(ctx, SERVICES_LAYER, nextCommonUnits.length > 0 ? { unit: nextCommonUnits } : {})
 }
 
-/** services unit entry를 이 머신의 host 계층에서 common으로 되돌린다 ("이 머신 전용" 끔). */
+/** services unit entry를 이 머신의 host 계층에서 common으로 되돌린다 ("이 머신 전용" 끔). WS5: follower도 허용(위 참조). */
 export function moveServiceEntryToCommonLayer(ctx: RigsyncContext, name: string): void {
-  if (ctx.role === 'follower') throw new FollowerHostLayerMoveBlockedError()
-
   const hostDoc = readHostLayer(ctx, SERVICES_LAYER) as ServicesManifest
   const hostUnits = unitsOf(hostDoc)
   const entry = hostUnits.find((u) => u.name === name)

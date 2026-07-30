@@ -39,6 +39,15 @@ export interface GitTransportProvider {
    * 않고** `ok:false`로 보고한다(호출자가 "수동 해결 필요"로 표면화).
    */
   pullFastForward(dir: string): MaybePromise<GitCommandResult>
+  /**
+   * WS5("창고 모델" 전 머신 저작): `git pull --rebase`. 로컬 커밋이 이미
+   * 있는 상태에서의 push 거부 재시도 전용 — 그 상황에선 정의상 fast-forward가
+   * 불가능하다(로컬이 origin의 조상이 아니라 갈라진 상태이므로).
+   * 실패하면 **best-effort로 `git rebase --abort`를 시도한 뒤** `ok:false`를
+   * 반환한다(작업 트리를 rebase 중간 상태로 남기지 않는다 — abort 자체의
+   * 성공 여부는 반환값에 반영하지 않는다, 원래 실패 원문을 그대로 표면화).
+   */
+  pullRebase(dir: string): MaybePromise<GitCommandResult>
   /** `fetch()` 이후 기준 — origin의 upstream 대비 몇 커밋 뒤처졌는지. */
   behindCount(dir: string): MaybePromise<number>
   hasUncommittedChanges(dir: string): MaybePromise<boolean>

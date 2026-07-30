@@ -8,7 +8,13 @@
  * 재시도는 수동 지금 동기화").
  */
 import type { RigsyncContext } from '../engine/context'
-import { getSyncStatus, sweepLiveEditsIfDirty, syncNow } from '../engine/transport/sync'
+import {
+  getSyncStatus,
+  prepareAuthoredPull,
+  sweepLiveEditsIfDirty,
+  syncAuthoredWrite,
+  syncNow
+} from '../engine/transport/sync'
 import type { GitTransportProvider, SyncStatus } from '../engine/transport/types'
 
 let lastStatus: SyncStatus | null = null
@@ -60,4 +66,57 @@ export async function sweepLiveEditsBeforeWrite(
   } catch (err) {
     lastStatus = { kind: 'error', message: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/**
+ * WS5("창고 모델" 전 머신 저작) — `withAuthoredWrite`(engineWorker.ts)의
+ * 사전 단계. role별로 다른 준비를 한다:
+ * - reference: 기존 `sweepLiveEditsBeforeWrite`(라이브 편집 분리 커밋,
+ *   best-effort — 실패해도 진행을 막지 않는다, 기존 동작 그대로).
+ * - 그 외(지금까지 저작 경로가 없던 role): `prepareAuthoredPull` — 이미
+ *   dirty하면 진행을 **막는다**(반환값이 `{kind:'error',...}`일 때 호출부가
+ *   mutate를 건너뛰어야 한다).
+ *
+ * 반환값 `null` = 통과. 그 외(error status) = 호출부가 던져서 IPC 에러로
+ * 표면화해야 한다(엔진 워커 메시지 루프의 기존 에러 전파 관례).
+ */
+export async function prepareAuthoredWrite(
+  ctx: RigsyncContext,
+  provider: GitTransportProvider
+): Promise<SyncStatus | null> {
+  if (ctx.role === 'reference') {
+    await sweepLiveEditsBeforeWrite(ctx, provider)
+    return null
+  }
+  try {
+    const status = await prepareAuthoredPull(ctx, provider)
+    if (status !== null) lastStatus = status
+    return status
+  } catch (err) {
+    const status: SyncStatus = {
+      kind: 'error',
+      message: err instanceof Error ? err.message : String(err)
+    }
+    lastStatus = status
+    return status
+  }
+}
+
+/**
+ * WS5 — manifest 쓰기 핸들러 뒤에서 fire-and-forget으로 부른다(기존
+ * `autoSyncAfterWrite`와 같은 패턴). role을 가리지 않는다는 점이 다르다 —
+ * `syncAuthoredWrite`가 role 무관하게 commit(주어진 provenance 메시지)+push한다.
+ */
+export function autoSyncAfterAuthoredWrite(
+  ctx: RigsyncContext,
+  provider: GitTransportProvider,
+  message: string
+): void {
+  void syncAuthoredWrite(ctx, provider, message)
+    .then((status) => {
+      lastStatus = status
+    })
+    .catch((err: unknown) => {
+      lastStatus = { kind: 'error', message: err instanceof Error ? err.message : String(err) }
+    })
 }

@@ -69,11 +69,18 @@ import {
 import { guardedSetAutostart } from './autostartGuard'
 import { orderCombinedPlan } from './planOrder'
 import {
+  autoSyncAfterAuthoredWrite,
   autoSyncAfterWrite,
   getLastSyncStatus,
+  prepareAuthoredWrite,
   sweepLiveEditsBeforeWrite,
   triggerSync
 } from './gitSync'
+import {
+  hostLayerMoveCommitMessage,
+  ignoreToggleBulkCommitMessage,
+  ignoreToggleCommitMessage
+} from '../engine/authoredWriteMessage'
 import { runDriftCheck } from './driftCheck'
 import { completeOnboarding, expandTilde } from './onboarding'
 import { buildDoctorReport } from '../engine/doctor/report'
@@ -322,6 +329,26 @@ async function listSyncItemGroupsForClient(): Promise<SyncItemGroupDto[]> {
     gitProvider
   )
   return [...withSyncItemState(groups)]
+}
+
+/**
+ * WS5("창고 모델" 전 머신 저작) — 항목 단위 저작 쓰기 래퍼. 기존
+ * toggleIgnore/toggleIgnoreBulk/moveEntryToHostLayer/moveEntryToCommonLayer
+ * 4개 핸들러가 각자 반복하던 "sweep → mutate → autoSync" 샌드위치를
+ * 대체한다 — `prepareAuthoredWrite`가 role별 사전 단계(reference: 라이브
+ * 편집 스윕, 그 외: dirty 체크+fetch+ff-pull)를 수행하고, 진행을 막아야
+ * 하는 에러면 `mutate`를 실행하지 않고 그대로 던진다(엔진 워커 메시지
+ * 루프가 기존 관례대로 IPC 에러로 표면화). `mutate`는 동기 함수(엔진의
+ * 쓰기 함수들은 전부 동기 read-modify-write)라 결과를 그대로 반환한다.
+ */
+async function withAuthoredWrite<T>(message: string, mutate: () => T): Promise<T> {
+  const prepStatus = await prepareAuthoredWrite(getContext(), gitTransportProvider)
+  if (prepStatus?.kind === 'error') {
+    throw new Error(prepStatus.message)
+  }
+  const result = mutate()
+  autoSyncAfterAuthoredWrite(getContext(), gitTransportProvider, message)
+  return result
 }
 
 /** electron 전용 파생값(main만 안다) — completeOnboarding/setAutostart/updateConfig가 요청마다 받는다. */
@@ -609,41 +636,66 @@ const handlers: Record<string, Handler> = {
 
   toggleIgnore: async (args): Promise<SyncItemGroupDto[]> => {
     const request = args as ToggleIgnoreRequest
-    await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
-    if (request.subgroup === 'apt-distro') {
-      toggleAptDistroSyncedBulk(getContext(), [request.key], !request.ignored)
-    } else {
-      toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
-    }
-    autoSyncAfterWrite(getContext(), gitTransportProvider)
+    const capability = request.subgroup === 'apt-distro' ? 'apt' : request.capability
+    const message = ignoreToggleCommitMessage(
+      getContext().machineId,
+      capability,
+      request.key,
+      request.ignored
+    )
+    await withAuthoredWrite(message, () => {
+      if (request.subgroup === 'apt-distro') {
+        toggleAptDistroSyncedBulk(getContext(), [request.key], !request.ignored)
+      } else {
+        toggleSyncItemIgnore(getContext(), request.capability, request.key, request.ignored)
+      }
+    })
     return listSyncItemGroupsForClient()
   },
 
   toggleIgnoreBulk: async (args): Promise<SyncItemGroupDto[]> => {
     const request = args as ToggleIgnoreBulkRequest
-    await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
-    if (request.subgroup === 'apt-distro') {
-      toggleAptDistroSyncedBulk(getContext(), request.keys, !request.ignored)
-    } else {
-      toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
-    }
-    autoSyncAfterWrite(getContext(), gitTransportProvider)
+    const capability = request.subgroup === 'apt-distro' ? 'apt' : request.capability
+    const message = ignoreToggleBulkCommitMessage(
+      getContext().machineId,
+      capability,
+      request.keys.length
+    )
+    await withAuthoredWrite(message, () => {
+      if (request.subgroup === 'apt-distro') {
+        toggleAptDistroSyncedBulk(getContext(), request.keys, !request.ignored)
+      } else {
+        toggleSyncItemIgnoreBulk(getContext(), request.capability, request.keys, request.ignored)
+      }
+    })
     return listSyncItemGroupsForClient()
   },
 
   moveEntryToHostLayer: async (args): Promise<SyncItemGroupDto[]> => {
     const request = args as MoveEntryHostLayerRequest
-    await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
-    moveEntryToHostLayer(getContext(), request.capability, request.key)
-    autoSyncAfterWrite(getContext(), gitTransportProvider)
+    const message = hostLayerMoveCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.key,
+      'host'
+    )
+    await withAuthoredWrite(message, () => {
+      moveEntryToHostLayer(getContext(), request.capability, request.key)
+    })
     return listSyncItemGroupsForClient()
   },
 
   moveEntryToCommonLayer: async (args): Promise<SyncItemGroupDto[]> => {
     const request = args as MoveEntryHostLayerRequest
-    await sweepLiveEditsBeforeWrite(getContext(), gitTransportProvider)
-    moveEntryToCommonLayer(getContext(), request.capability, request.key)
-    autoSyncAfterWrite(getContext(), gitTransportProvider)
+    const message = hostLayerMoveCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.key,
+      'common'
+    )
+    await withAuthoredWrite(message, () => {
+      moveEntryToCommonLayer(getContext(), request.capability, request.key)
+    })
     return listSyncItemGroupsForClient()
   },
 

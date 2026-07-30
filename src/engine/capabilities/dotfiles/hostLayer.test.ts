@@ -3,7 +3,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { effectiveLayer, readCommonLayer, readHostLayer, writeCommonLayer } from '../../manifest'
 import { makeFixture, writeHomeFile, type TestFixture } from '../../testFixtures'
-import { FollowerHostLayerMoveBlockedError, HostLayerEntryNotFoundError } from '../hostLayerErrors'
+import { HostLayerEntryNotFoundError } from '../hostLayerErrors'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { moveDotfileEntryToCommonLayer, moveDotfileEntryToHostLayer } from './hostLayer'
 import type { DotfileEntry } from './types'
@@ -25,14 +25,26 @@ function hostEntriesOf(fixture: TestFixture): DotfileEntry[] {
 // F2 (docs/refactor-spec-v0.2.md) — "이 머신 전용" 전환의 엔진 연산.
 
 describe('moveDotfileEntryToHostLayer / moveDotfileEntryToCommonLayer', () => {
-  it('rejects on a follower machine', () => {
+  // WS5("창고 모델" 전 머신 저작): host 계층 이동은 이 라운드부터 follower도
+  // 허용된다(role 가드 제거) -- 이전엔 이 자리가 "rejects on a follower
+  // machine" 테스트였다(FollowerHostLayerMoveBlockedError). 실제 커밋+push는
+  // 워커의 `withAuthoredWrite`가 하므로 여기(순수 엔진 함수) 테스트는 "role과
+  // 무관하게 성공"만 확인한다.
+  it('succeeds on a follower machine (WS5: role 가드 제거)', () => {
     const fixture = makeFixture('follower')
-    expect(() => moveDotfileEntryToHostLayer(fixture.ctx, '~/.zshrc')).toThrow(
-      FollowerHostLayerMoveBlockedError
-    )
-    expect(() => moveDotfileEntryToCommonLayer(fixture.ctx, '~/.zshrc')).toThrow(
-      FollowerHostLayerMoveBlockedError
-    )
+    seedCommonEntry(fixture, {
+      home: '~/.zshrc',
+      store: 'dotfiles/.zshrc',
+      type: 'file',
+      link: true
+    })
+
+    expect(() => moveDotfileEntryToHostLayer(fixture.ctx, '~/.zshrc')).not.toThrow()
+    expect(hostEntriesOf(fixture)).toHaveLength(1)
+
+    expect(() => moveDotfileEntryToCommonLayer(fixture.ctx, '~/.zshrc')).not.toThrow()
+    expect(commonEntriesOf(fixture)).toHaveLength(1)
+
     fixture.cleanup()
   })
 
