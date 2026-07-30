@@ -53,3 +53,51 @@ export function setAutostart(homeDir: string, enabled: boolean, execPath: string
   if (enabled) enableAutostart(homeDir, execPath)
   else disableAutostart(homeDir)
 }
+
+/**
+ * 기존 .desktop 파일의 `Exec=` 값을 읽는다 — self-heal이 "지금 등록된 경로가
+ * 맞는지"를 판단하는 유일한 근거. 파일이 없거나 `Exec=` 줄이 없으면 null
+ * (isAutostartEnabled와 같은 존재 여부 판정을 다시 하지 않는다 — 호출부가
+ * 그건 이미 알고 있다는 전제).
+ */
+export function readAutostartExecPath(homeDir: string): string | null {
+  const target = autostartDesktopFilePath(homeDir)
+  if (!fs.existsSync(target)) return null
+  const content = fs.readFileSync(target, 'utf-8')
+  const match = /^Exec=(.*)$/m.exec(content)
+  return match ? match[1] : null
+}
+
+export interface AutostartSelfHealResult {
+  readonly healed: boolean
+  /** healed일 때만 채워지는, 재작성 전 Exec 값(로그용). */
+  readonly staleExecPath?: string
+}
+
+/**
+ * v0.1.20: 패키지 모드(비-dev) 기동 시 stale Exec 경로를 자동 치유한다 —
+ * 2026-07-29 실사고("Capture를 눌러도 반영이 안 되는 것처럼 보였다") 조사
+ * 과정에서 발견된 별개 위험의 재발 방지책. AppImage가 다른 경로로 이동되거나
+ * (Gear Lever 통합·재설치 등), 한때 `npm run dev`로 autostart를 켰다가 그
+ * 개발용 실행 경로가 `.desktop`의 Exec=에 그대로 남으면, 다음 로그인 때
+ * 존재하지 않거나 뜻이 다른 경로가 실행돼("로그인 시 깨진 자동시작") 트레이
+ * 상주 drift 체크가 조용히 멈춘다.
+ *
+ * dev 모드에서는 아무것도 하지 않는다(autostartGuard.ts와 같은 이유 — dev
+ * 실행 경로 자체가 안정적인 참조점이 아니다). autostart가 꺼져 있으면
+ * (.desktop 파일이 없으면) 치유할 대상이 없으므로 역시 아무것도 하지 않는다
+ * (자동으로 켜지 않는다 — 사용자가 명시적으로 껐거나 애초에 켠 적이 없는
+ * 상태를 이 함수가 바꾸지 않는다).
+ */
+export function selfHealAutostart(
+  homeDir: string,
+  execPath: string,
+  isDev: boolean
+): AutostartSelfHealResult {
+  if (isDev) return { healed: false }
+  if (!isAutostartEnabled(homeDir)) return { healed: false }
+  const current = readAutostartExecPath(homeDir)
+  if (current === execPath) return { healed: false }
+  enableAutostart(homeDir, execPath)
+  return { healed: true, staleExecPath: current ?? undefined }
+}

@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { DEFAULT_DRIFT_CHECK_INTERVAL_HOURS } from '../engine/context'
-import { isAutostartEnabled } from '../engine/autostart'
+import { isAutostartEnabled, selfHealAutostart } from '../engine/autostart'
 import { guardedSetAutostart } from './autostartGuard'
 import type { DriftSummary } from '../engine/drift'
 import {
@@ -227,6 +227,22 @@ app
       getExecPath: resolveExecPath
     })
     registerWindowControlIpc(() => mainWindow)
+
+    // v0.1.20 autostart self-heal: 패키지 모드 기동 시 stale Exec 경로(이동된
+    // AppImage·잔존 dev 경로)를 조용히 고친다 — 판단은 순수 함수
+    // (engine/autostart.ts `selfHealAutostart`), 여기는 실제 homeDir/execPath/
+    // isDev 배선만 한다. 스크린샷 하네스는 실제 앱 상태를 대표하지 않고
+    // 이 머신의 진짜 ~/.config/autostart를 건드릴 이유가 없어 건너뛴다
+    // (runSelfUpdateRegistration과 같은 회피, isDev 게이트가 보통 이미
+    // 걸러주지만 이중 방어).
+    if (!screenshotDir) {
+      const healResult = selfHealAutostart(getEngineContext().homeDir, resolveExecPath(), is.dev)
+      if (healResult.healed) {
+        console.log(
+          `[autostart] stale Exec 경로 치유: ${healResult.staleExecPath} -> ${resolveExecPath()}`
+        )
+      }
+    }
 
     createWindow()
 
