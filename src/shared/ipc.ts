@@ -95,6 +95,29 @@ export const IPC_CHANNELS = {
    */
   engineMoveEntryToHostLayer: 'engine:moveEntryToHostLayer',
   engineMoveEntryToCommonLayer: 'engine:moveEntryToCommonLayer',
+  /**
+   * WS3/WS4("창고 모델 1차" — cheerful-growing-fairy 계획): 머신별 구독
+   * 토글 — mode 무관하게 managed 항목에 표시되는 별도 Switch(선택 모드는
+   * include, 전체 모드는 exclude를 뒤에서 움직인다, `selection.ts`).
+   * ignore 토글과 동일하게 fire-and-forget 자동 커밋(`withAuthoredWrite`).
+   */
+  engineToggleSubscribe: 'engine:toggleSubscribe',
+  engineToggleSubscribeBulk: 'engine:toggleSubscribeBulk',
+  /** 구독 모드 조회(읽기)/전환(저작 쓰기) — 온보딩·Settings·이 배치의 UI 분기가 공유. */
+  engineGetSelectionMode: 'engine:getSelectionMode',
+  engineSetSelectionMode: 'engine:setSelectionMode',
+  /** 삭제 확인 다이얼로그가 "이 항목을 구독 중인 머신"을 보여주기 위한 조회(읽기). */
+  engineListEntrySubscribers: 'engine:listEntrySubscribers',
+  /**
+   * WS4: "등록"이라는 새 쓰기 동작 — capture와 달리 항목 하나만 라이브
+   * 시스템에서 조회해 manifest에 upsert한다. 명시적 사용자 액션이라(이
+   * repo가 반복해서 얻은 교훈) git push 결과를 **await해 응답에 동봉**한다
+   * — toggleSubscribe류의 fire-and-forget과 달리 별도로 조립한다
+   * (engineWorker.ts `handlers.registerEntry` 참조, `withAuthoredWrite`
+   * 미사용).
+   */
+  engineRegisterEntry: 'engine:registerEntry',
+  engineUnregisterEntry: 'engine:unregisterEntry',
   engineApply: 'engine:apply',
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
@@ -968,6 +991,66 @@ export interface ToggleIgnoreBulkRequest {
 export interface MoveEntryHostLayerRequest {
   readonly capability: HostLayerCapability
   readonly key: string
+}
+
+// ---------------------------------------------------------------------------
+// engine:toggleSubscribe(Bulk) / engine:getSelectionMode / engine:setSelectionMode /
+// engine:listEntrySubscribers / engine:registerEntry / engine:unregisterEntry
+// ("창고 모델 1차" WS3/WS4 — cheerful-growing-fairy 계획, `src/engine/selection.ts`·
+// `src/engine/registry.ts`의 shape을 shared 경계에서 다시 적는다)
+// ---------------------------------------------------------------------------
+
+/** `selection.ts` `SelectionMode` — 파일·키 부재는 'all'(하위 호환, 무마이그레이션). */
+export type SelectionMode = 'all' | 'select'
+
+export interface ToggleSubscribeRequest {
+  readonly capability: SyncItemCapability
+  readonly key: string
+  readonly subscribed: boolean
+}
+
+/** R5(toggleIgnoreBulk) 선례와 동일한 이유로 벌크 경로를 따로 둔다 — 1커밋 분량으로 묶는다. */
+export interface ToggleSubscribeBulkRequest {
+  readonly capability: SyncItemCapability
+  readonly keys: readonly string[]
+  readonly subscribed: boolean
+}
+
+export interface SetSelectionModeRequest {
+  readonly mode: SelectionMode
+}
+
+export interface ListEntrySubscribersRequest {
+  readonly capability: SyncItemCapability
+  readonly key: string
+}
+
+/**
+ * `registry.ts` `RegisterCapability` — 등록/삭제 다이얼로그가 지원하는
+ * capability만(발견형 6종 + dotfiles 재캡처). services/snap/binaries/settings/
+ * scheduled는 후보가 없거나(services·settings·scheduled) detection-only(snap)거나
+ * unresolvedFiles만 있어(binaries) 이 배치 범위 밖이다(계획서 "보류" 목록).
+ */
+export type RegisterCapability =
+  'apt' | 'flatpak' | 'appimage' | 'fonts' | 'tools' | 'repos' | 'dotfiles'
+
+export interface RegisterEntryRequest {
+  readonly capability: RegisterCapability
+  readonly key: string
+}
+
+export type UnregisterEntryRequest = RegisterEntryRequest
+
+/**
+ * `engine:registerEntry`/`engine:unregisterEntry` 응답 — git push 결과를
+ * `sync`에 동봉한다(명시적 사용자 액션이라 "됐는지 안 됐는지 알 수 없음"
+ * 재발 방지, IPC_CHANNELS 주석 참조). `groups`는 갱신된 Candidates 화면
+ * 전체 — 다른 write 핸들러(toggleIgnore 등)와 같은 반환 패턴에 sync만
+ * 추가된 형태다.
+ */
+export interface RegisterEntryResponse {
+  readonly groups: readonly SyncItemGroupDto[]
+  readonly sync: SyncStatusDto
 }
 
 // ---------------------------------------------------------------------------

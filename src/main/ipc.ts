@@ -57,6 +57,7 @@ import {
   type FontsCaptureReportDto,
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
+  type ListEntrySubscribersRequest,
   type ManifestPathCheckDto,
   type MoveEntryHostLayerRequest,
   type PackagesCaptureReport,
@@ -64,6 +65,8 @@ import {
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterEntryRequest,
+  type RegisterEntryResponse,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
   type RigsyncConfigDto,
@@ -71,17 +74,22 @@ import {
   type RunUninstallResponse,
   type ScheduledCaptureReportDto,
   type ScheduledDiffReportDto,
+  type SelectionMode,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
   type SetAutostartRequest,
+  type SetSelectionModeRequest,
   type SettingsCaptureReportDto,
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
   type SyncStatusDto,
   type ToggleIgnoreBulkRequest,
   type ToggleIgnoreRequest,
+  type ToggleSubscribeBulkRequest,
+  type ToggleSubscribeRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
+  type UnregisterEntryRequest,
   type UpdateConfigRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
@@ -386,6 +394,40 @@ export function registerEngineIpc(
     IPC_CHANNELS.engineMoveEntryToCommonLayer,
     async (_event, request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> =>
       worker.call('moveEntryToCommonLayer', request)
+  )
+
+  handle(IPC_CHANNELS.engineGetSelectionMode, async (): Promise<SelectionMode> =>
+    worker.call('getSelectionMode')
+  )
+  handle(
+    IPC_CHANNELS.engineSetSelectionMode,
+    async (_event, request: SetSelectionModeRequest): Promise<SyncItemGroupDto[]> =>
+      worker.call('setSelectionMode', request)
+  )
+  handle(
+    IPC_CHANNELS.engineListEntrySubscribers,
+    async (_event, request: ListEntrySubscribersRequest): Promise<string[]> =>
+      worker.call('listEntrySubscribers', request)
+  )
+  handle(
+    IPC_CHANNELS.engineToggleSubscribe,
+    async (_event, request: ToggleSubscribeRequest): Promise<SyncItemGroupDto[]> =>
+      worker.call('toggleSubscribe', request)
+  )
+  handle(
+    IPC_CHANNELS.engineToggleSubscribeBulk,
+    async (_event, request: ToggleSubscribeBulkRequest): Promise<SyncItemGroupDto[]> =>
+      worker.call('toggleSubscribeBulk', request)
+  )
+  handle(
+    IPC_CHANNELS.engineRegisterEntry,
+    async (_event, request: RegisterEntryRequest): Promise<RegisterEntryResponse> =>
+      worker.call('registerEntry', request)
+  )
+  handle(
+    IPC_CHANNELS.engineUnregisterEntry,
+    async (_event, request: UnregisterEntryRequest): Promise<RegisterEntryResponse> =>
+      worker.call('unregisterEntry', request)
   )
 
   // engine:planEvent 진행 이벤트는 워커가 client 생성 시 등록한 onEvent

@@ -120,3 +120,30 @@ export function autoSyncAfterAuthoredWrite(
       lastStatus = { kind: 'error', message: err instanceof Error ? err.message : String(err) }
     })
 }
+
+/**
+ * WS4("창고 모델" 등록) — `autoSyncAfterAuthoredWrite`의 await 버전. 등록/삭제는
+ * 명시적 사용자 액션이라 이 repo가 반복해서 얻은 교훈("됐는지 안 됐는지 알 수
+ * 없었다" 재발 방지)에 따라 push 결과를 그 자리에서 응답에 동봉해야 한다
+ * (engineWorker.ts `engineRegisterEntry`/`engineUnregisterEntry` 참조). 로직은
+ * fire-and-forget인 `autoSyncAfterAuthoredWrite`와 완전히 같고 await 여부와
+ * 반환값만 다르다.
+ */
+export async function awaitAuthoredWrite(
+  ctx: RigsyncContext,
+  provider: GitTransportProvider,
+  message: string
+): Promise<SyncStatus> {
+  try {
+    const status = await syncAuthoredWrite(ctx, provider, message)
+    lastStatus = status
+    return status
+  } catch (err) {
+    const status: SyncStatus = {
+      kind: 'error',
+      message: err instanceof Error ? err.message : String(err)
+    }
+    lastStatus = status
+    return status
+  }
+}

@@ -28,6 +28,7 @@ import {
   type FontsCaptureReportDto,
   type FontsDiffReportDto,
   type IgnoreDoctorCheckRequest,
+  type ListEntrySubscribersRequest,
   type ManifestPathCheckDto,
   type MoveEntryHostLayerRequest,
   type PackagesCaptureReport,
@@ -36,6 +37,8 @@ import {
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterEntryRequest,
+  type RegisterEntryResponse,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
   type RigsyncConfigDto,
@@ -44,17 +47,22 @@ import {
   type ScheduledCaptureReportDto,
   type ScreenshotRoute,
   type ScheduledDiffReportDto,
+  type SelectionMode,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
   type SetAutostartRequest,
+  type SetSelectionModeRequest,
   type SettingsCaptureReportDto,
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
   type SyncStatusDto,
   type ToggleIgnoreBulkRequest,
   type ToggleIgnoreRequest,
+  type ToggleSubscribeBulkRequest,
+  type ToggleSubscribeRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
+  type UnregisterEntryRequest,
   type UpdateConfigRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
@@ -151,6 +159,23 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineMoveEntryToHostLayer, request),
   moveEntryToCommonLayer: (request: MoveEntryHostLayerRequest): Promise<SyncItemGroupDto[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineMoveEntryToCommonLayer, request),
+  /** WS3("창고 모델" 구독) — 구독 모드 조회/전환. */
+  getSelectionMode: (): Promise<SelectionMode> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineGetSelectionMode),
+  setSelectionMode: (request: SetSelectionModeRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineSetSelectionMode, request),
+  /** 삭제 확인 다이얼로그가 "이 항목을 구독 중인 머신"을 보여주기 위한 조회. */
+  listEntrySubscribers: (request: ListEntrySubscribersRequest): Promise<string[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineListEntrySubscribers, request),
+  toggleSubscribe: (request: ToggleSubscribeRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineToggleSubscribe, request),
+  toggleSubscribeBulk: (request: ToggleSubscribeBulkRequest): Promise<SyncItemGroupDto[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineToggleSubscribeBulk, request),
+  /** WS4("창고 모델" 등록) — git push 결과가 `sync`에 동봉돼 온다. */
+  registerEntry: (request: RegisterEntryRequest): Promise<RegisterEntryResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineRegisterEntry, request),
+  unregisterEntry: (request: UnregisterEntryRequest): Promise<RegisterEntryResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineUnregisterEntry, request),
   apply: (request: ApplyRequest): Promise<ApplyResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
   /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */

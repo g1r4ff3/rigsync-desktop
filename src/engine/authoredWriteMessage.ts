@@ -34,3 +34,50 @@ export function hostLayerMoveCommitMessage(
 ): string {
   return `host-layer: ${machineId} ${capability}:${key} (${target})`
 }
+
+/**
+ * WS4("창고 모델 1차") 등록 — `register: <machineId> <capability>:<key>`.
+ * `engineRegisterEntry`(engineWorker.ts)가 커밋 메시지로 쓴다 — git 저작
+ * 결과를 await해 응답에 동봉하는 별도 조립 경로라 `withAuthoredWrite`를
+ * 쓰지 않는다(엔진 워커 주석 참조).
+ */
+export function registerEntryCommitMessage(
+  machineId: string,
+  capability: string,
+  key: string
+): string {
+  return `register: ${machineId} ${capability}:${key}`
+}
+
+/** WS4 삭제(카탈로그 제외) — `unregister: <machineId> <capability>:<key>`. */
+export function unregisterEntryCommitMessage(
+  machineId: string,
+  capability: string,
+  key: string
+): string {
+  return `unregister: ${machineId} ${capability}:${key}`
+}
+
+/** WS4 구독 토글(단건) — `select: <machineId> <capability>:<key> (on|off)`. */
+export function selectToggleCommitMessage(
+  machineId: string,
+  capability: string,
+  key: string,
+  subscribed: boolean
+): string {
+  return `select: ${machineId} ${capability}:${key} (${subscribed ? 'on' : 'off'})`
+}
+
+/** WS4 구독 토글(벌크) — `select: <machineId> <capability> N건`. */
+export function selectToggleBulkCommitMessage(
+  machineId: string,
+  capability: string,
+  count: number
+): string {
+  return `select: ${machineId} ${capability} ${count}건`
+}
+
+/** WS4 구독 모드 전환 — `select: <machineId> mode=<mode>`. */
+export function selectModeCommitMessage(machineId: string, mode: string): string {
+  return `select: ${machineId} mode=${mode}`
+}

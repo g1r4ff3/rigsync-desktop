@@ -71,6 +71,7 @@ import { orderCombinedPlan } from './planOrder'
 import {
   autoSyncAfterAuthoredWrite,
   autoSyncAfterWrite,
+  awaitAuthoredWrite,
   getLastSyncStatus,
   prepareAuthoredWrite,
   sweepLiveEditsBeforeWrite,
@@ -79,8 +80,21 @@ import {
 import {
   hostLayerMoveCommitMessage,
   ignoreToggleBulkCommitMessage,
-  ignoreToggleCommitMessage
+  ignoreToggleCommitMessage,
+  registerEntryCommitMessage,
+  selectModeCommitMessage,
+  selectToggleBulkCommitMessage,
+  selectToggleCommitMessage,
+  unregisterEntryCommitMessage
 } from '../engine/authoredWriteMessage'
+import { registerEntry, unregisterEntry, type RegisterEntryDeps } from '../engine/registry'
+import {
+  listEntrySubscribers,
+  readSelectionMode,
+  setSelectionMode,
+  setSubscribed,
+  setSubscribedBulk
+} from '../engine/selection'
 import { runDriftCheck } from './driftCheck'
 import { completeOnboarding, expandTilde } from './onboarding'
 import { buildDoctorReport } from '../engine/doctor/report'
@@ -159,9 +173,12 @@ import {
   type PlanActionResultDto,
   type PlanEvent,
   type PlanSummaryDto,
+  type ListEntrySubscribersRequest,
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterEntryRequest,
+  type RegisterEntryResponse,
   type ReposCaptureReportDto,
   type ReposDiffReportDto,
   type RigsyncConfigDto,
@@ -169,17 +186,22 @@ import {
   type RunUninstallResponse,
   type ScheduledCaptureReportDto,
   type ScheduledDiffReportDto,
+  type SelectionMode,
   type ServicesCaptureReportDto,
   type ServicesDiffReportDto,
   type SetAutostartRequest,
+  type SetSelectionModeRequest,
   type SettingsCaptureReportDto,
   type SettingsDiffReportDto,
   type SyncItemGroupDto,
   type SyncStatusDto,
   type ToggleIgnoreBulkRequest,
   type ToggleIgnoreRequest,
+  type ToggleSubscribeBulkRequest,
+  type ToggleSubscribeRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
+  type UnregisterEntryRequest,
   type UpdateConfigRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
@@ -205,6 +227,15 @@ const uninstallProviders: UninstallProviders = {
   apt: providers.apt,
   flatpak: providers.flatpak,
   fontsSystem: linuxFontsSystemProvider
+}
+// WS4("창고 모델" 등록 엔진)이 요구하는 provider 4종 — 전부 위에서 이미 만든
+// 인스턴스를 그대로 재사용한다(새 provider를 만들지 않는다, uninstallProviders와
+// 동일한 원칙).
+const registerDeps: RegisterEntryDeps = {
+  packages: providers,
+  gearLever: gearLeverProvider,
+  tools: toolsProvider,
+  git: gitProvider
 }
 
 // config.toml은 온보딩 위저드(P4) 전에는 없는 게 정상이라 dev 기본값으로
@@ -699,6 +730,88 @@ const handlers: Record<string, Handler> = {
     return listSyncItemGroupsForClient()
   },
 
+  getSelectionMode: async (): Promise<SelectionMode> => readSelectionMode(getContext()),
+
+  setSelectionMode: async (args): Promise<SyncItemGroupDto[]> => {
+    const request = args as SetSelectionModeRequest
+    const message = selectModeCommitMessage(getContext().machineId, request.mode)
+    await withAuthoredWrite(message, () => {
+      setSelectionMode(getContext(), request.mode)
+    })
+    return listSyncItemGroupsForClient()
+  },
+
+  listEntrySubscribers: async (args): Promise<string[]> => {
+    const request = args as ListEntrySubscribersRequest
+    return listEntrySubscribers(getContext(), request.capability, request.key)
+  },
+
+  toggleSubscribe: async (args): Promise<SyncItemGroupDto[]> => {
+    const request = args as ToggleSubscribeRequest
+    const message = selectToggleCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.key,
+      request.subscribed
+    )
+    await withAuthoredWrite(message, () => {
+      setSubscribed(getContext(), request.capability, request.key, request.subscribed)
+    })
+    return listSyncItemGroupsForClient()
+  },
+
+  toggleSubscribeBulk: async (args): Promise<SyncItemGroupDto[]> => {
+    const request = args as ToggleSubscribeBulkRequest
+    const message = selectToggleBulkCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.keys.length
+    )
+    await withAuthoredWrite(message, () => {
+      setSubscribedBulk(getContext(), request.capability, request.keys, request.subscribed)
+    })
+    return listSyncItemGroupsForClient()
+  },
+
+  /**
+   * WS4: git push 결과를 await해 응답에 동봉해야 하는 명시적 사용자 액션이라
+   * `withAuthoredWrite`(fire-and-forget)를 쓰지 않고 `prepareAuthoredWrite` →
+   * (리졸버 실패면 여기서 throw, git에 아무것도 안 남음) → `awaitAuthoredWrite`
+   * 순서로 직접 조립한다(engineWorker.ts 파일 헤더 `withAuthoredWrite` 주석·
+   * 계획서 WS4 IPC 절 참조).
+   */
+  registerEntry: async (args): Promise<RegisterEntryResponse> => {
+    const request = args as RegisterEntryRequest
+    const prepStatus = await prepareAuthoredWrite(getContext(), gitTransportProvider)
+    if (prepStatus?.kind === 'error') {
+      return { groups: await listSyncItemGroupsForClient(), sync: prepStatus }
+    }
+    await registerEntry(getContext(), registerDeps, request.capability, request.key)
+    const message = registerEntryCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.key
+    )
+    const sync = await awaitAuthoredWrite(getContext(), gitTransportProvider, message)
+    return { groups: await listSyncItemGroupsForClient(), sync }
+  },
+
+  unregisterEntry: async (args): Promise<RegisterEntryResponse> => {
+    const request = args as UnregisterEntryRequest
+    const prepStatus = await prepareAuthoredWrite(getContext(), gitTransportProvider)
+    if (prepStatus?.kind === 'error') {
+      return { groups: await listSyncItemGroupsForClient(), sync: prepStatus }
+    }
+    unregisterEntry(getContext(), request.capability, request.key)
+    const message = unregisterEntryCommitMessage(
+      getContext().machineId,
+      request.capability,
+      request.key
+    )
+    const sync = await awaitAuthoredWrite(getContext(), gitTransportProvider, message)
+    return { groups: await listSyncItemGroupsForClient(), sync }
+  },
+
   apply: async (args): Promise<ApplyResponse> => {
     const request = args as ApplyRequest
     const ctx = getContext()
@@ -773,7 +886,12 @@ const READ_METHODS = new Set<string>([
   'detectDuplicates',
   'detectReclassifications',
   'listSyncItems',
-  'planUninstall'
+  'planUninstall',
+  // WS3("창고 모델" 구독) — 읽기 전용 조회 2종만. register/unregister/
+  // toggleSubscribe(Bulk)/setSelectionMode는 manifest를 바꾸는 저작 쓰기라
+  // fail-closed 기본값('write')을 그대로 쓴다(classifyMethod 주석 참조).
+  'getSelectionMode',
+  'listEntrySubscribers'
 ])
 
 /**
