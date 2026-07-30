@@ -10,6 +10,7 @@
 import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import { BINARIES_KEY_FIELDS, BINARIES_LAYER } from './constants'
 import { getKnownBinaryDefinition } from './knownBinarySources'
 import type { BinariesSystemProvider } from './providerTypes'
@@ -23,11 +24,15 @@ export async function diffBinaries(
   const manifest =
     (effectiveLayer(ctx, BINARIES_LAYER, BINARIES_KEY_FIELDS).binary as
       BinaryEntry[] | undefined) ?? []
+  // WS2("창고 모델" 구독 강제): 안전 규칙 1 — 미구독 엔트리는 설치/드리프트
+  // 판정만 skip한다.
+  const selection = readSelectionFilter(ctx, 'binaries')
 
   const toInstall: string[] = []
   const pinMismatch: BinariesPinMismatch[] = []
 
   for (const entry of manifest) {
+    if (!isSubscribed(selection, entry.name)) continue
     const dir = resolveBinariesInstallDir(ctx, entry.installDir)
     const missing = entry.binaries.filter((name) => !isExecutableFile(path.join(dir, name)))
     if (missing.length > 0) {

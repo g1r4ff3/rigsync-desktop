@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeSelection, type TestFixture } from '../../testFixtures'
 import { FONTS_LAYER } from './constants'
 import { diffFonts } from './diff'
 
@@ -160,5 +160,26 @@ describe('diffFonts', () => {
     writeFontFile(fixture, 'SomeRandomFont.ttf')
     const diff = await diffFonts(fixture.ctx)
     expect(diff.uncaptured).toEqual([])
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 엔트리는 install/drift
+  // 판정에서만 skip한다(제거 plan 없음).
+  it('does not propose install for an unsubscribed manifested font (WS2)', async () => {
+    writeCommonLayer(fixture.ctx, FONTS_LAYER, {
+      font: [
+        {
+          name: 'MesloLGS NF',
+          source: {
+            kind: 'static',
+            urls: ['https://example.com/MesloLGS%20NF%20Regular.ttf']
+          },
+          files: ['MesloLGS NF Regular.ttf']
+        }
+      ]
+    })
+    writeSelection(fixture, { mode: 'all', fonts: { exclude: ['MesloLGS NF'] } })
+
+    const diff = await diffFonts(fixture.ctx)
+    expect(diff.toInstall).toEqual([])
   })
 })

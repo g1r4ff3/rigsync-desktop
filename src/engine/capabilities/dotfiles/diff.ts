@@ -13,6 +13,7 @@ import { isSymlink, safeRealpath } from '../../fsUtil'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import { expandHome } from '../../paths'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { dirsEqual, resolveDotfileStorePath } from './fsTree'
 import type { DiffReport, DotfileEntry } from './types'
@@ -21,6 +22,10 @@ export async function diffDotfiles(ctx: RigsyncContext): Promise<DiffReport> {
   const manifest = effectiveLayer(ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
   const entries = (manifest.entry as DotfileEntry[] | undefined) ?? []
   const ignoreHomes = readIgnoreSet(ctx, 'dotfiles', 'homes')
+  // WS2("창고 모델" 구독 강제): 미구독 엔트리는 설치/드리프트 판정에서만
+  // skip한다 -- 제거 plan은 만들지 않는다(ignore의 additive-only 예외와는
+  // 무관한 별개 축, 안전 규칙 1).
+  const selection = readSelectionFilter(ctx, 'dotfiles')
 
   const toLink: string[] = []
   const contentChanged: string[] = []
@@ -29,6 +34,7 @@ export async function diffDotfiles(ctx: RigsyncContext): Promise<DiffReport> {
 
   for (const entry of entries) {
     if (ignoreHomes.has(entry.home)) continue
+    if (!isSubscribed(selection, entry.home)) continue
 
     const homePath = expandHome(ctx, entry.home)
     const storePath = resolveDotfileStorePath(ctx, entry.store)

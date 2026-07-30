@@ -874,6 +874,11 @@ export function isIgnoreUnsupportedCapability(capability: SyncItemCapability): b
  * 재발 방지 — fonts의 "소스 미지정" 판정과 같은 정신). ignore(Pause)하면
  * 일반적인 `excluded`로 돌아간다(이미 안정 상태이므로 이 오버라이드가 필요
  * 없다). `SyncItemDto.unresolvableReason`가 사유를 싣는다.
+ *
+ * "창고 모델 1차"(WS2) `not-subscribed`: manifest엔 있고(managed) ignore도
+ * 안 됐지만 이 머신의 selection(구독)이 꺼진 항목 — 엔진 `syncItems.ts`
+ * `SyncItemState` 주석 참조. pending 집계·배너에는 안 잡힌다(제거를 뜻하지
+ * 않는다 — 이 머신이 그 항목을 원치 않는다는 뜻일 뿐).
  */
 export type SyncItemState =
   | 'synced'
@@ -883,6 +888,7 @@ export type SyncItemState =
   | 'detected'
   | 'distro-default'
   | 'unresolvable'
+  | 'not-subscribed'
 
 export interface SyncItemDto {
   readonly key: string

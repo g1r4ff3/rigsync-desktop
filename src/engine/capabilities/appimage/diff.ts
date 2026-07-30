@@ -7,6 +7,7 @@
  */
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import { APPIMAGE_KEY_FIELDS, APPIMAGE_LAYER } from './constants'
 import type { GearLeverProvider } from './providerTypes'
 import type { AppimageDiffReport, AppimageEntry } from './types'
@@ -25,12 +26,16 @@ export async function diffAppimage(
   const installedRows = await provider.listInstalled()
   const installedByDesktopId = new Map(installedRows.map((r) => [r.desktopId, r]))
   const manifestNames = new Set(manifest.map((e) => e.name))
+  // WS2("창고 모델" 구독 강제): 안전 규칙 1 — 미구독 엔트리는 설치/드리프트
+  // 판정만 skip한다(uncaptured 후보는 아래에서 installedRows 기준 그대로 둔다).
+  const selection = readSelectionFilter(ctx, 'appimage')
 
   const toInstall: string[] = []
   const pinMismatch: { name: string; pinned: string; installed: string }[] = []
   const unsupportedSource: string[] = []
 
   for (const entry of manifest) {
+    if (!isSubscribed(selection, entry.name)) continue
     const installed = installedByDesktopId.get(entry.name)
     if (!installed) {
       toInstall.push(entry.name)

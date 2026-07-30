@@ -9,6 +9,7 @@
  */
 import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItem, SyncItemGroup } from '../../syncItems'
 import { classifyAptPackagesCached } from './aptQueryCache'
 import { readEffectivePackages } from './io'
@@ -24,6 +25,8 @@ export async function buildPackageSyncGroups(
   if (providers.apt.isAvailable()) {
     const ignore = readIgnoreSet(ctx, 'apt', 'packages')
     const include = readAptIncludeSet(ctx)
+    // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+    const aptSelection = readSelectionFilter(ctx, 'apt')
     const managedSet = new Set(manifest.apt?.packages ?? [])
     const liveSet = new Set(await providers.apt.manualInstalled())
     const names = [...new Set([...managedSet, ...liveSet])].sort()
@@ -41,7 +44,8 @@ export async function buildPackageSyncGroups(
         managed: managedSet.has(name),
         ignored: ignore.has(name),
         included: include.has(name),
-        description: descriptions[name]
+        description: descriptions[name],
+        ...(isSubscribed(aptSelection, name) ? {} : { subscribed: false })
       })
       const userNames = names.filter((n) => classification.get(n) !== 'distro')
       const distroNames = names.filter((n) => classification.get(n) === 'distro')
@@ -87,6 +91,7 @@ export async function buildPackageSyncGroups(
 
   if (providers.flatpak.isAvailable()) {
     const ignore = readIgnoreSet(ctx, 'flatpak', 'apps')
+    const flatpakSelection = readSelectionFilter(ctx, 'flatpak')
     const managedSet = new Set((manifest.flatpak?.app ?? []).map((a) => a.application))
     const liveSet = new Set((await providers.flatpak.apps()).map((a) => a.application))
     const names = [...new Set([...managedSet, ...liveSet])].sort()
@@ -107,7 +112,8 @@ export async function buildPackageSyncGroups(
               ? detail.description
                 ? `${detail.name} — ${detail.description}`
                 : detail.name
-              : undefined
+              : undefined,
+            ...(isSubscribed(flatpakSelection, name) ? {} : { subscribed: false })
           }
         })
       })

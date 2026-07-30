@@ -23,6 +23,7 @@ import { expandHome } from '../../paths'
 import type { PlanAction } from '../../plan'
 import { doBackup } from '../../safety/backup'
 import { matchesDenylist } from '../../safety/denylist'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { copyTreeMirror, resolveDotfileStorePath } from './fsTree'
@@ -236,11 +237,25 @@ export function planDotfilesUninstall(
   const entries = (manifest.entry as DotfileEntry[] | undefined) ?? []
   const managedHomes = new Set(entries.map((e) => e.home))
   const ignore = readIgnoreSet(ctx, 'dotfiles', 'homes')
+  // WS2("창고 모델" 구독 강제) 예외 지점 — 이 함수는 diff 출력이 아니라
+  // manifest를 직접 재독하므로 diff.ts와 같은 필터를 여기에도 둔다. 판단
+  // 근거가 약해 가장 보수적인 선택(구독 체크를 거부 사유 하나로만 추가 —
+  // 어떤 제거도 새로 허용하지 않는다, 안전 규칙 1과 상충 없음)을 취했다:
+  // 구현 보고서에 플래그.
+  const selection = readSelectionFilter(ctx, 'dotfiles')
 
   const actions: PlanAction[] = []
   const excluded: UninstallExclusion[] = []
 
   for (const home of homes) {
+    if (!isSubscribed(selection, home)) {
+      excluded.push({
+        capability: 'dotfiles',
+        key: home,
+        reason: '이 머신은 이 항목을 구독하지 않습니다'
+      })
+      continue
+    }
     if (managedHomes.has(home)) {
       excluded.push({
         capability: 'dotfiles',

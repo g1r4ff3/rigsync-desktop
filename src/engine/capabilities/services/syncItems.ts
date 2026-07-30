@@ -12,6 +12,7 @@
  */
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer, readHostLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItemGroup } from '../../syncItems'
 import { SERVICES_KEY_FIELDS, SERVICES_LAYER } from './constants'
 import type { ServicesManifest, ServiceUnitEntry } from './types'
@@ -28,6 +29,8 @@ export function buildServicesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
       ((readHostLayer(ctx, SERVICES_LAYER) as ServicesManifest).unit ?? []) as ServiceUnitEntry[]
     ).map((u) => u.name)
   )
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+  const selection = readSelectionFilter(ctx, 'services')
 
   return {
     capability: 'services',
@@ -37,7 +40,8 @@ export function buildServicesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
       label: u.name,
       managed: true,
       ignored: false,
-      hostOnly: hostNames.has(u.name)
+      hostOnly: hostNames.has(u.name),
+      ...(isSubscribed(selection, u.name) ? {} : { subscribed: false })
     }))
   }
 }

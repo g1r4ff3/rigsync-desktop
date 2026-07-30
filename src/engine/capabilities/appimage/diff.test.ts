@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeSelection, type TestFixture } from '../../testFixtures'
 import { APPIMAGE_LAYER } from './constants'
 import { diffAppimage } from './diff'
 import { makeFakeGearLeverProvider } from './testHelpers'
@@ -159,5 +159,25 @@ describe('diffAppimage', () => {
       })
     )
     expect(diff.uncaptured).toEqual(['tev.desktop'])
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 엔트리는 install/drift
+  // 판정에서만 skip한다(제거 plan 없음).
+  it('does not propose install for an unsubscribed manifested app (WS2)', async () => {
+    writeCommonLayer(fixture.ctx, APPIMAGE_LAYER, {
+      app: [
+        {
+          name: 'tev.desktop',
+          source: 'GithubUpdater',
+          coordinate: 'Tom94/tev',
+          repoFilename: 'tev.appimage',
+          pin: null
+        }
+      ]
+    })
+    writeSelection(fixture, { mode: 'all', appimage: { exclude: ['tev.desktop'] } })
+
+    const diff = await diffAppimage(fixture.ctx, makeFakeGearLeverProvider({ installed: [] }))
+    expect(diff.toInstall).toEqual([])
   })
 })

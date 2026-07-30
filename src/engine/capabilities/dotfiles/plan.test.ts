@@ -7,7 +7,13 @@ import { captureDotfiles } from './capture'
 import { DOTFILES_LAYER } from './constants'
 import { diffDotfiles } from './diff'
 import { planDotfiles, planDotfilesUninstall } from './plan'
-import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
+import {
+  makeFixture,
+  writeHomeFile,
+  writeIgnore,
+  writeSelection,
+  type TestFixture
+} from '../../testFixtures'
 
 // 케이스 출처: 구 repo tests/test_dotfiles.py
 // TestDotfilesDiffAndApplySymlink / TestDotfilesLinkFalseModeCopy /
@@ -372,6 +378,28 @@ describe('planDotfilesUninstall', () => {
     const result = planDotfilesUninstall(fixture.ctx, ['~/.ghostrc'], 'run-not-installed')
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  // WS2("창고 모델" 구독 강제) 예외 지점(diff 출력이 아니라 manifest를 직접
+  // 재독하는 이 함수도 동일 필터를 둔다) — 가장 보수적으로 거부 사유 하나만
+  // 추가했다(새 제거를 허용하지 않는다).
+  it('rejects an unsubscribed home even if otherwise eligible (WS2)', () => {
+    const homeFile = writeHomeFile(fixture, '.oldtoolrc', 'leftover config\n')
+    writeIgnore(fixture, { dotfiles: { homes: ['~/.oldtoolrc'] } })
+    writeSelection(fixture, { mode: 'all', dotfiles: { exclude: ['~/.oldtoolrc'] } })
+
+    const result = planDotfilesUninstall(fixture.ctx, ['~/.oldtoolrc'], 'run-unsubscribed')
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      {
+        capability: 'dotfiles',
+        key: '~/.oldtoolrc',
+        reason: '이 머신은 이 항목을 구독하지 않습니다'
+      }
+    ])
+    // 실제로 지워지지 않았어야 한다 -- 안전 규칙 1(제거 plan 없음).
+    expect(fs.existsSync(homeFile)).toBe(true)
   })
 
   it('backs up then deletes a plain file that is ignored and unmanaged, without touching the store', async () => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { makeFixture } from '../../testFixtures'
+import { makeFixture, writeSelection } from '../../testFixtures'
 import { writeCommonLayer } from '../../manifest'
 import { diffTools } from './diff'
 import { TOOLS_LAYER } from './constants'
@@ -66,6 +66,18 @@ describe('diffTools', () => {
     const provider = makeFakeToolsProvider({ available: false })
     const d = await diffTools(fixture.ctx, provider)
     expect(d.skipped).toBe(true)
+    fixture.cleanup()
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 패키지는 install 판정에서만
+  // skip한다(제거 plan 없음).
+  it('does not propose install for an unsubscribed manifested package (WS2)', async () => {
+    const fixture = makeFixture('reference')
+    writeToolsManifest(fixture.ctx, ['pnpm'])
+    writeSelection(fixture, { mode: 'all', tools: { exclude: ['pnpm'] } })
+    const provider = makeFakeToolsProvider({ available: true, globals: {}, nodeVersion: 'v25.8.1' })
+    const d = await diffTools(fixture.ctx, provider)
+    expect(d.toInstall).toEqual([])
     fixture.cleanup()
   })
 })

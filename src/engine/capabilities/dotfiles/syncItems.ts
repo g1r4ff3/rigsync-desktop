@@ -9,6 +9,7 @@ import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer, readHostLayer } from '../../manifest'
 import { expandHome } from '../../paths'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItemGroup } from '../../syncItems'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
 import { KNOWN_DOTFILE_DESCRIPTIONS } from './knownDescriptions'
@@ -36,6 +37,10 @@ export function buildDotfilesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
   const homes = [...new Set([...managedHomes, ...candidateHomes])].sort()
   if (homes.length === 0) return null
 
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다 — 미구독 항목도
+  // 계속 카탈로그로 보인다(창고 모델의 요체).
+  const selection = readSelectionFilter(ctx, 'dotfiles')
+
   return {
     capability: 'dotfiles',
     title: 'dotfiles',
@@ -45,7 +50,10 @@ export function buildDotfilesSyncGroup(ctx: RigsyncContext): SyncItemGroup | nul
       managed: managedHomes.has(home),
       ignored: ignore.has(home),
       description: KNOWN_DOTFILE_DESCRIPTIONS[home],
-      hostOnly: hostHomes.has(home)
+      hostOnly: hostHomes.has(home),
+      // WS2: 생략=구독(하위 호환) -- 구독일 때는 필드 자체를 안 실어
+      // 기존 계약(파일 부재='all' 무마이그레이션)을 그대로 지킨다.
+      ...(isSubscribed(selection, home) ? {} : { subscribed: false })
     }))
   }
 }

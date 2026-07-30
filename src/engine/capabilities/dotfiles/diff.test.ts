@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
 import { diffDotfiles } from './diff'
 import { DOTFILES_LAYER } from './constants'
-import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
+import {
+  makeFixture,
+  writeHomeFile,
+  writeIgnore,
+  writeSelection,
+  type TestFixture
+} from '../../testFixtures'
 
 // 케이스 출처: 구 repo tests/test_dotfiles.py TestDotfilesInvalidStoreApplyRefusal
 // (행동만 옮김 — 코드 복사 아님).
@@ -55,6 +61,22 @@ describe('diffDotfiles', () => {
     const diff = await diffDotfiles(fixture.ctx)
     expect(diff.toLink).toEqual([])
     expect(diff.missingHome).toEqual([])
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 엔트리는 설치/드리프트
+  // 판정에서만 skip한다 -- 어떤 diff 배열에도 나타나지 않는다(제거 신호도
+  // 아니다, dotfiles diff엔 애초에 "제거" 배열이 없다).
+  it('is silent for an unsubscribed managed entry (WS2 — not install, not drift)', async () => {
+    writeCommonLayer(fixture.ctx, DOTFILES_LAYER, {
+      entry: [{ home: '~/.zshrc', store: 'dotfiles/.zshrc', type: 'file', link: true }]
+    })
+    writeSelection(fixture, { mode: 'all', dotfiles: { exclude: ['~/.zshrc'] } })
+    // 홈엔 아무 것도 없다 -- 구독됐다면 missingHome에 잡혔을 상황.
+
+    const diff = await diffDotfiles(fixture.ctx)
+    expect(diff.toLink).toEqual([])
+    expect(diff.missingHome).toEqual([])
+    expect(diff.contentChanged).toEqual([])
   })
 })
 

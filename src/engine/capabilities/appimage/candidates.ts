@@ -6,6 +6,7 @@
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItemGroup } from '../../syncItems'
 import { resolveAppimageUpdateSource } from './capture'
 import { APPIMAGE_KEY_FIELDS, APPIMAGE_LAYER } from './constants'
@@ -46,6 +47,9 @@ export async function buildAppimageSyncGroup(
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+  const selection = readSelectionFilter(ctx, 'appimage')
+
   return {
     capability: 'appimage',
     title: 'appimage',
@@ -55,6 +59,7 @@ export async function buildAppimageSyncGroup(
       managed: managedSet.has(name),
       ignored: ignore.has(name),
       description: nameByDesktopId.get(name),
+      ...(isSubscribed(selection, name) ? {} : { subscribed: false }),
       ...(unresolvableReasonByDesktopId.has(name)
         ? { unresolvableReason: unresolvableReasonByDesktopId.get(name) }
         : {})

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeSelection, type TestFixture } from '../../testFixtures'
 import { BINARIES_LAYER } from './constants'
 import { diffBinaries } from './diff'
 import { makeFakeBinariesSystemProvider } from './testHelpers'
@@ -204,4 +204,27 @@ describe('diffBinaries', () => {
       expect(diff.toInstall).toEqual([])
     }
   )
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 엔트리는 install/drift
+  // 판정에서만 skip한다(제거 plan 없음).
+  it('does not propose install for an unsubscribed manifested tool (WS2)', async () => {
+    writeCommonLayer(fixture.ctx, BINARIES_LAYER, {
+      binary: [
+        {
+          name: 'uv',
+          source: {
+            kind: 'github-release',
+            coordinate: 'astral-sh/uv',
+            assetPattern: 'uv-x86_64-unknown-linux-gnu.tar.gz',
+            assetKind: 'tar.gz'
+          },
+          binaries: ['uv', 'uvx']
+        }
+      ]
+    })
+    writeSelection(fixture, { mode: 'all', binaries: { exclude: ['uv'] } })
+
+    const diff = await diffBinaries(fixture.ctx, makeFakeBinariesSystemProvider())
+    expect(diff.toInstall).toEqual([])
+  })
 })

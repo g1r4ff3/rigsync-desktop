@@ -11,6 +11,7 @@ import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { readAptIncludeSet, readIgnoreSet } from '../../ignore'
 import type { PlanAction } from '../../plan'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { classifyAptPackagesCached } from './aptQueryCache'
 import { readCommonPackages, readEffectivePackages, writeCommonAptSection } from './io'
@@ -278,8 +279,16 @@ export async function diffApt(ctx: RigsyncContext, provider: AptProvider): Promi
   const manifest = readEffectivePackages(ctx).apt ?? {}
   const ignorePackages = readIgnoreSet(ctx, 'apt', 'packages')
   const ignoreSources = readIgnoreSet(ctx, 'apt', 'sources')
+  // WS2("창고 모델" 구독 강제): apt desired 집합(설치 판정 기준) 산출부 —
+  // 미구독 패키지는 toInstall에서 skip한다(안전 규칙 1 — 제거 plan은 만들지
+  // 않는다. uncaptured(후보)는 아래에서 별도로 manualAll 기준 그대로 둔다).
+  const selection = readSelectionFilter(ctx, 'apt')
 
-  const manifestPackages = new Set((manifest.packages ?? []).filter((p) => !ignorePackages.has(p)))
+  const manifestPackages = new Set(
+    (manifest.packages ?? [])
+      .filter((p) => !ignorePackages.has(p))
+      .filter((p) => isSubscribed(selection, p))
+  )
 
   // toInstall은 분류와 무관하게 "설치돼 있는가"만 본다 -- 구 baseline 구현은
   // 기준선 차집합과 비교해서, manifest에 있으면서 기준선에도 든 설치본이

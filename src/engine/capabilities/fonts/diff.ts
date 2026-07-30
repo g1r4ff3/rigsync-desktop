@@ -21,6 +21,7 @@
  */
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import { FONTS_KEY_FIELDS, FONTS_LAYER } from './constants'
 import { getKnownFontDefinition } from './knownFontSources'
 import { groupInstalledFontFiles, scanInstalledFontFiles } from './scan'
@@ -32,11 +33,15 @@ export async function diffFonts(ctx: RigsyncContext): Promise<FontsDiffReport> {
   const installedFilenames = new Set(scanInstalledFontFiles(ctx))
   const { resolvedByName } = groupInstalledFontFiles(ctx, manifest)
   const manifestNames = new Set(manifest.map((e) => e.name))
+  // WS2("창고 모델" 구독 강제): 안전 규칙 1 — 미구독 엔트리는 설치/드리프트
+  // 판정만 skip(uncaptured 후보는 resolvedByName 기준 그대로 아래에 남는다).
+  const selection = readSelectionFilter(ctx, 'fonts')
 
   const toInstall: string[] = []
   const pinMismatch: FontsPinMismatch[] = []
 
   for (const entry of manifest) {
+    if (!isSubscribed(selection, entry.name)) continue
     const def = getKnownFontDefinition(entry.name)
 
     if (!def) {

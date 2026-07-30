@@ -8,6 +8,7 @@
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItemGroup } from '../../syncItems'
 import { BINARIES_KEY_FIELDS, BINARIES_LAYER } from './constants'
 import { groupInstalledBinaries } from './scan'
@@ -23,6 +24,9 @@ export async function buildBinariesSyncGroup(ctx: RigsyncContext): Promise<SyncI
   const names = [...new Set([...managedSet, ...resolvedByName.keys()])].sort()
   if (names.length === 0) return null
 
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+  const selection = readSelectionFilter(ctx, 'binaries')
+
   return {
     capability: 'binaries',
     title: 'binaries',
@@ -35,7 +39,8 @@ export async function buildBinariesSyncGroup(ctx: RigsyncContext): Promise<SyncI
         ignored: ignore.has(name),
         // 이 머신에 실제로 설치돼 있어야만(resolvedByName에 잡혀야만) 알 수
         // 있다 -- manifest엔 있지만 이 머신엔 없는 항목은 description이 없다.
-        description: files ? `${files.join(', ')} 설치됨` : undefined
+        description: files ? `${files.join(', ')} 설치됨` : undefined,
+        ...(isSubscribed(selection, name) ? {} : { subscribed: false })
       }
     })
   }

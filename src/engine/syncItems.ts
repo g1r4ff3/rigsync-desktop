@@ -58,6 +58,13 @@ export interface SyncItem {
    * 다른 capability는 항상 undefined.
    */
   readonly unresolvableReason?: string
+  /**
+   * WS2("창고 모델" 구독 강제): 이 머신이 이 항목을 구독하는지 —
+   * `selection.ts`의 `isSubscribed`가 채운다. 생략(undefined)은 구독으로
+   * 간주한다(하위 호환 — selection.toml이 없는 머신은 전체 구독, `selection.ts`
+   * 헤더 참조). detection-only(snap) 그룹은 구독 개념이 없어 채우지 않는다.
+   */
+  readonly subscribed?: boolean
 }
 
 /**
@@ -101,6 +108,17 @@ export interface SyncItem {
  * 같은 정신, capabilities/fonts/checks.ts 참조). ignore(Pause)하면 이미 안정
  * 상태인 `excluded`로 정상 계산된다 — "담을 수 없다"는 사실은 그 항목이
  * 애초에 담길 후보(pending-add로 보일 후보)일 때만 의미가 있다.
+ *
+ * 여덟째 상태 `not-subscribed`: "창고 모델" WS2 — manifest엔 있고(managed)
+ * ignore도 안 됐지만, 이 머신의 selection이 구독을 껐다(`subscribed===false`).
+ * `synced`(관리+구독)와 겉보기엔 둘 다 "managed && !ignored"라 비슷해 보이지만
+ * 뜻이 다르다 — synced는 "이 머신이 갖고 반영한다", not-subscribed는 "카탈로그엔
+ * 있지만 이 머신은 원치 않는다"(창고에서 물건을 뺀 게 아니라 이 지점 배송만 뺀
+ * 것). **ignore(pending-remove)가 우선한다** — 함대 전체에서 빼려는 의도가
+ * 머신별 구독보다 앞선다(`computeSyncItemState`/`computeDistroItemState` 우선순위
+ * 참조). WS2 안전 규칙: 이 상태는 설치/드리프트 판정에만 영향(각 capability의
+ * diff가 미구독 엔트리를 skip)을 주고, 어떤 제거 plan도 만들지 않는다 —
+ * `isPendingSyncItemState`가 이 상태를 모르므로 보류 배너·집계에도 안 잡힌다.
  */
 export type SyncItemState =
   | 'synced'
@@ -110,14 +128,16 @@ export type SyncItemState =
   | 'detected'
   | 'distro-default'
   | 'unresolvable'
+  | 'not-subscribed'
 
 export function computeSyncItemState(
-  item: Pick<SyncItem, 'managed' | 'ignored' | 'unresolvableReason'>
+  item: Pick<SyncItem, 'managed' | 'ignored' | 'unresolvableReason' | 'subscribed'>
 ): Exclude<SyncItemState, 'detected' | 'distro-default'> {
   if (!item.managed && !item.ignored && item.unresolvableReason) return 'unresolvable'
+  if (item.managed && item.ignored) return 'pending-remove'
+  if (item.managed && !item.ignored && item.subscribed === false) return 'not-subscribed'
   if (item.managed && !item.ignored) return 'synced'
   if (!item.managed && !item.ignored) return 'pending-add'
-  if (item.managed && item.ignored) return 'pending-remove'
   return 'excluded'
 }
 
@@ -185,10 +205,14 @@ export interface SyncItemGroupWithState extends Omit<SyncItemGroup, 'items'> {
  * include가 pending-add ↔ distro-default를 가른다.
  */
 function computeDistroItemState(
-  item: Pick<SyncItem, 'managed' | 'ignored' | 'included'>
+  item: Pick<SyncItem, 'managed' | 'ignored' | 'included' | 'subscribed'>
 ): SyncItemState {
-  if (item.managed) return item.ignored ? 'pending-remove' : 'synced'
-  return item.included ? 'pending-add' : 'distro-default'
+  if (item.managed) {
+    if (item.ignored) return 'pending-remove'
+    return item.subscribed === false ? 'not-subscribed' : 'synced'
+  }
+  if (item.included) return item.subscribed === false ? 'not-subscribed' : 'pending-add'
+  return 'distro-default'
 }
 
 export function withSyncItemState(

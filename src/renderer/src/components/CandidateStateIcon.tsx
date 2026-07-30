@@ -1,4 +1,12 @@
-import { Ban, CheckCircle2, Circle, MinusCircle, Package, PlusCircle } from 'lucide-react'
+import {
+  Ban,
+  CheckCircle2,
+  Circle,
+  CircleSlash,
+  MinusCircle,
+  Package,
+  PlusCircle
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SyncItemState } from '../../../shared/ipc'
 
@@ -25,7 +33,10 @@ const ICON_BY_STATE = {
   // v0.1.20 4번: capture가 담을 수 없는 항목 — pending-add(PlusCircle)와
   // 모양으로 명확히 구분한다(색만으로 구분 금지 규칙 — pending-add도 warn이라
   // 색으로는 안 갈린다).
-  unresolvable: Ban
+  unresolvable: Ban,
+  // WS2("창고 모델" 구독): 중성적 표현(구독 해제를 나타내는 슬래시) + 흐림
+  // (muted 색) — excluded(Circle·muted)와 겹치지 않도록 모양을 가른다.
+  'not-subscribed': CircleSlash
 } as const
 
 const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
@@ -35,7 +46,8 @@ const COLOR_CLASS_BY_STATE: Record<SyncItemState, string> = {
   excluded: 'text-status-muted',
   detected: 'text-status-muted',
   'distro-default': 'text-status-muted',
-  unresolvable: 'text-status-warn'
+  unresolvable: 'text-status-warn',
+  'not-subscribed': 'text-status-muted'
 }
 
 export function CandidateStateIcon({

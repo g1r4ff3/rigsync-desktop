@@ -5,9 +5,10 @@
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
+import { contractHome, expandHome } from '../../paths'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItem, SyncItemGroup } from '../../syncItems'
 import { scanGitDirsDepth1, isGitWorktree } from './capture'
-import { contractHome, expandHome } from '../../paths'
 import { REPOS_KEY_FIELDS, REPOS_LAYER } from './constants'
 import type { GitProvider } from './providerTypes'
 import type { RepoEntry, ReposManifest } from './types'
@@ -29,6 +30,9 @@ export async function buildReposSyncGroup(
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+  const selection = readSelectionFilter(ctx, 'repos')
+
   // R6 R2: managed 항목은 이미 manifest에 remote URL이 있으니 재조회 없이 그대로
   // 쓴다. live/후보 항목만 git으로 원격 URL을 물어본다(개수가 적어 배치가
   // 필요 없다 -- apt처럼 수백 개가 아니다). 빈 문자열(원격 없음)은 표시할
@@ -43,7 +47,8 @@ export async function buildReposSyncGroup(
       label: name,
       managed: managedSet.has(name),
       ignored: ignore.has(name),
-      description: url || undefined
+      description: url || undefined,
+      ...(isSubscribed(selection, name) ? {} : { subscribed: false })
     })
   }
 

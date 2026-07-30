@@ -16,6 +16,7 @@ import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import type { PlanAction } from '../../plan'
 import { doBackup } from '../../safety/backup'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { FONTS_KEY_FIELDS, FONTS_LAYER } from './constants'
 import type {
@@ -197,11 +198,24 @@ export function planFontsUninstall(
   const managedSet = new Set(manifest.map((e) => e.name))
   const ignore = readIgnoreSet(ctx, 'fonts', 'names')
   const { resolvedByName } = groupInstalledFontFiles(ctx, manifest)
+  // WS2("창고 모델" 구독 강제) 예외 지점 — dotfiles/plan.ts의 같은 예외와
+  // 동일한 근거·플래그(구현 보고서 참조): diff 출력이 아니라 manifest를
+  // 직접 재독하므로 동일 필터를 여기에도 둔다. 가장 보수적으로 거부 사유
+  // 하나만 추가한다(새 제거 허용 없음).
+  const selection = readSelectionFilter(ctx, 'fonts')
 
   const actions: PlanAction[] = []
   const excluded: UninstallExclusion[] = []
 
   for (const name of requestedNames) {
+    if (!isSubscribed(selection, name)) {
+      excluded.push({
+        capability: 'fonts',
+        key: name,
+        reason: '이 머신은 이 항목을 구독하지 않습니다'
+      })
+      continue
+    }
     if (managedSet.has(name)) {
       excluded.push({
         capability: 'fonts',

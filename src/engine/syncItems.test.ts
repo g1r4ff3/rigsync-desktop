@@ -75,6 +75,43 @@ describe('computeSyncItemState', () => {
       })
     ).toBe('synced')
   })
+
+  // WS2("창고 모델" 구독 강제) — subscribed===false가 더한 다섯째 축.
+  // subscribed 생략(undefined)은 하위 호환대로 기존 4상태를 그대로 낸다.
+  describe('subscribed (WS2)', () => {
+    it('managed && !ignored && subscribed===false -> not-subscribed', () => {
+      expect(computeSyncItemState({ managed: true, ignored: false, subscribed: false })).toBe(
+        'not-subscribed'
+      )
+    })
+
+    it('managed && !ignored && subscribed===true -> synced (구독하면 정상 상태로 복귀)', () => {
+      expect(computeSyncItemState({ managed: true, ignored: false, subscribed: true })).toBe(
+        'synced'
+      )
+    })
+
+    it('managed && !ignored && subscribed 생략(undefined) -> synced (하위 호환)', () => {
+      expect(computeSyncItemState({ managed: true, ignored: false })).toBe('synced')
+    })
+
+    // 함대 삭제 의도(ignore)가 구독보다 우선한다 — 안 구독해도 ignore가 걸려
+    // 있으면 pending-remove(제거 예정)로 남아야 한다.
+    it('managed && ignored && subscribed===false -> pending-remove (ignore가 구독보다 우선)', () => {
+      expect(computeSyncItemState({ managed: true, ignored: true, subscribed: false })).toBe(
+        'pending-remove'
+      )
+    })
+
+    // subscribed===false는 managed 항목에만 의미가 있다 — 미관리(!managed)
+    // 항목은 그대로 pending-add다(카탈로그에도 없는 걸 "구독 안 함"이라
+    // 말할 이유가 없다).
+    it('!managed && !ignored && subscribed===false -> pending-add (미관리엔 구독 개념 없음)', () => {
+      expect(computeSyncItemState({ managed: false, ignored: false, subscribed: false })).toBe(
+        'pending-add'
+      )
+    })
+  })
 })
 
 describe('isPendingSyncItemState', () => {
@@ -83,6 +120,12 @@ describe('isPendingSyncItemState', () => {
     expect(isPendingSyncItemState('pending-remove')).toBe(true)
     expect(isPendingSyncItemState('synced')).toBe(false)
     expect(isPendingSyncItemState('excluded')).toBe(false)
+  })
+
+  // WS2 안전 규칙: not-subscribed는 제거를 뜻하지 않으므로 보류 배너/집계
+  // (isPendingSyncItemState 소비 지점)에 안 잡혀야 한다.
+  it('is false for not-subscribed (WS2 — 제거를 뜻하지 않는다)', () => {
+    expect(isPendingSyncItemState('not-subscribed')).toBe(false)
   })
 })
 
@@ -150,6 +193,93 @@ describe('withSyncItemState', () => {
     ])
     expect(groups[0].items[0].state).toBe('pending-add')
     expect(groups[1].items[0].state).toBe('detected')
+  })
+
+  // WS2("창고 모델" 구독 강제) — apt-distro 서브그룹(computeDistroItemState)도
+  // 동일한 subscribed 축을 갖는다. computeDistroItemState는 비-export 함수라
+  // withSyncItemState(subgroup:'apt-distro') 경유로 검증한다.
+  describe('apt-distro subgroup (subscribed — WS2)', () => {
+    it('managed && !ignored && subscribed===false -> not-subscribed', () => {
+      const groups = withSyncItemState([
+        {
+          capability: 'apt',
+          title: 'apt — 배포판 기본',
+          subgroup: 'apt-distro',
+          items: [
+            {
+              key: 'v4l-utils',
+              label: 'v4l-utils',
+              managed: true,
+              ignored: false,
+              subscribed: false
+            }
+          ]
+        }
+      ])
+      expect(groups[0].items[0].state).toBe('not-subscribed')
+    })
+
+    it('managed && ignored -> pending-remove regardless of subscribed (ignore가 우선)', () => {
+      const groups = withSyncItemState([
+        {
+          capability: 'apt',
+          title: 'apt — 배포판 기본',
+          subgroup: 'apt-distro',
+          items: [
+            {
+              key: 'v4l-utils',
+              label: 'v4l-utils',
+              managed: true,
+              ignored: true,
+              subscribed: false
+            }
+          ]
+        }
+      ])
+      expect(groups[0].items[0].state).toBe('pending-remove')
+    })
+
+    it('!managed && included && subscribed===false -> not-subscribed (아니면 pending-add였을 상황)', () => {
+      const groups = withSyncItemState([
+        {
+          capability: 'apt',
+          title: 'apt — 배포판 기본',
+          subgroup: 'apt-distro',
+          items: [
+            {
+              key: 'ubuntu-wallpapers',
+              label: 'ubuntu-wallpapers',
+              managed: false,
+              ignored: false,
+              included: true,
+              subscribed: false
+            }
+          ]
+        }
+      ])
+      expect(groups[0].items[0].state).toBe('not-subscribed')
+    })
+
+    it('!managed && !included -> distro-default regardless of subscribed (분류가 이미 뺀 안정 상태)', () => {
+      const groups = withSyncItemState([
+        {
+          capability: 'apt',
+          title: 'apt — 배포판 기본',
+          subgroup: 'apt-distro',
+          items: [
+            {
+              key: 'v4l-utils',
+              label: 'v4l-utils',
+              managed: false,
+              ignored: false,
+              included: false,
+              subscribed: false
+            }
+          ]
+        }
+      ])
+      expect(groups[0].items[0].state).toBe('distro-default')
+    })
   })
 })
 

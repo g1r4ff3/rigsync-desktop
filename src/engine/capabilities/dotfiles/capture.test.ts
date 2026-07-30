@@ -6,7 +6,13 @@ import { matchesDenylist } from '../../safety/denylist'
 import { SECRET_ALLOWLIST_LAYER } from '../../safety/secretAllowlist'
 import { captureDotfiles, FollowerCaptureBlockedError } from './capture'
 import { DOTFILES_KEY_FIELDS, DOTFILES_LAYER } from './constants'
-import { makeFixture, writeHomeFile, writeIgnore, type TestFixture } from '../../testFixtures'
+import {
+  makeFixture,
+  writeHomeFile,
+  writeIgnore,
+  writeSelection,
+  type TestFixture
+} from '../../testFixtures'
 import type { DotfileEntry } from './types'
 
 // 픽스처 주의(★): 이 repo는 public이다 -- 실제 토큰 형식을 그대로 흉내내지
@@ -156,6 +162,23 @@ describe('captureDotfiles', () => {
     const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
     expect(homes).not.toContain('~/.local/bin/sync-claude-to-opencode.sh')
     expect(report.ignored).toBe(1)
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 2: capture는 selection을 절대 읽지
+  // 않는다 -- 이 머신이 selection에서 제외해도(다음 diff/apply만 skip해야
+  // 한다) capture는 여전히 seed하고, 이미 manifest에 있는 엔트리도 유지한다.
+  it('capture ignores this host selection exclusion entirely (WS2 안전 규칙 2)', async () => {
+    writeHomeFile(fixture, '.local/bin/sync-claude-to-opencode.sh', '#!/bin/sh\n')
+    writeSelection(fixture, {
+      mode: 'all',
+      dotfiles: { exclude: ['~/.local/bin/sync-claude-to-opencode.sh'] }
+    })
+
+    await captureDotfiles(fixture.ctx, { dryRun: false })
+
+    const manifest = effectiveLayer(fixture.ctx, DOTFILES_LAYER, DOTFILES_KEY_FIELDS)
+    const homes = ((manifest.entry as DotfileEntry[]) ?? []).map((e) => e.home)
+    expect(homes).toContain('~/.local/bin/sync-claude-to-opencode.sh')
   })
 
   // 신규: 내용 수준 비밀 스캔 -- 이름이 평범한 파일(denylist 통과) 안에 박힌

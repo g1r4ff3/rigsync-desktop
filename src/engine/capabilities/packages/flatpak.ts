@@ -16,6 +16,7 @@ import path from 'node:path'
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import type { PlanAction } from '../../plan'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { CapabilityUninstallResult, UninstallExclusion } from '../../uninstall/types'
 import { readCommonPackages, readEffectivePackages, writeCommonFlatpakSection } from './io'
 import type { FlatpakProvider } from './providerTypes'
@@ -124,6 +125,9 @@ export async function diffFlatpak(
   }
 
   const ignoreApps = readIgnoreSet(ctx, 'flatpak', 'apps')
+  // WS2("창고 모델" 구독 강제): 미구독 app은 toInstall에서만 skip한다(안전
+  // 규칙 1 — uncaptured 후보는 아래에서 별도로 필터 없이 그대로 둔다).
+  const selection = readSelectionFilter(ctx, 'flatpak')
   const manifest = readEffectivePackages(ctx).flatpak ?? {}
   const liveRemotes = new Set((await provider.remotes()).map((r) => r.name))
   const liveApps = await provider.apps()
@@ -132,7 +136,10 @@ export async function diffFlatpak(
 
   const toAddRemotes = (manifest.remote ?? []).filter((r) => !liveRemotes.has(r.name))
   const toInstall = (manifest.app ?? []).filter(
-    (a) => !liveAppNames.has(a.application) && !ignoreApps.has(a.application)
+    (a) =>
+      !liveAppNames.has(a.application) &&
+      !ignoreApps.has(a.application) &&
+      isSubscribed(selection, a.application)
   )
   const uncaptured = liveApps
     .map((a) => a.application)

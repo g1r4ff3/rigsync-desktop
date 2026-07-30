@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeIgnore, writeSelection, type TestFixture } from '../../testFixtures'
 import {
   captureFlatpak,
   diffFlatpak,
@@ -103,6 +103,21 @@ describe('captureFlatpak / diffFlatpak / planFlatpak', () => {
     expect(apps).not.toContain('org.deskflow.deskflow')
 
     const diff = await diffFlatpak(fixture.ctx, provider)
+    expect(diff.toInstall).toEqual([])
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 app은 install 판정에서만
+  // skip한다(제거 plan 없음).
+  it('does not propose install for an unsubscribed manifested app (WS2)', async () => {
+    const provider1 = makeFakeFlatpakProvider({
+      remotes: [{ name: 'flathub', url: 'https://dl.flathub.org/repo/' }],
+      apps: [{ application: 'org.deskflow.deskflow', origin: 'flathub', installation: 'system' }]
+    })
+    await captureFlatpak(fixture.ctx, provider1, { dryRun: false })
+    writeSelection(fixture, { mode: 'all', flatpak: { exclude: ['org.deskflow.deskflow'] } })
+
+    const provider2 = makeFakeFlatpakProvider({ remotes: [], apps: [] })
+    const diff = await diffFlatpak(fixture.ctx, provider2)
     expect(diff.toInstall).toEqual([])
   })
 

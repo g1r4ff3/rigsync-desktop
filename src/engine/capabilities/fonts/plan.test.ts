@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeCommonLayer } from '../../manifest'
-import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeIgnore, writeSelection, type TestFixture } from '../../testFixtures'
 import { FONTS_LAYER } from './constants'
 import { diffFonts } from './diff'
 import { planFonts, planFontsUninstall } from './plan'
@@ -292,6 +292,30 @@ describe('planFontsUninstall', () => {
     )
     expect(result.actions).toEqual([])
     expect(result.excluded[0].reason).toContain('설치돼 있지 않음')
+  })
+
+  // WS2("창고 모델" 구독 강제) 예외 지점 — dotfiles/plan.test.ts의 같은
+  // 테스트와 동일한 근거(구현 보고서 참조): 가장 보수적으로 거부 사유만
+  // 추가한다.
+  it('rejects an unsubscribed font even if otherwise eligible (WS2)', async () => {
+    const files = writeInstalledMeslo()
+    writeIgnore(fixture, { fonts: { names: ['MesloLGS NF'] } })
+    writeSelection(fixture, { mode: 'all', fonts: { exclude: ['MesloLGS NF'] } })
+
+    const result = planFontsUninstall(
+      fixture.ctx,
+      ['MesloLGS NF'],
+      makeFakeFontsSystemProvider(),
+      'run-unsubscribed'
+    )
+
+    expect(result.actions).toEqual([])
+    expect(result.excluded).toEqual([
+      { capability: 'fonts', key: 'MesloLGS NF', reason: '이 머신은 이 항목을 구독하지 않습니다' }
+    ])
+    // 실제로 지워지지 않았어야 한다 -- 안전 규칙 1(제거 plan 없음).
+    const dir = fontDirs(fixture.ctx)[0]
+    for (const f of files) expect(fs.existsSync(path.join(dir, f))).toBe(true)
   })
 
   it('backs up then deletes every file belonging to an ignored+unmanaged font, then runs fc-cache', async () => {

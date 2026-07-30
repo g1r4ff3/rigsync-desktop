@@ -9,6 +9,7 @@ import path from 'node:path'
 import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import { TOOLS_LAYER } from './constants'
 import type { ToolsProvider } from './providerTypes'
 import type { ToolsDiffReport, ToolsManifest } from './types'
@@ -19,7 +20,14 @@ export async function diffTools(
 ): Promise<ToolsDiffReport> {
   const manifest = effectiveLayer(ctx, TOOLS_LAYER) as ToolsManifest
   const ignore = readIgnoreSet(ctx, 'tools', 'packages')
-  const wantPkgs = [...new Set(manifest.packages ?? [])].filter((p) => !ignore.has(p)).sort()
+  // WS2("창고 모델" 구독 강제): 안전 규칙 1 — 미구독 패키지는 설치 판정에서만
+  // skip한다. node 버전 자체는 SyncItem으로 항목화되지 않아(단일 값) 구독
+  // 대상이 아니다(selection.ts jsdoc 참조 — packages 목록만 대상).
+  const selection = readSelectionFilter(ctx, 'tools')
+  const wantPkgs = [...new Set(manifest.packages ?? [])]
+    .filter((p) => !ignore.has(p))
+    .filter((p) => isSubscribed(selection, p))
+    .sort()
   const wantNode = manifest.node?.version ?? ''
   const npmOk = await provider.npmNodeAvailable()
 

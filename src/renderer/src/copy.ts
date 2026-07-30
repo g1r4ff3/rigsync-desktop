@@ -119,6 +119,17 @@ export const syncItemStateCopy = {
     label: '추가 불가',
     description:
       '이 항목의 update source를 해석하지 못해 capture가 담을 수 없습니다 — Gear Lever 앱에서 이 AppImage의 업데이트 소스를 다시 설정하면 다음 Capture부터 반영됩니다.'
+  },
+  /**
+   * "창고 모델 1차"(WS2): manifest엔 있고 ignore도 안 됐지만 이 머신의
+   * selection(구독)이 꺼진 상태 — synced와 달리 이 머신은 반영하지 않는다.
+   * 제거를 뜻하지 않으므로(카탈로그엔 그대로 남는다) excluded/pending-remove와
+   * 다른 문구를 쓴다.
+   */
+  'not-subscribed': {
+    label: '구독 안 함',
+    description:
+      '이 머신은 이 항목을 구독하지 않습니다 — manifest엔 남아있지만 이 머신엔 반영되지 않습니다.'
   }
 } as const
 

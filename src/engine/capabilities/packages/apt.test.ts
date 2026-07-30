@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { makeFixture, writeIgnore, type TestFixture } from '../../testFixtures'
+import { makeFixture, writeIgnore, writeSelection, type TestFixture } from '../../testFixtures'
 import {
   captureApt,
   diffApt,
@@ -292,6 +292,32 @@ describe('captureApt / diffApt / planApt', () => {
     const provider2 = makeFakeAptProvider({ manual: ['git', 'unityhub'] })
     const diff = await diffApt(fixture.ctx, provider2)
     expect(diff.uncaptured).not.toContain('unityhub')
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 패키지는 install 판정에서만
+  // skip한다.
+  it('does not propose install for an unsubscribed managed package (WS2)', async () => {
+    const provider1 = makeFakeAptProvider({ manual: ['git'] })
+    await captureApt(fixture.ctx, provider1, { dryRun: false })
+    writeSelection(fixture, { mode: 'all', apt: { exclude: ['git'] } })
+
+    // 이 머신엔 git이 없다 -- 구독됐다면 toInstall에 잡혔을 상황.
+    const provider2 = makeFakeAptProvider({ manual: [] })
+    const diff = await diffApt(fixture.ctx, provider2)
+    expect(diff.toInstall).not.toContain('git')
+  })
+
+  // WS2 안전 규칙 2: capture는 selection을 절대 읽지 않는다 -- selection에서
+  // 제외해도 capture는 여전히 그 패키지를 manifest에 유지/재추가한다.
+  it('capture keeps/re-adds a package even when this host has excluded it from selection (WS2 안전 규칙 2)', async () => {
+    writeSelection(fixture, { mode: 'all', apt: { exclude: ['git'] } })
+
+    const provider = makeFakeAptProvider({ manual: ['git', 'curl'] })
+    await captureApt(fixture.ctx, provider, { dryRun: false })
+
+    const apt = readEffectivePackages(fixture.ctx).apt
+    expect(apt?.packages).toContain('git')
+    expect(apt?.packages).toContain('curl')
   })
 })
 

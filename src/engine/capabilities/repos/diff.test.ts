@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { makeFixture } from '../../testFixtures'
+import { makeFixture, writeSelection } from '../../testFixtures'
 import { writeCommonLayer } from '../../manifest'
 import { contractHome } from '../../paths'
 import { diffRepos } from './diff'
@@ -42,6 +42,20 @@ describe('diffRepos', () => {
     const d = await diffRepos(fixture.ctx)
     expect(d.toClone).toHaveLength(1)
     expect(d.toClone[0].path).toBe('~/repos/missing-one')
+    fixture.cleanup()
+  })
+
+  // WS2("창고 모델" 구독 강제) 안전 규칙 1: 미구독 repo는 clone 판정에서만
+  // skip한다.
+  it('does not propose a clone for an unsubscribed missing repo (WS2)', async () => {
+    const fixture = makeFixture('reference')
+    writeCommonLayer(fixture.ctx, REPOS_LAYER, {
+      repo: [{ path: '~/repos/missing-one', url: 'git@example.com:x/y.git', branch: 'main' }]
+    })
+    writeSelection(fixture, { mode: 'all', repos: { exclude: ['~/repos/missing-one'] } })
+
+    const d = await diffRepos(fixture.ctx)
+    expect(d.toClone).toEqual([])
     fixture.cleanup()
   })
 })

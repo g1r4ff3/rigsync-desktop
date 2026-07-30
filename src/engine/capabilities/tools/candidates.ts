@@ -6,6 +6,7 @@
 import { readIgnoreSet } from '../../ignore'
 import type { RigsyncContext } from '../../context'
 import { effectiveLayer } from '../../manifest'
+import { isSubscribed, readSelectionFilter } from '../../selection'
 import type { SyncItemGroup } from '../../syncItems'
 import { TOOLS_LAYER } from './constants'
 import type { ToolsProvider } from './providerTypes'
@@ -24,6 +25,9 @@ export async function buildToolsSyncGroup(
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
+  // WS2("창고 모델" 구독): 목록에서 빼지 않고 부착만 한다.
+  const selection = readSelectionFilter(ctx, 'tools')
+
   return {
     capability: 'tools',
     title: 'tools (npm 전역 패키지)',
@@ -31,7 +35,8 @@ export async function buildToolsSyncGroup(
       key: name,
       label: name,
       managed: managedSet.has(name),
-      ignored: ignore.has(name)
+      ignored: ignore.has(name),
+      ...(isSubscribed(selection, name) ? {} : { subscribed: false })
     }))
   }
 }
