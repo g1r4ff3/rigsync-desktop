@@ -15,11 +15,14 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { defaultManifestDir, writeConfigFile } from '../engine/context'
+import { selectModeCommitMessage } from '../engine/authoredWriteMessage'
+import { defaultManifestDir, writeConfigFile, type RigsyncContext } from '../engine/context'
+import { setSelectionMode } from '../engine/selection'
 import { cloneManifestRepo, cloneErrorGuidance } from '../engine/transport'
 import type { GitTransportProvider } from '../engine/transport'
 import { guardedSetAutostart } from './autostartGuard'
-import type { CompleteOnboardingRequest } from '../shared/ipc'
+import { autoSyncAfterAuthoredWrite } from './gitSync'
+import type { CompleteOnboardingRequest, SelectionMode } from '../shared/ipc'
 
 export interface CompleteOnboardingDeps {
   readonly homeDir: string
@@ -71,4 +74,34 @@ export async function completeOnboarding(
 /** manifestSource==='new'일 때 위저드가 제안하는 기본 manifestDir. */
 export function suggestNewManifestDir(homeDir: string): string {
   return defaultManifestDir(homeDir)
+}
+
+/**
+ * WS7("창고 모델 1차" — cheerful-growing-fairy 계획) 온보딩 구독 모드 스텝 —
+ * `completeOnboarding`(config.toml 저장)이 끝난 **뒤**, `refreshContext()`로
+ * 새 ctx가 이미 반영된 상태에서 호출해야 한다(engineWorker.ts
+ * `handlers.completeOnboarding` 참조 — 새로 만들어진/클론된 manifestDir을
+ * ctx가 가리켜야 selection.toml이 올바른 위치에 쓰인다).
+ *
+ * select가 아니면(생략 또는 'all') 아무것도 쓰지 않는다 — selection.toml
+ * 파일 부재 자체가 'all' 무마이그레이션 계약이라, 굳이 mode='all'을 명시
+ * 기록할 이유가 없다. select면 로컬에 mode='select'를 쓰고(항상 성공 —
+ * 순수 fs 쓰기) fire-and-forget으로 commit+push를 시도한다: **push 실패해도
+ * 온보딩 자체는 막지 않는다**(계획서 지시) — 실패는 기존
+ * `getLastSyncStatus()` 표면화 경로로 나중에 드러난다. manifestDir이 아직
+ * git repo가 아니어도(manifestSource='new') `syncAuthoredWrite`가
+ * 'local-only'로 조용히 끝난다(engine/transport/sync.ts — 에러가 아니다).
+ */
+export function applyOnboardingSelectionMode(
+  ctx: RigsyncContext,
+  selectionMode: SelectionMode | undefined,
+  gitTransportProvider: GitTransportProvider
+): void {
+  if (selectionMode !== 'select') return
+  setSelectionMode(ctx, 'select')
+  autoSyncAfterAuthoredWrite(
+    ctx,
+    gitTransportProvider,
+    selectModeCommitMessage(ctx.machineId, 'select')
+  )
 }

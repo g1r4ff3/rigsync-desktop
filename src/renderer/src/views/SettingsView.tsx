@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { buttonCopy, emptyStateCopy } from '../copy'
+import { buttonCopy, emptyStateCopy, selectionModeCopy } from '../copy'
 import { StatusText } from '../status'
-import type { RigsyncConfigDto } from '../../../shared/ipc'
+import { syncItemsSnapshotSlot } from '../syncItemsSnapshotStore'
+import type { RigsyncConfigDto, SelectionMode } from '../../../shared/ipc'
 
 /**
  * R1: 첫 실행 이후 설정 화면 — 온보딩 위저드가 한 번만 물어보고 다시는 못 바꾸던
@@ -37,6 +38,14 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
+  // WS7("창고 모델 1차"): 구독 모드 — updateConfig(config.toml)와는 별개
+  // 파일(selection.toml)이라 독립된 즉시 저장 컨트롤로 둔다(라디오를 고르면
+  // 바로 setSelectionMode IPC를 호출 — SyncItemsView의 스위치류와 같은
+  // "누르면 바로 반영" 관례, 아래 Save 버튼과는 무관).
+  const [selectionMode, setSelectionModeState] = useState<SelectionMode | null>(null)
+  const [selectionSaving, setSelectionSaving] = useState(false)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+
   // 복구용 클론(선택 기능) -- follower가 빈 로컬 저장소로 잘못 시작됐을 때
   // 온보딩을 다시 하지 않고 여기서 클론해 연결한다.
   const [cloneRepoUrl, setCloneRepoUrl] = useState('')
@@ -55,7 +64,24 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
       setAutostartEnabled(config.autostartEnabled)
       setDriftCheckIntervalHours(config.driftCheckIntervalHours)
     }, console.error)
+    window.api.engine.getSelectionMode().then(setSelectionModeState, console.error)
   }, [])
+
+  async function handleSelectionModeChange(next: SelectionMode): Promise<void> {
+    setSelectionSaving(true)
+    setSelectionError(null)
+    try {
+      const groups = await window.api.engine.setSelectionMode({ mode: next })
+      setSelectionModeState(next)
+      // Candidates 탭의 스냅샷도 같이 갱신한다 -- 안 그러면 모드 전환 직후
+      // 그 탭으로 가도 상태(not-subscribed 등)가 stale로 남는다.
+      syncItemsSnapshotSlot.set(groups)
+    } catch (err) {
+      setSelectionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSelectionSaving(false)
+    }
+  }
 
   async function handleSave(): Promise<void> {
     setSaving(true)
@@ -153,18 +179,86 @@ function SettingsView({ onSaved }: SettingsViewProps): React.JSX.Element {
             </TooltipTrigger>
             <TooltipContent>reference=저작 / follower=수신 전용 (단방향 배포)</TooltipContent>
           </Tooltip>
+          {/* WS7 사후 정리: role의 의미가 "창고 모델 1차"로 좁아졌다 — 항목
+              등록·삭제·구독 전환은 이제 role과 무관하게 전 머신에서 된다
+              (배치 A/WS5 전 머신 git 저작 경로). role이 실제로 가르는 건 벌크
+              Capture·live-edit 스윕·심링크 배포(reference 전용 유지분)뿐이다. */}
+          <p className="text-[11px] text-muted-foreground">
+            role은 벌크 Capture(이 머신 상태를 통째로 스캔해 manifest에 반영)·live-edit 스윕(라이브
+            편집 자동 분리 커밋)·reference의 심링크 배포 권한만 가릅니다 — 항목
+            등록(Register)·삭제(Remove from catalog)·구독 전환은 role과 무관하게 어느 머신에서도 할
+            수 있습니다.
+          </p>
           {roleChanged && role === 'follower' && (
             <StatusText kind="warn">
-              reference → follower: 저장하면 이 머신에서 capture가 즉시 차단됩니다(follower는
+              reference → follower: 저장하면 이 머신에서 벌크 Capture가 즉시 차단됩니다(follower는
               pull+apply만 수신). follower UI 동작을 확인하려는 용도로도 쓸 수 있습니다.
             </StatusText>
           )}
           {roleChanged && role === 'reference' && (
             <StatusText kind="warn">
-              follower → reference: 저장하면 이 머신이 manifest에 대한 저작 권한을 갖습니다 —
-              이제부터 capture 결과가 commit+push됩니다.
+              follower → reference: 저장하면 이 머신이 벌크 Capture·심링크 배포 권한을 갖습니다 —
+              이제부터 Capture 결과가 commit+push됩니다.
             </StatusText>
           )}
+        </section>
+
+        {/* WS7("창고 모델 1차"): 구독 모드 표시+전환 — updateConfig(config.toml)와
+            별개 파일(selection.toml)이라 고르는 즉시 저장된다(위 Save 버튼과 무관). */}
+        <section className="space-y-2">
+          <label className="block text-xs font-medium text-foreground">Subscription mode</label>
+          {selectionMode === null ? (
+            <p className="text-xs text-muted-foreground">{emptyStateCopy.loading}</p>
+          ) : (
+            <div className="space-y-2 text-xs">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      className="mt-0.5"
+                      checked={selectionMode === 'all'}
+                      disabled={selectionSaving}
+                      onChange={() => void handleSelectionModeChange('all')}
+                    />
+                    <span>
+                      <span className="text-foreground">{selectionModeCopy.all.title}</span>
+                      <span className="ml-1 text-muted-foreground">
+                        — {selectionModeCopy.all.description}
+                      </span>
+                    </span>
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent>
+                  새 카탈로그 항목을 자동 구독합니다 — 원치 않는 항목만 exclude 목록에 골라 뺍니다.
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      className="mt-0.5"
+                      checked={selectionMode === 'select'}
+                      disabled={selectionSaving}
+                      onChange={() => void handleSelectionModeChange('select')}
+                    />
+                    <span>
+                      <span className="text-foreground">{selectionModeCopy.select.title}</span>
+                      <span className="ml-1 text-muted-foreground">
+                        — {selectionModeCopy.select.description}
+                      </span>
+                    </span>
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent>
+                  include 목록에 명시적으로 넣은 항목만 받습니다 — Candidates 탭의 그룹
+                  체크박스·Subscribe 스위치가 그 목록을 고르는 피커입니다.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
+          {selectionError && <StatusText kind="error">{selectionError}</StatusText>}
         </section>
 
         <section className="space-y-1">

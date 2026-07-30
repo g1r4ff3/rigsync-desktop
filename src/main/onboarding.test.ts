@@ -9,8 +9,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { defaultConfigPath } from '../engine/context'
+import { readSelectionMode } from '../engine/selection'
+import { makeFixture, type TestFixture } from '../engine/testFixtures'
 import { makeFakeGitTransportProvider } from '../engine/transport/testHelpers'
-import { completeOnboarding } from './onboarding'
+import { applyOnboardingSelectionMode, completeOnboarding } from './onboarding'
 import type { CompleteOnboardingRequest } from '../shared/ipc'
 
 describe('completeOnboarding — manifestSource: clone', () => {
@@ -77,5 +79,47 @@ describe('completeOnboarding — manifestSource: clone', () => {
     )
     expect(fs.existsSync(defaultConfigPath(homeDir))).toBe(true)
     expect(fs.existsSync(path.join(homeDir, 'manifest'))).toBe(true)
+  })
+})
+
+// WS7("창고 모델 1차"): 온보딩 구독 모드 스텝 — completeOnboarding(config.toml
+// 저장) 뒤에 호출하는 별도 단계.
+describe('applyOnboardingSelectionMode', () => {
+  let fixture: TestFixture
+
+  beforeEach(() => {
+    fixture = makeFixture('reference')
+  })
+
+  afterEach(() => {
+    fixture.cleanup()
+  })
+
+  it("selectionMode='select'면 이 머신 selection.toml에 mode='select'를 즉시 쓴다(로컬 fs 쓰기는 git 상태와 무관)", () => {
+    const gitTransportProvider = makeFakeGitTransportProvider() // isGitRepo=false 기본 -- manifestSource='new'와 동등.
+    applyOnboardingSelectionMode(fixture.ctx, 'select', gitTransportProvider)
+    expect(readSelectionMode(fixture.ctx)).toBe('select')
+  })
+
+  it("selectionMode='all'(또는 생략)이면 아무 것도 쓰지 않는다 -- 파일 부재=all 무마이그레이션 계약 유지", () => {
+    const gitTransportProvider = makeFakeGitTransportProvider()
+    applyOnboardingSelectionMode(fixture.ctx, 'all', gitTransportProvider)
+    applyOnboardingSelectionMode(fixture.ctx, undefined, gitTransportProvider)
+    const selectionPath = path.join(
+      fixture.manifestDir,
+      'hosts',
+      fixture.ctx.machineId,
+      'selection.toml'
+    )
+    expect(fs.existsSync(selectionPath)).toBe(false)
+    expect(readSelectionMode(fixture.ctx)).toBe('all')
+  })
+
+  it('git repo가 아직 없어도(manifestSource=new 상당) 던지지 않는다 -- fire-and-forget push는 local-only로 조용히 끝난다', () => {
+    const gitTransportProvider = makeFakeGitTransportProvider({ isGitRepo: false })
+    expect(() =>
+      applyOnboardingSelectionMode(fixture.ctx, 'select', gitTransportProvider)
+    ).not.toThrow()
+    expect(readSelectionMode(fixture.ctx)).toBe('select')
   })
 })

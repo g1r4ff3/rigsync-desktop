@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { ActionButton } from '@/components/ActionButton'
 import { HelpPopover } from '@/components/HelpPopover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { buttonCopy, helpCopy } from '../copy'
+import { buttonCopy, helpCopy, selectionModeCopy } from '../copy'
 import { StatusText } from '../status'
 import type {
   CompleteOnboardingRequest,
   EngineStatus,
   ManifestPathCheckDto,
-  ManifestSourceMode
+  ManifestSourceMode,
+  SelectionMode
 } from '../../../shared/ipc'
 
 /**
@@ -25,7 +26,11 @@ import type {
 
 interface OnboardingViewProps {
   readonly status: EngineStatus
-  readonly onComplete: (status: EngineStatus) => void
+  /**
+   * WS7("창고 모델 1차"): selectionMode도 함께 넘긴다 — App.tsx가 'select'면
+   * 완료 후 SyncItems 탭에 착지시키고 첫 방문 안내를 보여줄 수 있게(계획서 지시).
+   */
+  readonly onComplete: (status: EngineStatus, selectionMode: SelectionMode) => void
   /** R4 스크린샷 하네스 전용 — 'onboarding-clone' route가 클론 탭을 미리 선택해 보여주게 한다. */
   readonly initialManifestSource?: ManifestSourceMode
 }
@@ -47,6 +52,8 @@ function OnboardingView({
   const [repoUrl, setRepoUrl] = useState('')
   const [profile, setProfile] = useState('')
   const [autostartEnabled, setAutostartEnabled] = useState(true)
+  // WS7("창고 모델 1차"): 구독 모드 스텝 — 기본 'all'(연구실 머신 기본, 무마이그레이션 계약과 일치).
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('all')
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,10 +115,11 @@ function OnboardingView({
         manifestSource,
         ...(manifestSource === 'clone' ? { repoUrl: repoUrl.trim() } : {}),
         ...(profile.trim() ? { profile: profile.trim() } : {}),
-        autostartEnabled
+        autostartEnabled,
+        selectionMode
       }
       const response = await window.api.engine.completeOnboarding(request)
-      onComplete(response.status)
+      onComplete(response.status, selectionMode)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -289,6 +297,50 @@ function OnboardingView({
           </TooltipTrigger>
           <TooltipContent>로그인 시 트레이 상주 상태로 자동 시작합니다</TooltipContent>
         </Tooltip>
+      </section>
+
+      {/* WS7("창고 모델 1차"): 구독 모드 스텝 — "전체 구독"(카탈로그 전체를
+          따름, 연구실 머신 기본) vs "선택 구독"(원하는 항목만 골라 받음, 집
+          머신 등). select를 고르면 완료 후 Candidates 탭에 착지한다(App.tsx). */}
+      <section className="space-y-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <label className="block text-xs font-medium text-foreground">
+              {selectionModeCopy.onboardingLabel}
+            </label>
+          </TooltipTrigger>
+          <TooltipContent>{selectionModeCopy.onboardingTooltip}</TooltipContent>
+        </Tooltip>
+        <div className="space-y-2 text-xs">
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              className="mt-0.5"
+              checked={selectionMode === 'all'}
+              onChange={() => setSelectionMode('all')}
+            />
+            <span>
+              <span className="text-foreground">{selectionModeCopy.all.title}</span>
+              <span className="ml-1 text-muted-foreground">
+                — {selectionModeCopy.all.description}
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              className="mt-0.5"
+              checked={selectionMode === 'select'}
+              onChange={() => setSelectionMode('select')}
+            />
+            <span>
+              <span className="text-foreground">{selectionModeCopy.select.title}</span>
+              <span className="ml-1 text-muted-foreground">
+                — {selectionModeCopy.select.description}
+              </span>
+            </span>
+          </label>
+        </div>
       </section>
 
       {error && <StatusText kind="error">{error}</StatusText>}
