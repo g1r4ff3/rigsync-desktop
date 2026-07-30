@@ -866,9 +866,23 @@ export function isIgnoreUnsupportedCapability(capability: SyncItemCapability): b
  * 미관리·미포함 항목 — **분류가** 자동 추가 대상에서 뺀 안정 상태(사용자
  * ignore인 `excluded`와 구분). 스위치를 켜면 include 예외가 되어
  * pending-add로 간다.
+ *
+ * `unresolvable`: capture가 구조적으로 담을 수 없는 항목(현재는 appimage —
+ * Gear Lever에 update source 좌표가 없는 경우) 전용 — 실제로는 `pending-add`
+ * 조건(managed=false, ignored=false)이지만 다음 Capture가 담을 수 없다는
+ * 사실을 숨기지 않는다("반영이 됐는지 안 됐는지 알 수 없었다" 실사용 사고
+ * 재발 방지 — fonts의 "소스 미지정" 판정과 같은 정신). ignore(Pause)하면
+ * 일반적인 `excluded`로 돌아간다(이미 안정 상태이므로 이 오버라이드가 필요
+ * 없다). `SyncItemDto.unresolvableReason`가 사유를 싣는다.
  */
 export type SyncItemState =
-  'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected' | 'distro-default'
+  | 'synced'
+  | 'pending-add'
+  | 'pending-remove'
+  | 'excluded'
+  | 'detected'
+  | 'distro-default'
+  | 'unresolvable'
 
 export interface SyncItemDto {
   readonly key: string
@@ -888,6 +902,14 @@ export interface SyncItemDto {
    * undefined(그 개념이 없다 — 추측하지 않는다, description과 같은 원칙).
    */
   readonly hostOnly?: boolean
+  /**
+   * appimage 전용: capture가 이 항목의 update source를 해석하지 못해
+   * 담을 수 없는 이유(사람이 읽는 문장) — 채워져 있으면(그리고
+   * managed=false·ignored=false면) state가 `unresolvable`이다. 다른
+   * capability는 이 개념이 없어 항상 undefined(추측하지 않는다 —
+   * description·hostOnly와 같은 원칙).
+   */
+  readonly unresolvableReason?: string
 }
 
 /** refactor-spec-v0.2 §1: apt가 무상태 분류로 갈라진 두 그룹의 식별자. */

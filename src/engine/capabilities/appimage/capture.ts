@@ -13,7 +13,7 @@
 import type { RigsyncContext } from '../../context'
 import { readCommonLayer, writeCommonLayer, type ManifestDocument } from '../../manifest'
 import { APPIMAGE_LAYER } from './constants'
-import type { GearLeverProvider } from './providerTypes'
+import type { GearLeverInstalledRow, GearLeverProvider } from './providerTypes'
 import type { AppimageCaptureReport, AppimageEntry, UpdateManagerModel } from './types'
 
 export class FollowerAppimageCaptureBlockedError extends Error {
@@ -41,6 +41,46 @@ const KNOWN_MANAGERS: readonly UpdateManagerModel[] = [
 
 function isKnownManager(value: string): value is UpdateManagerModel {
   return (KNOWN_MANAGERS as readonly string[]).includes(value)
+}
+
+export interface ResolvedAppimageUpdateSource {
+  readonly ok: true
+  readonly manager: UpdateManagerModel
+  readonly coordinate: string
+  readonly repoFilename: string
+}
+
+export interface UnresolvedAppimageUpdateSource {
+  readonly ok: false
+  /** 사람이 읽는 사유(항목 이름 접두어 없이) — capture는 note에, candidates는
+   *  `SyncItem.unresolvableReason`에 그대로 싣는다(judgment 로직을 두 곳에
+   *  중복하지 않기 위해 이 함수 하나로 뺐다). */
+  readonly reason: string
+}
+
+/**
+ * `gearlever.conf`에서 이 설치 항목의 update source 좌표(repo/repoFilename/
+ * manager)를 해석한다 — capture(아래)와 candidates.ts가 똑같은 판정을 쓴다.
+ * candidates.ts는 이 판정을 capture를 돌리지 않고도 미리 알아야 해서(Capture
+ * 전에 Candidates 화면에 "추가 불가" 상태를 보여주려면) capture 루프 밖으로
+ * 뺐다.
+ */
+export function resolveAppimageUpdateSource(
+  provider: GearLeverProvider,
+  row: Pick<GearLeverInstalledRow, 'path' | 'manager'>
+): ResolvedAppimageUpdateSource | UnresolvedAppimageUpdateSource {
+  const config = provider.readAppConfig(row.path)
+  const repo = config?.updateManager?.repo
+  const repoFilename = config?.updateManager?.repoFilename
+  const managerRaw = config?.updateManager?.manager ?? row.manager
+
+  if (!repo || !repoFilename || !managerRaw) {
+    return { ok: false, reason: 'gearlever.conf에서 update source 좌표를 찾지 못함' }
+  }
+  if (!isKnownManager(managerRaw)) {
+    return { ok: false, reason: `알 수 없는 manager "${managerRaw}"` }
+  }
+  return { ok: true, manager: managerRaw, coordinate: repo, repoFilename }
 }
 
 function readExistingEntries(ctx: Pick<RigsyncContext, 'manifestDir'>): AppimageEntry[] {
@@ -73,26 +113,18 @@ export async function captureAppimage(
   let added = 0
 
   for (const row of await provider.listInstalled()) {
-    const config = provider.readAppConfig(row.path)
-    const repo = config?.updateManager?.repo
-    const repoFilename = config?.updateManager?.repoFilename
-    const managerRaw = config?.updateManager?.manager ?? row.manager
-
-    if (!repo || !repoFilename || !managerRaw) {
-      notes.push(`${row.desktopId}: gearlever.conf에서 update source 좌표를 찾지 못함 -- 건너뜀`)
-      continue
-    }
-    if (!isKnownManager(managerRaw)) {
-      notes.push(`${row.desktopId}: 알 수 없는 manager "${managerRaw}" -- 건너뜀`)
+    const resolved = resolveAppimageUpdateSource(provider, row)
+    if (!resolved.ok) {
+      notes.push(`${row.desktopId}: ${resolved.reason} -- 건너뜀`)
       continue
     }
 
     const prior = existingMap.get(row.desktopId)
     const entry: AppimageEntry = {
       name: row.desktopId,
-      source: managerRaw,
-      coordinate: repo,
-      repoFilename,
+      source: resolved.manager,
+      coordinate: resolved.coordinate,
+      repoFilename: resolved.repoFilename,
       // TOML엔 null이 없다 -- pin이 없으면 키 자체를 생략한다(round-trip하면
       // 어차피 undefined가 되므로 처음부터 그렇게 쓴다). 있으면(사용자가 건
       // 상태) 보존한다.

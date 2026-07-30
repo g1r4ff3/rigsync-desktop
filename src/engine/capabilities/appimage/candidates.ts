@@ -7,6 +7,7 @@ import type { RigsyncContext } from '../../context'
 import { readIgnoreSet } from '../../ignore'
 import { effectiveLayer } from '../../manifest'
 import type { SyncItemGroup } from '../../syncItems'
+import { resolveAppimageUpdateSource } from './capture'
 import { APPIMAGE_KEY_FIELDS, APPIMAGE_LAYER } from './constants'
 import type { GearLeverProvider } from './providerTypes'
 import type { AppimageEntry } from './types'
@@ -29,6 +30,19 @@ export async function buildAppimageSyncGroup(
   // (listInstalled에 잡혀야만) 알 수 있으므로, manifest엔 있지만 지금 설치가
   // 안 된 항목은 description이 없다(추측하지 않는다).
   const nameByDesktopId = new Map(installed.map((r) => [r.desktopId, r.name]))
+  /**
+   * capture 불가 판정("추가 불가" 상태, SyncItemState 'unresolvable') — capture를
+   * 돌리지 않고도 candidates 빌드 시점에 알아야 하므로 captureAppimage와 같은
+   * `resolveAppimageUpdateSource` 판정을 재사용한다(중복 로직 금지). manifest엔
+   * 없지만(managed=false) 이 머신에 설치돼 있는 항목만 의미가 있다 — 이미
+   * manifest에 있는 항목은 capture가 additive-only라 재판정과 무관하게 보존된다.
+   */
+  const unresolvableReasonByDesktopId = new Map<string, string>()
+  for (const row of installed) {
+    if (managedSet.has(row.desktopId)) continue
+    const resolved = resolveAppimageUpdateSource(provider, row)
+    if (!resolved.ok) unresolvableReasonByDesktopId.set(row.desktopId, resolved.reason)
+  }
   const names = [...new Set([...managedSet, ...liveSet])].sort()
   if (names.length === 0) return null
 
@@ -40,7 +54,10 @@ export async function buildAppimageSyncGroup(
       label: name,
       managed: managedSet.has(name),
       ignored: ignore.has(name),
-      description: nameByDesktopId.get(name)
+      description: nameByDesktopId.get(name),
+      ...(unresolvableReasonByDesktopId.has(name)
+        ? { unresolvableReason: unresolvableReasonByDesktopId.get(name) }
+        : {})
     }))
   }
 }

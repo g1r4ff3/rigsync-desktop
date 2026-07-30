@@ -42,6 +42,39 @@ describe('computeSyncItemState', () => {
   it('!managed && ignored -> excluded (안정적으로 빠진 상태)', () => {
     expect(computeSyncItemState({ managed: false, ignored: true })).toBe('excluded')
   })
+
+  // Capture 피드백 UX 수리(v0.1.20) 4번: unresolvableReason이 있어도
+  // pending-add 조건(!managed && !ignored)이 아니면 오버라이드하지 않는다 —
+  // "담을 수 없다"는 사실은 애초에 담길 후보일 때만 의미가 있다.
+  it('!managed && !ignored && unresolvableReason -> unresolvable (capture가 담을 수 없음)', () => {
+    expect(
+      computeSyncItemState({
+        managed: false,
+        ignored: false,
+        unresolvableReason: 'gearlever.conf에서 update source 좌표를 찾지 못함'
+      })
+    ).toBe('unresolvable')
+  })
+
+  it('ignoring an unresolvable candidate falls back to the normal excluded state', () => {
+    expect(
+      computeSyncItemState({
+        managed: false,
+        ignored: true,
+        unresolvableReason: 'gearlever.conf에서 update source 좌표를 찾지 못함'
+      })
+    ).toBe('excluded')
+  })
+
+  it('a managed entry ignores unresolvableReason (already captured, unaffected by live config)', () => {
+    expect(
+      computeSyncItemState({
+        managed: true,
+        ignored: false,
+        unresolvableReason: 'gearlever.conf에서 update source 좌표를 찾지 못함'
+      })
+    ).toBe('synced')
+  })
 })
 
 describe('isPendingSyncItemState', () => {
@@ -259,7 +292,13 @@ describe('listSyncItemGroups / toggleSyncItemIgnore', () => {
       managed: false,
       ignored: false,
       // R6 R2: Gear Lever의 listInstalled() name(버전 포함)을 그대로 설명으로 쓴다.
-      description: 'tev (2.13.1)'
+      description: 'tev (2.13.1)',
+      // v0.1.20 4번: 이 fixture는 configsByPath를 안 줘 gearlever.conf에 update
+      // source 좌표가 없다 — candidates.test.ts의 "unconfigured" 케이스와 같은
+      // 상황이라 이 항목도 unresolvable로 표시된다(resolveAppimageUpdateSource
+      // 재사용, capture.ts 참조). 이 테스트 자체의 목적("설치된 앱이 있으면
+      // appimage 그룹이 생긴다")과는 별개 축이라 필드만 추가한다.
+      unresolvableReason: 'gearlever.conf에서 update source 좌표를 찾지 못함'
     })
   })
 

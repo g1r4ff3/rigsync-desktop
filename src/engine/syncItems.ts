@@ -50,6 +50,14 @@ export interface SyncItem {
    * shared/ipc.ts). 다른 capability는 host 계층 이동 개념이 없어 항상 undefined.
    */
   readonly hostOnly?: boolean
+  /**
+   * appimage 전용: capture(`captureAppimage`)가 이 항목의 update source
+   * 좌표(gearlever.conf)를 해석하지 못해 담을 수 없는 이유 — 채워져 있으면
+   * `computeSyncItemState`가 (managed=false·ignored=false일 때) `pending-add`
+   * 대신 `unresolvable`을 반환한다(shared/ipc.ts `SyncItemState` 주석 참조).
+   * 다른 capability는 항상 undefined.
+   */
+  readonly unresolvableReason?: string
 }
 
 /**
@@ -84,13 +92,29 @@ export interface SyncItem {
  * 같은 구조: 이 그룹에선 "다음 Capture가 뭘 할 것인가"의 답이 managed×ignored
  * 만으로 안 나온다(include가 셋째 축 — `withSyncItemState`가 그룹의
  * `subgroup: 'apt-distro'`를 보고 별도 계산).
+ *
+ * 일곱째 상태 `unresolvable`: appimage 전용 — `unresolvableReason`이 채워진
+ * (capture가 update source를 해석 못한) 항목이 `pending-add` 조건(managed=
+ * false, ignored=false)일 때 대신 반환된다. 실사용 사고("반영이 됐는지 안
+ * 됐는지 알 수 없었다") 재발 방지 — capture가 구조적으로 담을 수 없는 항목을
+ * "다음 Capture가 추가할 것"이라고 말하지 않는다(fonts의 "소스 미지정" 판정과
+ * 같은 정신, capabilities/fonts/checks.ts 참조). ignore(Pause)하면 이미 안정
+ * 상태인 `excluded`로 정상 계산된다 — "담을 수 없다"는 사실은 그 항목이
+ * 애초에 담길 후보(pending-add로 보일 후보)일 때만 의미가 있다.
  */
 export type SyncItemState =
-  'synced' | 'pending-add' | 'pending-remove' | 'excluded' | 'detected' | 'distro-default'
+  | 'synced'
+  | 'pending-add'
+  | 'pending-remove'
+  | 'excluded'
+  | 'detected'
+  | 'distro-default'
+  | 'unresolvable'
 
 export function computeSyncItemState(
-  item: Pick<SyncItem, 'managed' | 'ignored'>
+  item: Pick<SyncItem, 'managed' | 'ignored' | 'unresolvableReason'>
 ): Exclude<SyncItemState, 'detected' | 'distro-default'> {
+  if (!item.managed && !item.ignored && item.unresolvableReason) return 'unresolvable'
   if (item.managed && !item.ignored) return 'synced'
   if (!item.managed && !item.ignored) return 'pending-add'
   if (item.managed && item.ignored) return 'pending-remove'
