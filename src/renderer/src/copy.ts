@@ -245,29 +245,6 @@ export const detectionOnlyDisabledReason =
   'snap은 동기화 대상이 아닙니다 — 중복 설치 검출에만 사용합니다.'
 
 /**
- * R8: follower에서 ignore 스위치·그룹 체크박스를 비활성화하는 이유 — 실사용
- * 실패 수정 3번("역할별로 정직하게")의 핵심. 코드로 직접 재현해 확인한 실제
- * 동작(git 작업 트리 실험, `ignore.ts` setIgnoredBulk가 common/ignore.toml에
- * 즉시 쓰는 경로를 그대로 따라감):
- * - follower는 capture가 막혀 있어(안전 불변식 ⑦) 이 쓰기가 절대 커밋되지
- *   않는다 — manifest 저장소 작업 트리에 커밋되지 않은 변경으로만 남는다.
- * - reference가 나중에 같은 파일(common/ignore.toml)을 건드리는 커밋을
- *   push하면, 이 머신의 다음 `git pull --ff-only`가 그 파일의 로컬 미커밋
- *   변경과 충돌해 **통째로 실패**한다("Your local changes... would be
- *   overwritten by merge" — 실제 재현 확인). 즉 사소한 토글 하나가 이 머신
- *   전체 동기화를 막아버릴 수 있다.
- * - 그렇지 않은 경우엔 그냥 무기한 로컬 미커밋 상태로 남아 아무 효과가 없다.
- * 두 경우 다 "의미 있는 효과"가 없거나 위험만 만드므로 비활성화한다.
- */
-export const followerToggleDisabledReason =
-  'follower에서는 저장되지 않습니다 — 이 머신에서 바꿔도 반영되지 않고 그대로 남거나, reference가 나중에 같은 항목을 바꾸면 이 머신의 다음 동기화가 막힐 수 있습니다. reference 머신에서 바꾸세요.'
-
-/** R8: follower에서는 ignore 토글이 전부 비활성이다(위 followerToggleDisabledReason). */
-export function isFollowerToggleDisabled(role: EngineRole | undefined): boolean {
-  return role === 'follower'
-}
-
-/**
  * F2(docs/refactor-spec-v0.2.md): services 그룹의 ignore 스위치·그룹
  * 체크박스가 비활성인 이유 — captureServices는 ignore.toml을 전혀 참조하지
  * 않는다(engine/capabilities/services/capture.ts 확인) — 눌러도 다음
@@ -279,20 +256,20 @@ export const ignoreUnsupportedReason =
   'services는 ignore를 지원하지 않습니다 — Capture가 이 머신의 유닛을 전부 그대로 기록합니다. 다른 머신에 배포하고 싶지 않으면 "Host only"로 전환하세요.'
 
 /**
- * R8: ignore 스위치·그룹 체크박스의 비활성 사유를 우선순위대로 고른다 —
+ * R8→WS6 사후 정리: ignore 스위치·그룹 체크박스의 비활성 사유를 고른다 —
  * SyncItemsView의 GroupCheckbox·Switch 두 곳에서 똑같은 분기가 중복돼 있던
- * 것을 여기 하나로 모았다(순서 규칙: 그룹이 detectionOnly면 그 사유가 가장
- * 구체적이므로 우선, 다음은 ignore 자체가 없는 capability(services), 다음은
- * follower 사유, 셋 다 아니면 비활성 아님).
+ * 것을 여기 하나로 모았다. **follower 분기는 더 이상 없다** — ignore 토글은
+ * 이제 follower에서도 `withAuthoredWrite`로 저장·push된다(배치 A, WS5 전
+ * 머신 git 저작 경로). 이 함수가 아는 비활성 사유는 그룹이 정말로 토글에
+ * 반응하지 않는 두 경우뿐이다: detectionOnly(snap — plan/apply에서 아예
+ * 빠짐)와 ignore 메커니즘 자체가 없는 capability(services).
  */
 export function toggleDisabledReason(
   detectionOnly: boolean,
-  role: EngineRole | undefined,
   ignoreUnsupported = false
 ): string | undefined {
   if (detectionOnly) return detectionOnlyDisabledReason
   if (ignoreUnsupported) return ignoreUnsupportedReason
-  if (isFollowerToggleDisabled(role)) return followerToggleDisabledReason
   return undefined
 }
 
@@ -300,6 +277,9 @@ export function toggleDisabledReason(
  * F2: "이 머신 전용"(host 계층) 전환 스위치 — dotfiles·services 항목 행에
  * ignore 토글과 별개로 뜬다(HOST_LAYER_CAPABILITIES). label/badge는
  * Explanability 계약 언어 정책대로 영어(버튼류), tooltip은 한국어.
+ * WS6 사후 정리: `disabledFollowerReason`은 삭제했다 — 배치 A(WS5)로 host
+ * 계층 이동도 전 머신에서 허용되어(hostLayer.ts `moveDotfileEntryToHostLayer`
+ * 주석) 이 문구가 거짓이 됐다.
  */
 export const hostLayerToggleCopy = {
   label: 'Host only',
@@ -308,9 +288,7 @@ export const hostLayerToggleCopy = {
   onTooltip:
     '이 머신에만 적용됩니다 — manifest가 이 머신(host 계층)에만 이 항목을 기록하고, 다른 머신의 Apply에는 나타나지 않습니다. 끄면 공통(common) 계층으로 돌아가 모든 머신에 다시 배포됩니다.',
   offTooltip:
-    '지금은 공통(common) 계층에 있어 모든 머신에 배포됩니다. 켜면 이 머신 전용(host 계층)으로 옮겨져 다른 머신에는 더 이상 나타나지 않습니다 — 랩 전용 서비스처럼 이 머신에만 있어야 하는 항목에 씁니다.',
-  disabledFollowerReason:
-    'follower에서는 host 계층 이동을 할 수 없습니다 — manifest 저작은 reference 머신에서만 합니다.'
+    '지금은 공통(common) 계층에 있어 모든 머신에 배포됩니다. 켜면 이 머신 전용(host 계층)으로 옮겨져 다른 머신에는 더 이상 나타나지 않습니다 — 랩 전용 서비스처럼 이 머신에만 있어야 하는 항목에 씁니다.'
 } as const
 
 /**
@@ -384,6 +362,33 @@ export const bulkSubscribeCopy = {
   allOn: { label: 'Unsubscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독 해제합니다' },
   allOff: { label: 'Subscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독합니다' },
   mixed: { label: 'Subscribe all', subtitle: '이 그룹 전체를 이 머신에서 구독합니다' }
+} as const
+
+/**
+ * WS7("창고 모델 1차"): 구독 모드(전체/선택) 선택 UI — 온보딩 신규 스텝 +
+ * SettingsView 전환 컨트롤이 공유한다. 전환 의미(all: 새 카탈로그 항목
+ * 자동 구독+exclude 목록 / select: include 목록만)는 SettingsView의 helpCopy
+ * 확장 문단에서 더 풀어 설명한다.
+ */
+export const selectionModeCopy = {
+  all: {
+    title: '전체 구독',
+    description: '카탈로그 전체를 따릅니다 — 연구실 머신 기본'
+  },
+  select: {
+    title: '선택 구독',
+    description: '원하는 항목만 골라 받습니다 — 집 머신 등'
+  },
+  /** 온보딩 전용 — SyncItems 탭 착지 안내(둘 다 "나중에 바꿀 수 있다"는 툴팁 옆에). */
+  onboardingLabel: '⑥ Subscription mode',
+  onboardingTooltip: '나중에 Settings에서 바꿀 수 있습니다',
+  /**
+   * select를 고르고 온보딩을 마치면 Diff 대신 SyncItems 탭에 착지한다 — 이
+   * 배너가 "그룹 체크박스·구독 Switch가 곧 피커"라는 사실을 한 줄로 안내한다
+   * (계획서 지시). 한 번 보면 충분하므로 SyncItemsView가 첫 방문에만 보여준다.
+   */
+  syncItemsLandingHint:
+    '선택 구독을 골랐습니다 — 아래 그룹 체크박스와 각 항목의 Subscribe 스위치가 곧 피커입니다. 원하는 항목만 켜세요.'
 } as const
 
 /**
@@ -513,6 +518,51 @@ export const dotfilesStateCopy = {
 export const dotfilesToLinkExplainCopy =
   'Capture는 홈 파일을 스토어로 복사만 합니다 — 홈 파일을 스토어 심링크로 바꾸는 것은 Apply의 몫입니다.'
 
+/**
+ * WS6("창고 모델 1차"): dotfiles 그룹 헤더의 진입 버튼 — SEED 유래 후보뿐
+ * 아니라 카탈로그에 없는 **임의** 경로를 새로 등록하는 다이얼로그를 연다.
+ */
+export const addDotfileButtonCopy = {
+  label: 'Add file/folder',
+  subtitle: '홈의 임의 경로를 창고에 등록'
+} as const
+
+/**
+ * WS6: RegisterDotfileDialog 전체 문구. link 토글의 의미는 role에 따라
+ * 갈린다는 걸 부제로 설명한다(DotfileEntry.link jsdoc과 같은 사실 —
+ * reference에서만 심링크 여부를 결정하고, follower는 항상 사본으로 배포).
+ */
+export const registerDotfileDialogCopy = {
+  title: 'Add a dotfile to the catalog',
+  description:
+    '홈(~) 안의 파일이나 폴더 경로를 지정하면 창고(manifest)에 새로 등록합니다 — 등록한 머신이 자동으로 구독합니다.',
+  pathLabel: 'Path',
+  pathPlaceholder: '~/.config/foo',
+  browseButton: { label: 'Browse…', subtitle: '파일/폴더 선택 대화상자 열기' },
+  checking: '확인 중…',
+  linkToggle: {
+    label: 'Symlink on reference',
+    subtitle:
+      '켜면 reference 머신에서 심링크로 관리합니다(홈 편집이 곧바로 스토어에 반영) — 다른 머신은 이 설정과 무관하게 항상 사본으로 배포됩니다.'
+  },
+  hostToggle: {
+    label: 'Host only',
+    subtitle: '켜면 이 머신 전용으로 등록됩니다 — 다른 머신의 카탈로그에는 나타나지 않습니다.'
+  },
+  submitButton: { label: 'Register', subtitle: '창고에 새로 등록합니다' },
+  runningLabel: '등록 중…',
+  cancelButton: { label: 'Cancel', subtitle: '아무것도 등록하지 않고 닫습니다' },
+  closeButton: { label: 'Close', subtitle: '닫고 목록으로 돌아갑니다' },
+  pushFailedPrefix: '등록됨 — 단 동기화 실패: ',
+  doneMessage: '등록 완료',
+  /** secretScanBlocked findings — 계획서 확정 결정: 경고-통과가 아니라 차단. */
+  secretBlockedTitle: '비밀로 의심되는 값이 있어 등록을 차단했습니다',
+  secretBlockedHint:
+    '해당 파일에 GitHub 토큰 등 비밀로 보이는 값이 있습니다(값 자체는 여기 표시하지 않습니다). ' +
+    '오탐이면 common/secret-allowlist.toml에 (경로, 패턴 종류)를 등록한 뒤 다시 시도하세요 — ' +
+    '차단을 그냥 통과시키는 옵션은 없습니다(push 게이트에서 어차피 좌초되므로).'
+} as const
+
 export const helpCopy = {
   diff: [
     'Differences는 이 머신의 실제 상태와 manifest(선언된 기준)를 비교합니다.',
@@ -560,14 +610,19 @@ export const helpCopy = {
     'follower에서 reference로 바꾸면 이 머신이 manifest 저작 권한을 갖게 되어 이후 capture가 자동 commit+push됩니다.',
     'manifest 경로를 바꿔도 기존 데이터는 옮겨지지 않습니다 — 경로 설정만 바뀝니다.',
     'drift 체크 간격을 0으로 두면 트레이 상주 감시가 완전히 꺼집니다.',
-    '"Clone from repository"는 온보딩을 다시 하지 않고도 manifest 저장소를 새로 클론해 이 머신을 연결합니다 — follower가 빈 로컬 저장소로 잘못 시작됐을 때 복구하는 용도입니다.'
+    '"Clone from repository"는 온보딩을 다시 하지 않고도 manifest 저장소를 새로 클론해 이 머신을 연결합니다 — follower가 빈 로컬 저장소로 잘못 시작됐을 때 복구하는 용도입니다.',
+    // WS7("창고 모델 1차"): 구독 모드 전환 의미 설명.
+    'Subscription mode는 이 머신이 카탈로그의 어느 항목을 받을지를 정합니다 — "전체 구독"(all)은 카탈로그에 새로 추가되는 항목도 자동으로 구독하고 원치 않는 항목만 exclude 목록에 골라 뺍니다(연구실 머신 기본), "선택 구독"(select)은 반대로 include 목록에 명시적으로 넣은 항목만 받습니다(집 머신 등 일부만 필요한 경우). 전환해도 기존 include/exclude 목록은 지워지지 않고 죽은 데이터로 남아있다가 되돌리면 되살아납니다.',
+    '역할(role)은 이제 벌크 Capture·live-edit 스윕·심링크 배포 권한만 가릅니다 — 항목 등록·삭제·구독 전환은 role과 무관하게 전 머신에서 가능합니다(창고 모델 — manifest는 특정 머신의 원판이 아니라 카탈로그입니다).'
   ].join(' '),
   onboarding: [
     '처음 실행할 때 딱 한 번 필요한 설정입니다 — Settings 화면에서 나중에 다시 바꿀 수 있습니다.',
     '머신 이름은 이 머신을 구별하는 고유 식별자입니다 — hostname을 그대로 쓰면 여러 머신이 같은 이름이 될 수 있습니다.',
     'reference는 이 머신에서 저작(capture)하고, follower는 다른 머신이 저작한 내용을 받기만 합니다.',
     'manifest 저장소는 여러 머신이 공유하는 설정 저장소입니다 — 새로 만들거나(reference의 첫 시작), 기존 경로를 지정하거나, 저장소에서 클론할 수 있습니다.',
-    'follower의 정상적인 시작 방법은 "저장소에서 클론"입니다 — 기준(reference) 머신이 이미 commit+push해 둔 manifest를 그대로 받아옵니다. "새로 만들기"로 시작하면 빈 로컬 저장소가 되어 다른 머신과 동기화되지 않습니다.'
+    'follower의 정상적인 시작 방법은 "저장소에서 클론"입니다 — 기준(reference) 머신이 이미 commit+push해 둔 manifest를 그대로 받아옵니다. "새로 만들기"로 시작하면 빈 로컬 저장소가 되어 다른 머신과 동기화되지 않습니다.',
+    // WS7("창고 모델 1차"): 구독 모드 스텝.
+    'Subscription mode는 이 머신이 카탈로그 전체를 받을지("전체 구독" — 연구실 머신처럼 모든 항목이 필요한 경우), 원하는 항목만 골라 받을지("선택 구독" — 집 머신처럼 일부만 필요한 경우) 정합니다. 선택 구독을 고르면 온보딩을 마친 뒤 Candidates 화면으로 이동합니다 — 거기서 그룹 체크박스와 각 항목의 Subscribe 스위치로 원하는 항목만 켜면 됩니다.'
   ].join(' '),
   applyDialog: [
     '아래는 Apply가 실제로 실행할 명령 전문입니다 — 실행 전에 항상 그대로 보여줍니다(안전 불변식 ⑥).',
@@ -635,13 +690,12 @@ export const deleteDisabledReasonCopy = {
 } as const
 
 /**
- * R8 비대칭 안내: follower에서는 Sync/Pause가 비활성화되지만(직전 pull 파손
- * 위험 — followerToggleDisabledReason) Delete는 이 머신의 로컬 시스템 변경일
- * 뿐이라 role 가드 대상이 아니다. 이 비대칭이 실수로 보일 수 있어 별도로
- * 설명한다.
+ * WS6 사후 정리: R8 시절엔 이 자리에 `followerDeleteAsymmetryCopy`(Sync/Pause는
+ * follower에서 비활성인데 Delete만 예외라는 안내)가 있었다 — 배치 A(WS5)로
+ * Sync/Pause(ignore 토글)도 follower에서 authored write로 저장·push되면서
+ * 그 비대칭 자체가 없어졌다(Delete와 마찬가지로 전 머신에서 동작). 거짓
+ * 안내를 지웠다 — 지울 문구가 없으므로 이 자리엔 아무 export도 없다.
  */
-export const followerDeleteAsymmetryCopy =
-  'follower에서도 Delete는 사용할 수 있습니다 — 삭제는 이 머신의 로컬 시스템 변경일 뿐 git으로 동기화되는 내용이 아니기 때문입니다. 반면 Sync/Pause는 계속 비활성화되어 있습니다(위 사유 — 직전 pull이 깨질 위험).'
 
 /** 일괄 삭제 툴바 버튼 — "일시중지 + 설치됨" 항목이 하나 이상일 때만 노출된다. */
 export const bulkDeleteCopy = {

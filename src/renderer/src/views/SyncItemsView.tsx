@@ -7,6 +7,7 @@ import { CandidateStateControl } from '@/components/CandidateStateControl'
 import { CandidateStateIcon } from '@/components/CandidateStateIcon'
 import { CaptureReportSummary } from '@/components/CaptureReportSummary'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { RegisterDotfileDialog } from '@/components/RegisterDotfileDialog'
 import { UnregisterConfirmDialog } from '@/components/UnregisterConfirmDialog'
 import { ViewToolbar } from '@/components/ViewToolbar'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,19 +15,19 @@ import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { captureAll, revalidateAfterCapture, type CaptureAllReport } from '../captureAll'
 import {
+  addDotfileButtonCopy,
   bulkDeleteCopy,
   bulkSubscribeCopy,
   buttonCopy,
   candidatesIntroCopy,
   describeSyncItemState,
   emptyStateCopy,
-  followerDeleteAsymmetryCopy,
   formatDetectionOnlySummary,
   formatSyncItemStateSummary,
   hostLayerToggleCopy,
-  isFollowerToggleDisabled,
   pendingChangesCopy,
   registerActionCopy,
+  selectionModeCopy,
   shouldShowPendingCaptureBanner,
   subscribeToggleCopy,
   toggleDisabledReason,
@@ -161,6 +162,13 @@ type Row =
       readonly subscribeGroupState: SubscribeGroupState | null
       /** 위 버튼이 벌크 토글할 대상 key 목록(검색 필터 무관 — 항상 그룹 전체). */
       readonly subscribeKeys: readonly string[]
+      /**
+       * WS6("창고 모델 1차"): dotfiles capability의 **첫** 헤더 행(main
+       * 그룹이 있으면 main, SEED 강등으로 본체가 비어 없으면 suggested
+       * 그룹)에만 true — "Add file/folder" 버튼이 항상 정확히 한 곳에만
+       * 뜨게 한다(두 그룹 헤더 모두에 중복해서 달지 않는다).
+       */
+      readonly showAddDotfileButton: boolean
     }
   | {
       readonly kind: 'item'
@@ -320,9 +328,19 @@ function GroupCheckbox({
 
 interface SyncItemsViewProps {
   readonly status: EngineStatus | null
+  /**
+   * WS7("창고 모델 1차"): 온보딩에서 "선택 구독"을 고르고 막 완료했을 때만
+   * true — 그룹 체크박스·구독 Switch가 곧 피커라는 안내를 한 번 보여준다.
+   */
+  readonly showSelectionOnboardingHint?: boolean
+  readonly onDismissSelectionOnboardingHint?: () => void
 }
 
-function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
+function SyncItemsView({
+  status,
+  showSelectionOnboardingHint,
+  onDismissSelectionOnboardingHint
+}: SyncItemsViewProps): React.JSX.Element {
   // 4단계(스냅샷 스토어): 탭 전환 체감 0ms — syncItemsSnapshotStore.ts 구독으로
   // 바꿨다(옛 주석 그대로: "이 화면은 탭이 바뀔 때마다 언마운트/재마운트되므로
   // 매번 listSyncItems()를 새로 기다려야 한다"던 지적을 여기서 해소한다).
@@ -351,6 +369,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     readonly label: string
   } | null>(null)
   const [unregisterSeq, setUnregisterSeq] = useState(0)
+  // WS6("창고 모델 1차"): "Add file/folder" 다이얼로그 — 열 때마다 seq를
+  // 올려 리마운트한다(다른 다이얼로그와 같은 패턴 — 이전 입력값이 새로 열 때
+  // 남지 않게).
+  const [registerDotfileOpen, setRegisterDotfileOpen] = useState(false)
+  const [registerDotfileSeq, setRegisterDotfileSeq] = useState(0)
   // refactor-spec-v0.2 §1: 그룹 접기 상태 — 명시 오버라이드만 저장하고,
   // 없으면 그룹의 collapsedByDefault를 따른다(refresh로 groups가 갈려도
   // 사용자가 펼친 상태가 유지된다). 검색 중엔 접힘을 무시한다 — 접힌 그룹
@@ -372,11 +395,15 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
   // 컴포넌트 주석 참조).
   const [bulkDialogSeq, setBulkDialogSeq] = useState(0)
   const [deleteConfirmSeq, setDeleteConfirmSeq] = useState(0)
-  // R8: follower는 capture가 막혀 있어(안전 불변식 ⑦) 이 화면의 ignore
-  // 토글이 다시 커밋될 방법이 없다(copy.ts `followerToggleDisabledReason`
-  // 주석 — git 재현으로 확인). 배너·집계 문구·스위치 비활성 판단 전부 이
-  // 하나의 플래그로 가른다.
-  const isFollower = isFollowerToggleDisabled(status?.role)
+  // WS6 사후 정리: R8 시절엔 이 플래그가 ignore 토글·host 계층 스위치의
+  // 비활성 여부까지 겸했지만, 배치 A(WS5)로 그 쓰기들이 follower에서도
+  // authored write로 저장·push되면서 그 의미가 거짓이 됐다(copy.ts
+  // `toggleDisabledReason` 주석 참조) — 그 용도는 전부 지웠다. 지금 남은
+  // 용도는 배너 문구 변형(candidatesIntroCopy·registerInsteadText)과 벌크
+  // Capture 버튼 노출뿐이다(둘 다 여전히 reference 전용 — 벌크 capture 자체는
+  // 이번 라운드 role 비대칭 유지 대상). "토글 비활성" 의미의 헬퍼 이름을
+  // 재사용하지 않기 위해 role을 직접 비교한다.
+  const isFollower = status?.role === 'follower'
 
   async function refresh(): Promise<void> {
     await syncItemsSnapshotSlot.revalidate(fetchSyncItemsSnapshot)
@@ -447,6 +474,12 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       if (route === 'items-distro' || route === 'items-distro-open') {
         setPendingDistroRoute(route)
       }
+      // WS6("창고 모델 1차") 검증용 — 이 다이얼로그는 groups 로딩과 무관하게
+      // 열 수 있어(빈 폼으로 시작) pending 2단계 패턴이 필요 없다.
+      if (route === 'items-register-dotfile') {
+        setRegisterDotfileSeq((n) => n + 1)
+        setRegisterDotfileOpen(true)
+      }
     }
     window.addEventListener(SCREENSHOT_GOTO_EVENT, listener)
     return () => window.removeEventListener(SCREENSHOT_GOTO_EVENT, listener)
@@ -476,6 +509,9 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
     if (!groups) return []
     const q = query.trim().toLowerCase()
     const out: Row[] = []
+    // WS6: "Add file/folder" 버튼은 dotfiles capability의 첫 헤더 행에만 —
+    // main/추천(dotfiles-suggested) 두 그룹으로 갈렸어도 정확히 한 곳에만 뜬다.
+    let addDotfileButtonPlaced = false
     for (const group of groups) {
       const items = q ? group.items.filter((i) => i.label.toLowerCase().includes(q)) : group.items
       if (items.length === 0) continue
@@ -484,6 +520,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       // 검색 중엔 접힘을 무시한다 — 접힌 그룹 안의 매치를 소리 없이 숨기지
       // 않는다(스펙 판단 원칙 2). 평상시엔 오버라이드 > collapsedByDefault.
       const collapsed = q ? false : (collapsedOverrides[groupId] ?? !!group.collapsedByDefault)
+      const showAddDotfileButton = group.capability === 'dotfiles' && !addDotfileButtonPlaced
+      if (showAddDotfileButton) addDotfileButtonPlaced = true
       out.push({
         kind: 'header',
         key: `h:${groupId}`,
@@ -503,7 +541,8 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         // WS3: detectionOnly 그룹(snap)엔 구독 개념이 없다 — appimage/candidates.ts류와
         // 같은 원칙으로 그냥 비워둔다.
         subscribeGroupState: detectionOnly ? null : computeSubscribeGroupState(group.items),
-        subscribeKeys: detectionOnly ? [] : subscribeEligibleKeys(group.items)
+        subscribeKeys: detectionOnly ? [] : subscribeEligibleKeys(group.items),
+        showAddDotfileButton
       })
       if (collapsed) continue
       for (const item of items) {
@@ -851,11 +890,21 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
       <p className="-mt-1 text-[11px] text-muted-foreground">
         {isFollower ? candidatesIntroCopy.follower : candidatesIntroCopy.reference}
       </p>
-      {/* Sync/Pause는 follower에서 비활성이지만 Delete는 예외적으로 계속
-          가능하다 — 이 비대칭이 실수로 보일 수 있어 별도로 설명한다(각 항목의
-          Delete 버튼에도 같은 취지의 툴팁이 붙는다). */}
-      {isFollower && (
-        <p className="-mt-1 text-[11px] text-muted-foreground">{followerDeleteAsymmetryCopy}</p>
+
+      {/* WS7("창고 모델 1차"): 온보딩에서 "선택 구독"을 고르고 막 완료했을
+          때만 뜨는 일회성 안내 — 그룹 체크박스·구독 Switch가 곧 피커라는
+          사실을 한 줄로 알려준다(App.tsx가 처음 탭 진입 시에만 true로 준다). */}
+      {showSelectionOnboardingHint && (
+        <div className="flex items-start justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2">
+          <p className="text-[11px] text-foreground">{selectionModeCopy.syncItemsLandingHint}</p>
+          <button
+            onClick={onDismissSelectionOnboardingHint}
+            className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground"
+            aria-label="안내 닫기"
+          >
+            Dismiss
+          </button>
+        </div>
       )}
 
       {groups !== null && groups.length > 0 && (
@@ -954,13 +1003,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         subgroup={row.subgroup}
                         disabled={
                           row.detectionOnly ||
-                          isFollower ||
                           !!pendingGroups[row.groupId] ||
                           isIgnoreUnsupportedCapability(row.capability)
                         }
                         disabledReason={toggleDisabledReason(
                           row.detectionOnly,
-                          status?.role,
                           isIgnoreUnsupportedCapability(row.capability)
                         )}
                         onClick={() =>
@@ -999,6 +1046,22 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                               row.subscribeKeys
                             )
                           }
+                        />
+                      )}
+                      {/* WS6("창고 모델 1차"): dotfiles 그룹의 "Add file/folder"
+                          진입 버튼 — SEED 후보뿐 아니라 카탈로그에 아직 없는
+                          임의 경로를 새로 등록하는 다이얼로그를 연다(정확히
+                          한 헤더에만 뜬다, showAddDotfileButton 계산 참조). */}
+                      {row.showAddDotfileButton && (
+                        <ActionButton
+                          variant="secondary"
+                          size="xs"
+                          label={addDotfileButtonCopy.label}
+                          subtitle={addDotfileButtonCopy.subtitle}
+                          onClick={() => {
+                            setRegisterDotfileSeq((n) => n + 1)
+                            setRegisterDotfileOpen(true)
+                          }}
                         />
                       )}
                       {/* refactor-spec-v0.2 §1: 접을 수 있는 그룹(배포판 기본)은
@@ -1090,7 +1153,7 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                               <Switch
                                 size="sm"
                                 checked={row.hostOnly}
-                                disabled={isFollower || pendingHostKeys[row.key]}
+                                disabled={pendingHostKeys[row.key]}
                                 onCheckedChange={(checked) =>
                                   toggleHostLayer(
                                     row.capability as HostLayerCapability,
@@ -1106,11 +1169,9 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                             </label>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {isFollower
-                              ? hostLayerToggleCopy.disabledFollowerReason
-                              : row.hostOnly
-                                ? hostLayerToggleCopy.onTooltip
-                                : hostLayerToggleCopy.offTooltip}
+                            {row.hostOnly
+                              ? hostLayerToggleCopy.onTooltip
+                              : hostLayerToggleCopy.offTooltip}
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -1118,8 +1179,10 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                           — mode 무관 managed && !ignored 행에서만 뜬다(그 조건은
                           state가 'synced'/'not-subscribed' 둘 중 하나일 때와
                           정확히 같다, registryUiHelpers `isSubscribeEligible`
-                          참조). host 계층 스위치와 달리 follower도 비활성화
-                          하지 않는다(selection.toml은 머신별 파일). */}
+                          참조). host 계층 스위치·ignore 토글과 마찬가지로
+                          follower도 비활성화하지 않는다(selection.toml은
+                          머신별 파일이라 다른 머신과 충돌하지 않고, 배치 A로
+                          follower도 git 저작 경로를 갖췄다). */}
                       {isSubscribeEligible(row) && (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1187,12 +1250,14 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                       <CandidateStateControl
                         // 사용자 명세: 3상태(Sync/Pause/Delete)가 각각 직접
                         // 선택 가능한 세그먼트 컨트롤. Sync/Pause는 기존
-                        // Switch와 같은 비활성 규칙(detectionOnly·follower —
-                        // toggleDisabledReason)을 그대로 따르고, Delete는
-                        // 별도 판정(computeDeleteEligibility, 행 생성 시
-                        // 계산됨)을 쓴다 — follower에서도 Delete는 로컬
-                        // 시스템 변경이라 비활성화하지 않는다(비대칭, 위 안내
-                        // 문구 참조).
+                        // Switch와 같은 비활성 규칙(detectionOnly·
+                        // ignoreUnsupported — toggleDisabledReason)을 그대로
+                        // 따르고, Delete는 별도 판정(computeDeleteEligibility,
+                        // 행 생성 시 계산됨)을 쓴다. WS6 사후 정리: 예전엔
+                        // Sync/Pause만 follower에서 비활성이라 Delete와의
+                        // 비대칭을 별도 안내했지만, 배치 A(WS5)로 그 비대칭
+                        // 자체가 없어졌다(Sync/Pause·Delete 모두 role 무관 —
+                        // copy.ts `toggleDisabledReason` 주석 참조).
                         // refactor-spec-v0.2 §1: apt-distro 그룹의 미관리 항목은
                         // ignored가 아니라 include가 켬/끔을 결정한다(isItemOn).
                         value={
@@ -1203,13 +1268,11 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
                         ariaLabel={row.label}
                         syncPauseDisabled={
                           row.detectionOnly ||
-                          isFollower ||
                           pendingKeys[row.key] ||
                           isIgnoreUnsupportedCapability(row.capability)
                         }
                         syncPauseDisabledReason={toggleDisabledReason(
                           row.detectionOnly,
-                          status?.role,
                           isIgnoreUnsupportedCapability(row.capability)
                         )}
                         deleteEligible={row.deleteEligible}
@@ -1250,6 +1313,13 @@ function SyncItemsView({ status }: SyncItemsViewProps): React.JSX.Element {
         open={unregisterItem !== null}
         onOpenChange={(next) => !next && closeUnregisterDialog()}
         onCompleted={handleUnregisterCompleted}
+      />
+
+      <RegisterDotfileDialog
+        key={registerDotfileSeq}
+        open={registerDotfileOpen}
+        onOpenChange={setRegisterDotfileOpen}
+        onRegistered={(next) => syncItemsSnapshotSlot.set(next)}
       />
     </div>
   )

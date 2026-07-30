@@ -87,6 +87,11 @@ import {
   selectToggleCommitMessage,
   unregisterEntryCommitMessage
 } from '../engine/authoredWriteMessage'
+import {
+  registerNewDotfile,
+  scanDotfileCandidateForSecrets,
+  validateDotfileRegistration
+} from '../engine/capabilities/dotfiles/register'
 import { registerEntry, unregisterEntry, type RegisterEntryDeps } from '../engine/registry'
 import {
   listEntrySubscribers,
@@ -96,7 +101,7 @@ import {
   setSubscribedBulk
 } from '../engine/selection'
 import { runDriftCheck } from './driftCheck'
-import { completeOnboarding, expandTilde } from './onboarding'
+import { applyOnboardingSelectionMode, completeOnboarding, expandTilde } from './onboarding'
 import { buildDoctorReport } from '../engine/doctor/report'
 import { ignoreDoctorCheck } from '../engine/doctor/toggle'
 import { ApplyRunner, buildSudoScriptPreview } from '../engine/elevation'
@@ -159,6 +164,7 @@ import {
   type CompleteOnboardingRequest,
   type CompleteOnboardingResponse,
   type DoctorReportDto,
+  type DotfileRegistrationCheckDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DuplicateWarningDto,
@@ -177,6 +183,8 @@ import {
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterDotfileRequest,
+  type RegisterDotfileResponse,
   type RegisterEntryRequest,
   type RegisterEntryResponse,
   type ReposCaptureReportDto,
@@ -203,6 +211,7 @@ import {
   type ToolsDiffReportDto,
   type UnregisterEntryRequest,
   type UpdateConfigRequest,
+  type ValidateDotfilePathRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
 import type { DriftSummary } from '../engine/drift'
@@ -532,6 +541,10 @@ const handlers: Record<string, Handler> = {
       gitTransportProvider
     })
     refreshContext()
+    // WS7("창고 모델 1차"): 온보딩 구독 모드 스텝 — 로직은
+    // main/onboarding.ts `applyOnboardingSelectionMode`에 있다(단독
+    // 유닛테스트 가능하도록 분리, onboarding.test.ts 참조).
+    applyOnboardingSelectionMode(getContext(), request.selectionMode, gitTransportProvider)
     const { ctx, firstRun } = resolved
     return {
       status: {
@@ -812,6 +825,49 @@ const handlers: Record<string, Handler> = {
     return { groups: await listSyncItemGroupsForClient(), sync }
   },
 
+  /**
+   * WS6("창고 모델 1차"): dotfiles 임의 경로 등록 — 순수 조회(READ_METHODS).
+   * RegisterDotfileDialog가 blur/입력마다 부른다.
+   */
+  validateDotfilePath: async (args): Promise<DotfileRegistrationCheckDto> => {
+    const request = args as ValidateDotfilePathRequest
+    return validateDotfileRegistration(getContext(), request.homePath)
+  },
+
+  /**
+   * WS6: dotfiles 임의 경로 등록 실행 — registerEntry와 같은 조립
+   * (prepareAuthoredWrite → mutate → awaitAuthoredWrite로 push 결과를 응답에
+   * 동봉)이되, 그 앞에 두 단계가 더 있다: ①검증 재확인(경쟁 조건 방어 —
+   * validateDotfilePath 이후 상태가 바뀌었을 수 있다) ②secret 사전 스캔
+   * (findings가 있으면 **쓰기 전** 차단 — 계획서 확정 결정: 경고-통과가
+   * 아니라 차단이 맞다, push 게이트에서 어차피 좌초되므로).
+   */
+  registerDotfile: async (args): Promise<RegisterDotfileResponse> => {
+    const request = args as RegisterDotfileRequest
+    const ctx = getContext()
+    const check = validateDotfileRegistration(ctx, request.homePath)
+    if (!check.ok || !check.homeKey || !check.type) {
+      return {
+        ok: false,
+        reason: 'validation-failed',
+        message: check.message ?? `${request.homePath}: 등록할 수 없는 경로입니다`
+      }
+    }
+    const homeKey = check.homeKey
+    const findings = scanDotfileCandidateForSecrets(ctx, homeKey)
+    if (findings.length > 0) {
+      return { ok: false, reason: 'secret-scan-blocked', findings }
+    }
+    const prepStatus = await prepareAuthoredWrite(ctx, gitTransportProvider)
+    if (prepStatus?.kind === 'error') {
+      return { ok: true, groups: await listSyncItemGroupsForClient(), sync: prepStatus }
+    }
+    registerNewDotfile(ctx, { homePath: homeKey, link: request.link, host: request.host })
+    const message = registerEntryCommitMessage(ctx.machineId, 'dotfiles', homeKey)
+    const sync = await awaitAuthoredWrite(ctx, gitTransportProvider, message)
+    return { ok: true, groups: await listSyncItemGroupsForClient(), sync }
+  },
+
   apply: async (args): Promise<ApplyResponse> => {
     const request = args as ApplyRequest
     const ctx = getContext()
@@ -891,7 +947,10 @@ const READ_METHODS = new Set<string>([
   // toggleSubscribe(Bulk)/setSelectionMode는 manifest를 바꾸는 저작 쓰기라
   // fail-closed 기본값('write')을 그대로 쓴다(classifyMethod 주석 참조).
   'getSelectionMode',
-  'listEntrySubscribers'
+  'listEntrySubscribers',
+  // WS6("창고 모델 1차" dotfiles 임의 경로 등록): 순수 조회만. registerDotfile은
+  // manifest를 바꾸는 저작 쓰기라 fail-closed 기본값('write')을 그대로 쓴다.
+  'validateDotfilePath'
 ])
 
 /**

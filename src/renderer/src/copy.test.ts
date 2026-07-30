@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addDotfileButtonCopy,
   captureReportCopy,
   describeSyncItemState,
   formatSyncItemStateSummary,
-  isFollowerToggleDisabled,
   pendingChangesCopy,
+  registerDotfileDialogCopy,
+  selectionModeCopy,
   shouldShowPendingCaptureBanner,
   syncItemStateCopy,
   toggleDisabledReason,
   detectionOnlyDisabledReason,
-  followerToggleDisabledReason,
+  ignoreUnsupportedReason,
   bulkSubscribeCopy,
   registerActionCopy,
   subscribeToggleCopy,
@@ -217,19 +219,51 @@ describe('subscribeToggleCopy / registerActionCopy / unregisterActionCopy / bulk
   })
 })
 
-describe('isFollowerToggleDisabled / toggleDisabledReason', () => {
-  it('reference·비-detectionOnly면 비활성이 아니다', () => {
-    expect(isFollowerToggleDisabled('reference')).toBe(false)
-    expect(toggleDisabledReason(false, 'reference')).toBeUndefined()
+describe('toggleDisabledReason', () => {
+  // WS6 사후 정리: ignore 토글은 이제 follower에서도 authored write로
+  // 저장·push된다(배치 A/WS5) — 그래서 이 함수는 더는 role을 받지 않는다.
+  // detectionOnly·ignoreUnsupported가 아니면 항상 활성이다(어떤 role이든).
+  it('detectionOnly·ignoreUnsupported 둘 다 아니면 비활성이 아니다', () => {
+    expect(toggleDisabledReason(false)).toBeUndefined()
+    expect(toggleDisabledReason(false, false)).toBeUndefined()
   })
 
-  it('follower면 detectionOnly 여부와 무관하게 토글이 비활성이다', () => {
-    expect(isFollowerToggleDisabled('follower')).toBe(true)
-    expect(toggleDisabledReason(false, 'follower')).toBe(followerToggleDisabledReason)
+  it('detectionOnly면 그 사유가 우선한다', () => {
+    expect(toggleDisabledReason(true)).toBe(detectionOnlyDisabledReason)
+    expect(toggleDisabledReason(true, true)).toBe(detectionOnlyDisabledReason)
   })
 
-  it('detectionOnly 그룹은 role과 무관하게 detectionOnly 사유가 우선한다', () => {
-    expect(toggleDisabledReason(true, 'reference')).toBe(detectionOnlyDisabledReason)
-    expect(toggleDisabledReason(true, 'follower')).toBe(detectionOnlyDisabledReason)
+  it('ignoreUnsupported면 그 사유를 돌려준다', () => {
+    expect(toggleDisabledReason(false, true)).toBe(ignoreUnsupportedReason)
+  })
+})
+
+describe('WS6 registerDotfileDialogCopy / addDotfileButtonCopy', () => {
+  it('addDotfileButtonCopy 라벨은 영어(버튼), 부제는 한국어(언어 정책)', () => {
+    expect(addDotfileButtonCopy.label).toBe('Add file/folder')
+    expect(addDotfileButtonCopy.subtitle).toMatch(/등록/)
+  })
+
+  it('registerDotfileDialogCopy는 secret 차단 문구를 별도로 갖는다(경고-통과 아님을 명시)', () => {
+    expect(registerDotfileDialogCopy.secretBlockedTitle).toMatch(/차단/)
+    expect(registerDotfileDialogCopy.secretBlockedHint).toMatch(/secret-allowlist\.toml/)
+  })
+
+  it('linkToggle 부제는 다른 머신은 항상 사본으로 배포된다는 사실을 담는다', () => {
+    expect(registerDotfileDialogCopy.linkToggle.subtitle).toMatch(/사본/)
+  })
+})
+
+describe('WS7 selectionModeCopy', () => {
+  it('all/select 각각 제목·설명을 제공한다', () => {
+    expect(selectionModeCopy.all.title).toBe('전체 구독')
+    expect(selectionModeCopy.select.title).toBe('선택 구독')
+    expect(selectionModeCopy.all.description).toMatch(/연구실/)
+    expect(selectionModeCopy.select.description).toMatch(/집 머신/)
+  })
+
+  it('syncItemsLandingHint는 그룹 체크박스·Subscribe 스위치가 피커라는 사실을 안내한다', () => {
+    expect(selectionModeCopy.syncItemsLandingHint).toMatch(/그룹 체크박스/)
+    expect(selectionModeCopy.syncItemsLandingHint).toMatch(/Subscribe/)
   })
 })

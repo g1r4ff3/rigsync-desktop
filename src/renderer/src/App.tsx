@@ -32,6 +32,10 @@ function App(): React.JSX.Element {
   // R4: 'onboarding-clone' route 전용 -- 클론 탭이 미리 선택된 온보딩 화면을 캡처하려고
   // OnboardingView의 initialManifestSource를 강제한다(스크린샷 하네스 전용, 평상시 미사용).
   const [onboardingPreset, setOnboardingPreset] = useState<ManifestSourceMode | undefined>()
+  // WS7("창고 모델 1차"): 온보딩에서 "선택 구독"을 고르고 완료하면 SyncItems가
+  // 첫 방문 안내(그룹 체크박스·구독 Switch가 곧 피커)를 한 번 보여준다 —
+  // 새로고침이나 다른 세션까지 남길 필요는 없어 메모리 상태로 충분하다.
+  const [showSelectionOnboardingHint, setShowSelectionOnboardingHint] = useState(false)
 
   // R2: getStatus()를 마운트 시 1회만 부르면 Settings 저장 후에도 헤더(machineId·
   // role·manifestDir)와 이를 참조하는 다른 화면(Capture 비활성 사유 등)이 stale로
@@ -120,7 +124,8 @@ function App(): React.JSX.Element {
         route === 'items-delete-confirm' ||
         route === 'items-bulk-delete' ||
         route === 'items-distro' ||
-        route === 'items-distro-open'
+        route === 'items-distro-open' ||
+        route === 'items-register-dotfile'
       ) {
         setTab(route === 'apply-dialog' ? 'diff' : 'items')
         setTimeout(() => {
@@ -161,9 +166,15 @@ function App(): React.JSX.Element {
                 autostartEnabled: false
               }
             }
-            onComplete={(s) => {
+            onComplete={(s, selectionMode) => {
               setForceOnboarding(false)
               setStatus(s)
+              // WS7: select면 Candidates 탭에 착지 + 첫 방문 안내(그룹
+              // 체크박스·구독 Switch가 곧 피커라는 안내 한 줄, 계획서 지시).
+              if (selectionMode === 'select') {
+                setTab('items')
+                setShowSelectionOnboardingHint(true)
+              }
             }}
             initialManifestSource={onboardingPreset}
           />
@@ -205,7 +216,11 @@ function App(): React.JSX.Element {
             {tab === 'diff' ? (
               <DiffView status={status} />
             ) : tab === 'items' ? (
-              <SyncItemsView status={status} />
+              <SyncItemsView
+                status={status}
+                showSelectionOnboardingHint={showSelectionOnboardingHint}
+                onDismissSelectionOnboardingHint={() => setShowSelectionOnboardingHint(false)}
+              />
             ) : tab === 'doctor' ? (
               <DoctorView />
             ) : (

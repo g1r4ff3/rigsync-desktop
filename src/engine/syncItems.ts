@@ -176,8 +176,15 @@ export interface SyncItemGroup {
    * `apt-user`(사용자 설치)와 `apt-distro`(배포판 기본, 접힌 그룹). 상태
    * 계산(`withSyncItemState`)과 토글 라우팅(`toggleSyncItemIgnore*`)이 이
    * 값으로 갈린다. 없으면 기존 단일 그룹 의미론 그대로.
+   *
+   * WS6("창고 모델 1차") "SEED 강등": `dotfiles-suggested`는 SEED_DOTFILES
+   * 유래 pending-add 후보 전용 그룹 — dotfiles 본체(managed 항목)에서 분리한
+   * "추천" 그룹(collapsedByDefault: true). apt-distro와 달리 토글 라우팅은
+   * 갈리지 않는다(구독·ignore 둘 다 capability='dotfiles' 그대로) — 오직
+   * 화면 배치(그룹 분리·기본 접힘)만을 위한 값이라 `computeSyncItemState`도
+   * 이 subgroup을 특별 취급하지 않는다(일반 4상태 그대로).
    */
-  readonly subgroup?: 'apt-user' | 'apt-distro'
+  readonly subgroup?: 'apt-user' | 'apt-distro' | 'dotfiles-suggested'
   /** UI가 처음에 접어서 보여줄 그룹 (펼치기 가능 — 절대 숨기지 않는다, 스펙 판단 원칙 2). */
   readonly collapsedByDefault?: boolean
 }
@@ -256,7 +263,7 @@ export async function listSyncItemGroups(
   toolsProvider: ToolsProvider,
   gitProvider: GitProvider
 ): Promise<SyncItemGroup[]> {
-  const dotfilesGroup = buildDotfilesSyncGroup(ctx)
+  const dotfilesGroups = buildDotfilesSyncGroup(ctx)
   const servicesGroup = buildServicesSyncGroup(ctx)
   const packageGroups = await buildPackageSyncGroups(ctx, providers)
   const appimageGroup = await buildAppimageSyncGroup(ctx, gearLeverProvider)
@@ -265,7 +272,7 @@ export async function listSyncItemGroups(
   const toolsGroup = await buildToolsSyncGroup(ctx, toolsProvider)
   const reposGroup = await buildReposSyncGroup(ctx, gitProvider)
   return [
-    ...(dotfilesGroup ? [dotfilesGroup] : []),
+    ...dotfilesGroups,
     ...(servicesGroup ? [servicesGroup] : []),
     ...packageGroups,
     ...(appimageGroup ? [appimageGroup] : []),

@@ -58,7 +58,11 @@ const SCREENSHOT_STEPS: readonly ScreenshotStep[] = [
   { file: '10-candidates-distro.png', route: 'items-distro', delayMs: 6000 },
   { file: '11-candidates-distro-open.png', route: 'items-distro-open', delayMs: 2000 },
   { file: '08-candidates-delete-confirm.png', route: 'items-delete-confirm', delayMs: 3000 },
-  { file: '09-candidates-bulk-delete.png', route: 'items-bulk-delete', delayMs: 1500 }
+  { file: '09-candidates-bulk-delete.png', route: 'items-bulk-delete', delayMs: 1500 },
+  // WS6("창고 모델 1차") 검증용 — dotfiles "Add file/folder" 다이얼로그. 08/09와
+  // 같은 이유로(Radix 모달이 뜨면 그 뒤 리페인트가 멈추는 캡처 모드 함정, 위
+  // 주석 참조) 다이얼로그를 여는 단계들의 맨 끝에 둔다.
+  { file: '12-candidates-register-dotfile.png', route: 'items-register-dotfile', delayMs: 1500 }
 ]
 
 export interface ScreenshotResult {

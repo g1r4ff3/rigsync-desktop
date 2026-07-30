@@ -52,11 +52,20 @@ function relPathOf(home: string): string {
   return home.startsWith('~/') ? home.slice(2) : home.replace(/^~/, '')
 }
 
-function commonDotfileStoreRelPath(home: string): string {
+/**
+ * WS6("창고 모델 1차" — cheerful-growing-fairy 계획): 신규 임의 경로 등록
+ * (`capabilities/dotfiles/register.ts` `registerNewDotfile`)이 이 두 함수를
+ * 재사용한다 — common/host store 경로 규칙이 여기 하나뿐이라 새로 만들지
+ * 않는다(계획서 "dotfiles/hostLayer.ts의 경로 규칙 재사용" 지시).
+ */
+export function commonDotfileStoreRelPath(home: string): string {
   return `dotfiles/${relPathOf(home)}`
 }
 
-function hostDotfileStoreRelPath(ctx: Pick<RigsyncContext, 'machineId'>, home: string): string {
+export function hostDotfileStoreRelPath(
+  ctx: Pick<RigsyncContext, 'machineId'>,
+  home: string
+): string {
   return `hosts/${ctx.machineId}/dotfiles/${relPathOf(home)}`
 }
 

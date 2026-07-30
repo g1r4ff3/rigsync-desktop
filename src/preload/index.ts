@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import {
+  DOTFILES_IPC_CHANNELS,
   IPC_CHANNELS,
   WINDOW_IPC_CHANNELS,
   type ApplyRequest,
@@ -20,6 +21,7 @@ import {
   type CompleteOnboardingRequest,
   type CompleteOnboardingResponse,
   type DoctorReportDto,
+  type DotfileRegistrationCheckDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DriftSummaryDto,
@@ -33,10 +35,13 @@ import {
   type MoveEntryHostLayerRequest,
   type PackagesCaptureReport,
   type PackagesDiffReport,
+  type PickDotfilePathResponse,
   type PlanEvent,
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterDotfileRequest,
+  type RegisterDotfileResponse,
   type RegisterEntryRequest,
   type RegisterEntryResponse,
   type ReposCaptureReportDto,
@@ -64,6 +69,7 @@ import {
   type ToolsDiffReportDto,
   type UnregisterEntryRequest,
   type UpdateConfigRequest,
+  type ValidateDotfilePathRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
 
@@ -176,6 +182,13 @@ const engineApi = {
     ipcRenderer.invoke(IPC_CHANNELS.engineRegisterEntry, request),
   unregisterEntry: (request: UnregisterEntryRequest): Promise<RegisterEntryResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineUnregisterEntry, request),
+  /** WS6("창고 모델 1차"): dotfiles 임의 경로 등록 — 검증(순수 조회)/실행. */
+  validateDotfilePath: (
+    request: ValidateDotfilePathRequest
+  ): Promise<DotfileRegistrationCheckDto> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineValidateDotfilePath, request),
+  registerDotfile: (request: RegisterDotfileRequest): Promise<RegisterDotfileResponse> =>
+    ipcRenderer.invoke(IPC_CHANNELS.engineRegisterDotfile, request),
   apply: (request: ApplyRequest): Promise<ApplyResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.engineApply, request),
   /** 실행 중인 apply를 취소한다 (P2b 결정 ③ — 명령 사이에서 협조적으로 중단). */
@@ -214,7 +227,17 @@ const windowControlsApi = {
   }
 }
 
-const api = { engine: engineApi, windowControls: windowControlsApi }
+/**
+ * WS6("창고 모델 1차"): 파일/폴더 피커 — `dialog.showOpenDialog`는 main
+ * 프로세스가 직접 처리한다(엔진 워커가 아니다, windowControlsApi와 같은
+ * 이유로 engineApi 밖에 둔다).
+ */
+const dotfilesApi = {
+  pickPath: (): Promise<PickDotfilePathResponse> =>
+    ipcRenderer.invoke(DOTFILES_IPC_CHANNELS.pickDotfilePath)
+}
+
+const api = { engine: engineApi, windowControls: windowControlsApi, dotfiles: dotfilesApi }
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
@@ -235,3 +258,4 @@ if (process.contextIsolated) {
 
 export type EngineApi = typeof engineApi
 export type WindowControlsApi = typeof windowControlsApi
+export type DotfilesApi = typeof dotfilesApi

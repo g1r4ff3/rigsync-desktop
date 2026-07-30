@@ -118,6 +118,14 @@ export const IPC_CHANNELS = {
    */
   engineRegisterEntry: 'engine:registerEntry',
   engineUnregisterEntry: 'engine:unregisterEntry',
+  /**
+   * WS6("창고 모델 1차"): dotfiles 임의 경로 등록 — registerEntry/dotfiles와
+   * 달리 manifest에 **아직 없는** 새 홈 경로를 등록한다(RegisterDotfileDialog
+   * 전용). validate는 READ_METHODS(순수 조회), register는 저작 쓰기라
+   * fail-closed 기본값('write')을 그대로 쓴다.
+   */
+  engineValidateDotfilePath: 'engine:validateDotfilePath',
+  engineRegisterDotfile: 'engine:registerDotfile',
   engineApply: 'engine:apply',
   /** 실행 중 취소 (P2b 결정 ③) — 코어 단계는 cancelToken, sudo 단계는 cancel_file. */
   engineCancelApply: 'engine:cancelApply',
@@ -161,6 +169,25 @@ export const WINDOW_IPC_CHANNELS = {
 
 export type WindowIpcChannel = (typeof WINDOW_IPC_CHANNELS)[keyof typeof WINDOW_IPC_CHANNELS]
 
+// ---------------------------------------------------------------------------
+// dotfiles:* — WS6("창고 모델 1차") 파일/폴더 피커. window:* 채널과 같은 이유로
+// engine:* 밖에 둔다: `dialog.showOpenDialog`는 엔진 워커가 아니라 main
+// 프로세스가 직접 처리하는 Electron 전용 API라(계획서 지시), 엔진 실행이
+// 아닌 이 호출을 engine:* 네임스페이스에 섞으면 "워커를 거친다"는 오해를 준다.
+// ---------------------------------------------------------------------------
+export const DOTFILES_IPC_CHANNELS = {
+  /** 숨김 파일 표시, 파일/디렉터리 선택 가능, homeDir에서 시작. */
+  pickDotfilePath: 'dotfiles:pickPath'
+} as const
+
+export type DotfilesIpcChannel = (typeof DOTFILES_IPC_CHANNELS)[keyof typeof DOTFILES_IPC_CHANNELS]
+
+/** `dotfiles:pickPath` 응답 — 취소하면 path가 없다. */
+export interface PickDotfilePathResponse {
+  readonly canceled: boolean
+  readonly path?: string
+}
+
 /** engine:screenshotGoto 페이로드 — App.tsx가 이 이름으로 탭/온보딩/다이얼로그를 강제 전환한다. */
 export type ScreenshotRoute =
   | 'onboarding'
@@ -179,6 +206,8 @@ export type ScreenshotRoute =
   | 'items-distro'
   /** 위와 같되 그룹을 펼친 상태로 — distro-default 상태 행들이 보이게. */
   | 'items-distro-open'
+  /** WS6("창고 모델 1차") 검증 전용 — Candidates의 "Add file/folder" 다이얼로그를 강제로 연다. */
+  | 'items-register-dotfile'
 
 export interface EnginePingRequest {
   readonly message?: string
@@ -225,6 +254,15 @@ export interface CompleteOnboardingRequest {
   readonly repoUrl?: string
   readonly profile?: string
   readonly autostartEnabled: boolean
+  /**
+   * WS7("창고 모델 1차" — cheerful-growing-fairy 계획): 온보딩 구독 모드 스텝
+   * — "전체 구독"(기본, `SelectionMode`의 파일 부재='all' 무마이그레이션
+   * 계약과 일치) vs "선택 구독"(select면 완료 직후 `setSelectionMode`를
+   * authored write로 기록 — push 실패해도 온보딩 자체는 진행한다, 상태만
+   * SyncItems 탭에서 표면화). 생략하면 'all'(온보딩 완료 후 아무 것도
+   * 쓰지 않음 — selection.toml 자체를 안 만든다).
+   */
+  readonly selectionMode?: SelectionMode
 }
 
 export interface CompleteOnboardingResponse {
@@ -942,7 +980,14 @@ export interface SyncItemDto {
 }
 
 /** refactor-spec-v0.2 §1: apt가 무상태 분류로 갈라진 두 그룹의 식별자. */
-export type SyncItemSubgroup = 'apt-user' | 'apt-distro'
+/**
+ * WS6("창고 모델 1차") "SEED 강등": `dotfiles-suggested`는 SEED_DOTFILES
+ * 유래 pending-add 후보 전용 — dotfiles 그룹 본체(managed 항목)에서 분리해
+ * `collapsedByDefault: true`의 "추천" 그룹으로 옮긴다. apt-distro와 달리
+ * 토글 라우팅이 갈리지 않는다(구독·ignore는 그대로 capability='dotfiles' +
+ * kind='homes' 경로를 쓴다) — 오직 화면 배치(그룹 분리 + 기본 접힘)만 위한 값.
+ */
+export type SyncItemSubgroup = 'apt-user' | 'apt-distro' | 'dotfiles-suggested'
 
 export interface SyncItemGroupDto {
   readonly capability: SyncItemCapability
@@ -1088,6 +1133,64 @@ export interface RegisterEntryResponse {
   readonly groups: readonly SyncItemGroupDto[]
   readonly sync: SyncStatusDto
 }
+
+// ---------------------------------------------------------------------------
+// engine:validateDotfilePath / engine:registerDotfile (WS6 "창고 모델 1차" —
+// dotfiles 임의 경로 등록. `src/engine/capabilities/dotfiles/register.ts`
+// `DotfileRegistrationCheck`/`registerNewDotfile`의 shape을 shared 경계에서
+// 다시 적는다.)
+// ---------------------------------------------------------------------------
+
+/** `validateDotfileRegistration`의 거부 사유 — RegisterDotfileDialog가 사유별로 구체적 안내를 고른다. */
+export type DotfileRegistrationRejectReasonDto =
+  | 'not-found'
+  | 'outside-home'
+  | 'already-managed'
+  | 'inside-managed-entry'
+  | 'manifest-internal'
+  | 'denylist'
+
+export interface ValidateDotfilePathRequest {
+  readonly homePath: string
+}
+
+export interface DotfileRegistrationCheckDto {
+  readonly ok: boolean
+  readonly reason?: DotfileRegistrationRejectReasonDto
+  /** 사람이 읽는 거부 사유 — ok=true면 없음. */
+  readonly message?: string
+  /** `~/상대경로` 정규화 키 — homeDir 내부로 풀린 경로에서만 채워진다. */
+  readonly homeKey?: string
+  readonly type?: 'file' | 'dir'
+}
+
+export interface RegisterDotfileRequest {
+  readonly homePath: string
+  /** true(기본)=reference에서 symlink apply, false=copy+chmod apply. */
+  readonly link: boolean
+  /** true면 hosts/<machineId>/dotfiles/<rel>에 담아 이 머신 host 계층에만 등록. */
+  readonly host: boolean
+}
+
+/**
+ * `engine:registerDotfile` 응답 — 세 갈래: 성공(다른 등록류와 같은
+ * groups+sync 패턴), 검증 실패(경쟁 조건 등으로 사전 validateDotfilePath
+ * 이후 상태가 바뀐 경우), secret 스캔 차단(소견 목록을 그대로 실어
+ * UI가 "common/secret-allowlist.toml에 등록 후 재시도" 안내와 함께
+ * 보여준다 — 계획서 확정 결정: 경고-통과가 아니라 차단).
+ */
+export type RegisterDotfileResponse =
+  | {
+      readonly ok: true
+      readonly groups: readonly SyncItemGroupDto[]
+      readonly sync: SyncStatusDto
+    }
+  | { readonly ok: false; readonly reason: 'validation-failed'; readonly message: string }
+  | {
+      readonly ok: false
+      readonly reason: 'secret-scan-blocked'
+      readonly findings: readonly SecretFindingDto[]
+    }
 
 // ---------------------------------------------------------------------------
 // engine:apply (+ engine:planEvent 중계) — dotfiles+packages 플랜을 합쳐 실행한다.

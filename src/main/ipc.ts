@@ -26,11 +26,12 @@
  * 엔드포인트(checks 레이어 + 기본 진단 + appimage preflight 통합).
  */
 import { join } from 'node:path'
-import { ipcMain, type BrowserWindow } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { resolveContext, type RigsyncContext } from '../engine/context'
 import { EngineWorkerClient } from './engineWorkerClient'
 import {
+  DOTFILES_IPC_CHANNELS,
   IPC_CHANNELS,
   type ApplyRequest,
   type ApplyResponse,
@@ -50,6 +51,7 @@ import {
   type CompleteOnboardingResponse,
   type DoctorReportDto,
   type DriftSummaryDto,
+  type DotfileRegistrationCheckDto,
   type DotfilesCaptureReport,
   type DotfilesDiffReport,
   type DuplicateWarningDto,
@@ -65,6 +67,8 @@ import {
   type PlanUninstallRequest,
   type PlanUninstallResponse,
   type ReclassificationEventDto,
+  type RegisterDotfileRequest,
+  type RegisterDotfileResponse,
   type RegisterEntryRequest,
   type RegisterEntryResponse,
   type ReposCaptureReportDto,
@@ -89,8 +93,10 @@ import {
   type ToggleSubscribeRequest,
   type ToolsCaptureReportDto,
   type ToolsDiffReportDto,
+  type PickDotfilePathResponse,
   type UnregisterEntryRequest,
   type UpdateConfigRequest,
+  type ValidateDotfilePathRequest,
   type ValidateManifestPathRequest
 } from '../shared/ipc'
 
@@ -429,6 +435,37 @@ export function registerEngineIpc(
     async (_event, request: UnregisterEntryRequest): Promise<RegisterEntryResponse> =>
       worker.call('unregisterEntry', request)
   )
+  handle(
+    IPC_CHANNELS.engineValidateDotfilePath,
+    async (_event, request: ValidateDotfilePathRequest): Promise<DotfileRegistrationCheckDto> =>
+      worker.call('validateDotfilePath', request)
+  )
+  handle(
+    IPC_CHANNELS.engineRegisterDotfile,
+    async (_event, request: RegisterDotfileRequest): Promise<RegisterDotfileResponse> =>
+      worker.call('registerDotfile', request)
+  )
+
+  /**
+   * WS6("창고 모델 1차"): 파일/폴더 피커 — `dialog.showOpenDialog`는 Electron
+   * 전용 API라 엔진 워커(utilityProcess, electron import 금지)가 아니라 이
+   * main 프로세스가 직접 처리한다(계획서 지시). `showHiddenFiles`는
+   * Electron 문서상 macOS 전용이지만 무해하게 남겨둔다 — Linux/GTK의 숨김
+   * 파일 표시는 OS 파일 선택기 자체의 토글(보통 Ctrl+H)을 따른다.
+   */
+  handle(DOTFILES_IPC_CHANNELS.pickDotfilePath, async (event): Promise<PickDotfilePathResponse> => {
+    const window = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Select a file or folder to register',
+      defaultPath: getEngineContext().homeDir,
+      properties: ['openFile', 'openDirectory', 'showHiddenFiles']
+    }
+    const result = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true }
+    return { canceled: false, path: result.filePaths[0] }
+  })
 
   // engine:planEvent 진행 이벤트는 워커가 client 생성 시 등록한 onEvent
   // 콜백으로 직접 getMainWindow()?.webContents.send(...)까지 마친다 — 여기는
