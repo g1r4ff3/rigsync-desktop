@@ -20,7 +20,13 @@ Claude Desktop급 머신 설정 동기화 앱. Electron + React + TypeScript 단
    - apt 등 의존성이 있는 패키지는 **함께 제거될 목록을 그대로 노출**하고 경고한다.
      `--auto-remove` 류로 범위를 넓히지 않는다.
 6. 권한 상승 전, 실행될 스크립트 전문을 사용자에게 노출한다.
-7. follower role에서 capture(저작)는 차단된다 (reference/follower 단방향 배포).
+7. 벌크 capture(머신 전체 스냅샷)·live-edit 스윕·심링크 배포는 reference 전용이다
+   (2026-07-30 사용자 승인 "창고 모델" 계획으로 개정 — 원 조항은 "follower에서 capture(저작)
+   전면 차단(단방향 배포)"이었다. 이제 manifest는 특정 머신의 원판이 아니라 동기화 항목의
+   창고이고, **항목 단위 저작**(등록·창고에서 제거·구독 토글·ignore·host 계층 이동)은 어느
+   머신에서든 허용된다. 모든 저작은 authored-write 경로(pull → 항목별 provenance 커밋 →
+   secret 게이트 push)를 지나고, 머신별 취사선택은 hosts/<machineId>/selection.toml이 담는다.
+   잔여 role 은퇴(벌크 capture 대칭화·3-way 드리프트 판정)는 차기 라운드).
 
 ## 아키텍처 규칙
 
