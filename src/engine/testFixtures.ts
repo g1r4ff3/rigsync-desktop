@@ -84,6 +84,11 @@ export function writeIgnore(fixture: TestFixture, data: ManifestDocument, host =
   }
 }
 
+/** selection.toml(host 전용, 병합 없음)을 직접 써 넣는다 — writeIgnore 옆. */
+export function writeSelection(fixture: TestFixture, data: ManifestDocument): void {
+  writeManifestFile(hostLayerPath(fixture.ctx, 'selection'), data)
+}
+
 /** P2c: profiles/<profile>/<layer>.toml을 직접 써 넣는다 (3단 병합 테스트용). */
 export function writeProfileLayer(
   fixture: TestFixture,
